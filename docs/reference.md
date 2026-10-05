@@ -30,6 +30,7 @@ Its presence marks the store root: the CLI walks up from the working directory t
 | `profile_config` | no | mapping / `{}` | settings of the profile and of the store's own scripts; the core only checks that it is a mapping and exposes it as `ctx.config.profile_config`, it never reads a key inside |
 | `workspace_gate` | no | string / none | name of a gate with a `worktrees(ctx, keys)` method (see [Writing a custom gate](#writing-a-custom-gate)); it tells the `pre-tool` hook which directories are work directories of a subject; without it that check is off |
 | `main_checkout_read_only` | no | bool / `false` | the `pre-tool` hook refuses edits in the main checkout of the store repository, except paths git ignores; work goes into worktrees |
+| `update_check` | no | bool / `true` | with a [copy of the engine](#vendored-copy) in the store, the session start summary says when a newer release is out, checked at most once a day; `false` turns the check off |
 
 ```yaml
 locale: en
@@ -45,6 +46,7 @@ approval:
   window_minutes: 10
 workspace_gate: worktree
 main_checkout_read_only: true
+update_check: false
 profile_config:
   publishing: { mode: review }
 ```
@@ -480,6 +482,20 @@ Core keys (all required in every core locale file):
 | `gate.field_present`, `gate.field_absent`, `gate.field_date_not_past`, `gate.field_date_past` | `{name}` |
 | `gate.doc_type`, `gate.doc_type_container` | `{type}` |
 | `gate.git_pushed_repo` | `{repo}` |
+| `update.exists`, `update.missing`, `update.manual`, `update.manual_none`, `update.invalid`, `update.next` | — |
+| `update.fetch_failed` | `{source}`, `{reason}` |
+| `update.no_tags` | `{source}` |
+| `update.clone_failed` | `{ref}`, `{source}`, `{reason}` |
+| `update.not_svod` | `{ref}`, `{source}` |
+| `update.installed`, `update.updated` | `{old}`, `{new}`, `{ref}`, `{path}` |
+| `update.changelog` | `{old}`, `{new}` |
+| `update.available` | `{latest}`, `{current}` |
+| `migrate.version` | `{version}` |
+| `migrate.none` | `{old}`, `{new}` |
+| `migrate.failed` | `{version}`, `{reason}` |
+| `migrate.bad_version` | `{version}` |
+| `migrate.renamed_key` | `{old}`, `{new}`, `{file}` |
+| `migrate.renamed_file` | `{old}`, `{new}` |
 
 ## Render
 
@@ -563,19 +579,22 @@ gate:
 
 ## CLI
 
-`svod [--root <dir>] <command>` (or `python3 -m svod.cli`). Without `--root` the root is the nearest directory upwards from the working directory that holds `svod.yaml`. Requires PyYAML.
+`svod [--root <dir>] <command>` (or `python3 -m svod.cli`). Without `--root` the root is the nearest directory upwards from the working directory that holds `svod.yaml`. Requires PyYAML. `--version` prints the version of the engine that runs; in a store with a [copy of the engine](#vendored-copy), that of the copy.
 
 | command | flags | does | exit codes |
 |---|---|---|---|
-| `validate` | — | loads config, pipelines, gates, providers, locale, descriptions and bindings; prints every error | 0 valid, 1 errors |
+| `validate` | — | loads config, pipelines, gates, providers, locale, descriptions and bindings, and checks the [copy of the engine](#vendored-copy) against its `MANIFEST`; prints every error | 0 valid, 1 errors |
 | `status <query>` | — | position of every subject the query resolves to; the `missing` text of a missing subject nothing is known about, when no position is shown | 0 found, 2 not found, ambiguous, or only such missing subjects |
-| `active` | `--all`, `--hook` | summary of open work, including subjects changed in other checkouts of the store repository; `--all` expands `theirs`; `--hook` prints SessionStart hook JSON (`hookSpecificOutput.additionalContext`, with `active.hook_tail` appended); prints nothing when nothing is open | 0 |
+| `active` | `--all`, `--hook` | summary of open work, including subjects changed in other checkouts of the store repository; `--all` expands `theirs`; `--hook` prints SessionStart hook JSON (`hookSpecificOutput.additionalContext`, with the [update notice](#update-notice) first and `active.hook_tail` appended); prints nothing when there is neither | 0 |
 | `render <pipeline>` | `--write` | prints the documentation block, or writes it between the markers | 0, 1 no markers, 2 unknown pipeline |
 | `approve <query>` | — | records the approval of the one open subject the query names: its first `approval` step gate gets `<marker>` (today), `<marker>_by` (login, else email of the local config, else git email) and, with `bind`, `<marker>_sha`; lines are replaced or appended one by one, every other line of the file stays; nothing is committed. Needs a fresh mark (see [Approval by a person](#approval-by-a-person)) and consumes it | 0 recorded, 1 refused (no fresh mark, a mark for other keys, no approver, no approval step), 2 not found or ambiguous |
 | `hook <event>` | — | answers one agent hook event, `session-start`, `prompt` or `pre-tool`, read as JSON on stdin; see [Hooks](#hooks) | 0 always |
 | `init` | `--login`, `--email`, `--force` | writes the local config; without `--login` asks at a terminal, and fails without one; the email defaults to `git config user.email`; an existing file is kept unless `--force` | 0 written, 1 exists, 2 no login or no `local_config` |
+| `install` | `--from`, `--to` | puts a copy of the engine into `.svod/` of the store, see [Vendored copy](#vendored-copy); refuses when `.svod/` exists | 0 done, 1 refused or the store does not validate after it, 2 nothing fetched (the store is unchanged) |
+| `update` | `--from`, `--to` | replaces the copy in `.svod/`, migrates the store, validates it with the new engine, prints the changelog between the versions and the migration notes; refuses without `.svod/` | as `install` |
+| `migrate` | `--since <version>` | applies the [migrations](#migrations) of the versions after `<version>` up to the running engine and prints what they changed; `update` runs it in the new copy | 0 done, 1 a migration failed, 2 not a version |
 
-`init` reads `svod.yaml` only, so it works while the local config is broken. Every other command except `validate` and `hook` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. Without PyYAML the CLI exits with 2, or silently with 0 when `--hook` is given; `hook` then answers `session-start` and `prompt` with one line about the missing PyYAML and stays silent on `pre-tool`.
+`init`, `install`, `update` and `migrate` read `svod.yaml` at most for the locale, so they work while the store does not load. Every other command except `validate` and `hook` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. Without PyYAML the CLI exits with 2, or silently with 0 when `--hook` is given; `hook` then answers `session-start` and `prompt` with one line about the missing PyYAML and stays silent on `pre-tool`.
 
 ## Hooks
 
@@ -585,7 +604,7 @@ gate:
 
 | event | agent event | does |
 |---|---|---|
-| `session-start` | `SessionStart` | the `active` summary, as `active --hook` |
+| `session-start` | `SessionStart` | the `active` summary, as `active --hook`, preceded by the [update notice](#update-notice) |
 | `prompt` | `UserPromptSubmit` | approval mark and positions, see below; silent on messages of other agents |
 | `pre-tool` | `PreToolUse` | refuses the tool call by the rules below |
 
@@ -601,3 +620,37 @@ gate:
 3. **Frozen code.** With `workspace_gate`: the nearest directory above the path holding `.git` is a work directory when a key gate finds a key in its name and `worktrees(ctx, {key})` of the workspace gate returns it. Each existing, not archived subject of that key (in the store and its other checkouts) is checked: the first gate of a `blocks_code` step that does not pass refuses the edit, with `hook.deny_plan` carrying its step text. A key without a subject is not refused.
 
 Edits by `Bash` are not checked by rules 2 and 3.
+
+## Vendored copy
+
+A store may keep its own copy of the engine, so the whole team runs one version through git. How a team installs and updates it is in [updating.md](updating.md).
+
+| path under the store root | content |
+|---|---|
+| `.svod/lib/svod/` | the engine package, locale files included |
+| `.svod/skills/<name>/` | the skills of the release (`skills/` of the Svod repository) |
+| `.svod/VERSION` | YAML: `version` (the engine version), `source` (git URL or local path it was fetched from), `ref` (the tag or branch taken) |
+| `.svod/MANIFEST` | one line per file under `lib/` and `skills/`: its sha256, two spaces, its POSIX path relative to `.svod/`; sorted by path |
+| `.svod/.gitignore` | keeps byte-code (`__pycache__/`) out of the repository |
+
+Byte-code files (`__pycache__/`, `*.pyc`) are neither listed nor checked. The integration scripts are not copied.
+
+**Launcher.** Every `svod` command first looks for the store it works on: `--root`, else upwards from the working directory; for `hook`, the [store of the session](#hooks), from the event read once on stdin. When that store has `.svod/lib/svod` and the running engine is not that package, the command is run again as `python -m svod.cli <the same arguments>` with `.svod/lib` first on `PYTHONPATH` and the event passed on stdin; the exit code is that of the copy. `SVOD_LAUNCHED` (set to the `.svod/lib` handed over to) keeps it from handing over twice. `install` and `update` are never handed over: the engine at hand runs them, so a broken copy can still be replaced. Without a copy the installed engine runs, as before. Hooks and setup scripts keep calling plain `svod`.
+
+**Integrity.** `validate` compares the files under `.svod/lib/` and `.svod/skills/` with `MANIFEST`: a changed, added or removed file is the error `vendored copy modified: <files>; run svod update --to <ref> to restore`; a copy without `MANIFEST` is an error too. Without `.svod/` there is no check.
+
+**install and update.** `svod install [--from <git URL or path>] [--to <ref>]` creates `.svod/`; `svod update` with the same flags replaces it. The source defaults to `source` of `.svod/VERSION`, for `install` to the Svod repository; a local path to a clone works the same (it is cloned too, so exactly the ref is taken). `--to` defaults to the newest tag `vX.Y.Z` of the source, by semantic version. Steps:
+
+1. `git clone --depth 1 --branch <ref>` into a temporary directory; a failure leaves the store untouched.
+2. `svod/` of the clone becomes `.svod/lib/svod/`, `skills/` becomes `.svod/skills/`; `VERSION` and `MANIFEST` are written. The copy is assembled in a directory next to `.svod/` and renamed into place.
+3. The new copy runs `migrate --since <old version>` (for `install`, the version of the engine at hand), then `validate`.
+4. The releases of `CHANGELOG.md` of the source after the old version up to the new one are printed, then the **Migration** notes they carry, then a reminder: nothing is committed, review `git diff`, commit, open a pull request.
+
+### Migrations
+
+Versions are semantic; before 1.0 a minor release may break a store. `svod/migrations.py` holds `MIGRATIONS`, an ordered registry of `Migration(version, apply)`: `apply(root)` changes the store and returns `Change(key, facts)` items, rendered with the locale. `migrate --since <old>` applies every migration whose version is after `<old>` and up to the running engine, oldest first. Helpers: `rename_config_key(root, old, new)` renames a top-level key of `svod.yaml` keeping every other line, `rename_file(root, old, new)` renames a path under the root. Each release of `CHANGELOG.md` has a `### Migration` subsection describing them and any manual step, `none` when there is nothing.
+
+### Update notice
+
+With `update_check` on (the default) and a copy in the store, `hook session-start` and `active --hook` run `git ls-remote --tags <source>` (timeout 3 s) at most once a day and, when a tag is newer than `version` of `.svod/VERSION`, start the summary with `update.available`. The time and the newest release are cached in `svod-update-check.json` in the git common directory of the store, never committed; a failed check is cached too and says nothing. A store outside git is not checked.
+

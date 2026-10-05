@@ -129,7 +129,7 @@ def store_root(event, fallback=None):
 
     None when neither lies in a store.
     """
-    from .config import CONFIG_FILE, find_root
+    from .paths import CONFIG_FILE, find_root
     for candidate in (os.environ.get(PROJECT_ENV), event.get(FIELD_CWD)):
         if isinstance(candidate, str) and candidate:
             root = find_root(Path(candidate).expanduser())
@@ -259,7 +259,9 @@ def session_start(event, fallback):
     runtime, reason = load(root)
     if runtime is None:
         return context_output(EVENT_SESSION_START, broken_text(root, reason))
+    from .notice import update_notice, with_notice
     lines = summarize(context_of(runtime), runtime.pipelines, False)
+    lines = with_notice(lines, update_notice(runtime.config, runtime.locale))
     return hook_payload(runtime.locale, lines) if lines else None
 
 

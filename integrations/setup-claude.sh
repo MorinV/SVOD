@@ -1,5 +1,6 @@
 #!/bin/bash
-# Connect svod to Claude Code: hooks in settings.json and the skills of this repository.
+# Connect svod to Claude Code: hooks in settings.json and the skills, those of the copy kept
+# by the store when it has one, else of this repository.
 #
 #   integrations/setup-claude.sh [store]
 #
@@ -15,7 +16,7 @@ HOME_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 BASE="$(svod_command "${1:-}")"
 
 register_hooks "$HOME_DIR/settings.json" "$BASE"
-link_skills "$HOME_DIR/skills"
+link_skills "$HOME_DIR/skills" "${1:-}"
 
 echo
 echo "Done. New Claude Code sessions run the svod hooks."

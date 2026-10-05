@@ -4,6 +4,7 @@
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP_SUFFIX=".bak-svod"
 CONFIG_FILE="svod.yaml"
+VENDORED_SKILLS=".svod/skills"
 EXIT_USAGE=2
 
 # Prints the base command of the hooks: svod from PATH, else the module of this repository;
@@ -26,11 +27,25 @@ register_hooks() {
     python3 "$REPO/integrations/register_hooks.py" "$1" "$2" "$BACKUP_SUFFIX"
 }
 
-# Links every skill directory of this repository into the given skills directory.
+# Directory the skills are linked from: the copy kept by the store when it has one,
+# else this repository: skills_source [store].
+skills_source() {
+    local store="${1:-}"
+    if [ -n "$store" ] && [ -d "$store/$VENDORED_SKILLS" ]; then
+        (cd "$store/$VENDORED_SKILLS" && pwd)
+    else
+        printf '%s' "$REPO/skills"
+    fi
+}
+
+# Links every skill directory of the skills source into the given skills directory:
+# link_skills <target> [store].
 link_skills() {
-    local target="$1" skill
+    local target="$1" skills_dir skill
+    skills_dir="$(skills_source "${2:-}")"
     mkdir -p "$target"
-    for file in "$REPO"/skills/*/SKILL.md; do
+    for file in "$skills_dir"/*/SKILL.md; do
+        [ -e "$file" ] || continue
         skill="$(dirname "$file")"
         ln -sfn "$skill" "$target/$(basename "$skill")"
         echo "-> skill $(basename "$skill"): $target"

@@ -1,10 +1,13 @@
 """Command line entry of svod."""
 import argparse
 import importlib.util
+import io
 import sys
 from pathlib import Path
 
+from svod import __version__
 from svod.hooks import EVENTS, run as run_hook
+from svod.launcher import launch
 
 PROG = "svod"
 EXIT_OK = 0
@@ -19,6 +22,10 @@ CMD_RENDER = "render"
 CMD_INIT = "init"
 CMD_APPROVE = "approve"
 CMD_HOOK = "hook"
+CMD_INSTALL = "install"
+CMD_UPDATE = "update"
+CMD_MIGRATE = "migrate"
+DELIVERY_COMMANDS = (CMD_INSTALL, CMD_UPDATE)
 YAML_MODULE = "yaml"
 ERROR_INDENT = "  "
 
@@ -27,6 +34,7 @@ def build_parser():
     """Argument parser with one subcommand per mode."""
     parser = argparse.ArgumentParser(prog=PROG)
     parser.add_argument("--root", help="store root holding svod.yaml")
+    parser.add_argument("--version", action="version", version=f"{PROG} {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser(CMD_VALIDATE, help="check declarations, locale keys and registries")
     status = commands.add_parser(CMD_STATUS, help="position of a task or container")
@@ -47,6 +55,15 @@ def build_parser():
     init.add_argument("--login", help="login of the person")
     init.add_argument("--email", help="email of the person, git user.email by default")
     init.add_argument("--force", action="store_true", help="overwrite an existing local config")
+    for name, text in ((CMD_INSTALL, "put a copy of the engine into the store (.svod)"),
+                       (CMD_UPDATE, "replace the copy of the engine in the store")):
+        delivery = commands.add_parser(name, help=text)
+        delivery.add_argument("--from", dest="source",
+                              help="git URL or local clone of Svod; the recorded source by default")
+        delivery.add_argument("--to", dest="ref", help="tag or branch; the newest vX.Y.Z by default")
+    migrate = commands.add_parser(CMD_MIGRATE,
+                                  help="apply the store migrations of the versions after a version")
+    migrate.add_argument("--since", required=True, help="version the store was used with")
     return parser
 
 
@@ -143,6 +160,31 @@ def init_local(root, args):
     return EXIT_OK
 
 
+def migrate(root, since):
+    """Apply the migrations after since up to this engine; print what they changed."""
+    from svod import keys
+    from svod.migrations import apply
+    from svod.versions import parse
+
+    locale = error_locale(root)
+    if parse(since) is None:
+        print(locale.text(keys.MIGRATE_BAD_VERSION, version=since), file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        applied = apply(root, since, __version__)
+    except Exception as exc:
+        print(locale.text(keys.MIGRATE_FAILED, version=__version__,
+                          reason=f"{type(exc).__name__}: {exc}"), file=sys.stderr)
+        return EXIT_FINDINGS
+    if not applied:
+        print(locale.text(keys.MIGRATE_NONE, old=since, new=__version__))
+    for version, changes in applied:
+        print(locale.text(keys.MIGRATE_VERSION, version=version))
+        for change in changes:
+            print(locale.text(change.key, **change.facts))
+    return EXIT_OK
+
+
 def run(args):
     """Dispatch the parsed command; return the exit code."""
     from svod import keys
@@ -164,18 +206,33 @@ def run(args):
         return EXIT_USAGE
     if args.command == CMD_INIT:
         return init_local(root, args)
+    if args.command in DELIVERY_COMMANDS:
+        from svod.update import deliver
+        return deliver(root, error_locale(root), args.command == CMD_INSTALL, args.source,
+                       args.ref)
+    if args.command == CMD_MIGRATE:
+        return migrate(root, args.since)
 
+    copy_errors = []
+    if args.command == CMD_VALIDATE:
+        from svod.vendor import copy_errors as vendored_errors
+        copy_errors = vendored_errors(root)
     try:
         runtime = load_runtime(root)
     except LoadError as exc:
         locale = error_locale(root)
         if args.command == CMD_VALIDATE:
-            print_errors(locale.text(keys.VALIDATE_FAILED, count=len(exc.errors)), exc.errors)
+            errors = exc.errors + copy_errors
+            print_errors(locale.text(keys.VALIDATE_FAILED, count=len(errors)), errors)
             return EXIT_FINDINGS
         print_errors(locale.text(keys.ERROR_LOAD), exc.errors)
         return EXIT_USAGE
 
     if args.command == CMD_VALIDATE:
+        if copy_errors:
+            print_errors(runtime.locale.text(keys.VALIDATE_FAILED, count=len(copy_errors)),
+                         copy_errors)
+            return EXIT_FINDINGS
         print(runtime.locale.text(keys.VALIDATE_OK, count=len(runtime.pipelines)))
         return EXIT_OK
     ctx = Context(runtime.config, runtime.locale, bindings=runtime.bindings,
@@ -188,14 +245,23 @@ def run(args):
         from svod.approve import approve
         return emit(approve(ctx, runtime.pipelines, args.query))
     lines = summarize(ctx, runtime.pipelines, args.all)
+    if args.hook:
+        from svod.notice import update_notice, with_notice
+        lines = with_notice(lines, update_notice(runtime.config, runtime.locale))
     if lines:
         print(hook_payload(runtime.locale, lines) if args.hook else "\n".join(lines))
     return EXIT_OK
 
 
 def main(argv=None):
-    """Parse arguments and run; exit quietly in hook mode without PyYAML."""
+    """Hand over to the copy of the store, or parse arguments and run.
+
+    Exits quietly in hook mode without PyYAML.
+    """
     argv = sys.argv[1:] if argv is None else list(argv)
+    launched = launch(argv)
+    if launched.code is not None:
+        return launched.code
     if importlib.util.find_spec(YAML_MODULE) is None and CMD_HOOK not in argv:
         if HOOK_FLAG in argv:
             return EXIT_OK
@@ -203,7 +269,8 @@ def main(argv=None):
         return EXIT_USAGE
     args = build_parser().parse_args(argv)
     if args.command == CMD_HOOK:
-        return run_hook(args.event, args.root)
+        stream = io.StringIO(launched.stdin) if launched.stdin is not None else None
+        return run_hook(args.event, args.root, stream)
     return run(args)
 
 

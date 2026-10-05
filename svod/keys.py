@@ -46,6 +46,27 @@ APPROVE_FOREIGN_KEY = "approve.foreign_key"
 APPROVE_NO_GATE = "approve.no_gate"
 APPROVE_NO_APPROVER = "approve.no_approver"
 
+UPDATE_EXISTS = "update.exists"
+UPDATE_MISSING = "update.missing"
+UPDATE_FETCH_FAILED = "update.fetch_failed"
+UPDATE_NO_TAGS = "update.no_tags"
+UPDATE_CLONE_FAILED = "update.clone_failed"
+UPDATE_NOT_SVOD = "update.not_svod"
+UPDATE_INSTALLED = "update.installed"
+UPDATE_UPDATED = "update.updated"
+UPDATE_CHANGELOG = "update.changelog"
+UPDATE_MANUAL = "update.manual"
+UPDATE_MANUAL_NONE = "update.manual_none"
+UPDATE_INVALID = "update.invalid"
+UPDATE_NEXT = "update.next"
+UPDATE_AVAILABLE = "update.available"
+MIGRATE_VERSION = "migrate.version"
+MIGRATE_NONE = "migrate.none"
+MIGRATE_FAILED = "migrate.failed"
+MIGRATE_BAD_VERSION = "migrate.bad_version"
+MIGRATE_RENAMED_KEY = "migrate.renamed_key"
+MIGRATE_RENAMED_FILE = "migrate.renamed_file"
+
 DOC_GENERATED = "doc.generated"
 DOC_ENTRY = "doc.entry"
 DOC_DONE = "doc.done"
@@ -152,6 +173,26 @@ CORE_KEYS = (
     APPROVE_FOREIGN_KEY,
     APPROVE_NO_GATE,
     APPROVE_NO_APPROVER,
+    UPDATE_EXISTS,
+    UPDATE_MISSING,
+    UPDATE_FETCH_FAILED,
+    UPDATE_NO_TAGS,
+    UPDATE_CLONE_FAILED,
+    UPDATE_NOT_SVOD,
+    UPDATE_INSTALLED,
+    UPDATE_UPDATED,
+    UPDATE_CHANGELOG,
+    UPDATE_MANUAL,
+    UPDATE_MANUAL_NONE,
+    UPDATE_INVALID,
+    UPDATE_NEXT,
+    UPDATE_AVAILABLE,
+    MIGRATE_VERSION,
+    MIGRATE_NONE,
+    MIGRATE_FAILED,
+    MIGRATE_BAD_VERSION,
+    MIGRATE_RENAMED_KEY,
+    MIGRATE_RENAMED_FILE,
     DOC_GENERATED,
     DOC_ENTRY,
     DOC_DONE,

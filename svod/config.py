@@ -5,9 +5,9 @@ from pathlib import Path
 import yaml
 
 from .errors import LoadError
+from .paths import CONFIG_FILE, find_root
 from .yamlio import ENCODING, read_yaml
 
-CONFIG_FILE = "svod.yaml"
 FIELD_LOCALE = "locale"
 FIELD_PROFILE = "profile"
 FIELD_DEFAULT_BRANCH = "default_branch"
@@ -20,6 +20,7 @@ FIELD_APPROVAL = "approval"
 FIELD_PROFILE_CONFIG = "profile_config"
 FIELD_WORKSPACE_GATE = "workspace_gate"
 FIELD_MAIN_READ_ONLY = "main_checkout_read_only"
+FIELD_UPDATE_CHECK = "update_check"
 APPROVAL_PHRASES = "phrases"
 APPROVAL_WINDOW = "window_minutes"
 APPROVAL_FIELDS = frozenset({APPROVAL_PHRASES, APPROVAL_WINDOW})
@@ -28,7 +29,7 @@ REQUIRED_FIELDS = (FIELD_LOCALE, FIELD_PROFILE)
 STRING_FIELDS = (FIELD_LOCALE, FIELD_PROFILE, FIELD_DEFAULT_BRANCH, FIELD_WORKSPACES,
                  FIELD_BINDINGS, FIELD_LOCAL_CONFIG, FIELD_WORKSPACE_GATE)
 LIST_FIELDS = (FIELD_ACTIVE_ORDER, FIELD_RENDER_EXCLUDE)
-BOOL_FIELDS = (FIELD_MAIN_READ_ONLY,)
+BOOL_FIELDS = (FIELD_MAIN_READ_ONLY, FIELD_UPDATE_CHECK)
 KNOWN_FIELDS = frozenset(STRING_FIELDS + LIST_FIELDS + BOOL_FIELDS
                          + (FIELD_APPROVAL, FIELD_PROFILE_CONFIG))
 DEFAULT_BRANCH_FALLBACK = "origin/main"
@@ -59,15 +60,7 @@ class Config:
     profile_config: dict = field(default_factory=dict)
     workspace_gate: str | None = None
     main_checkout_read_only: bool = False
-
-
-def find_root(start):
-    """Nearest directory from start upwards holding the config file, or None."""
-    start = Path(start).resolve()
-    for candidate in (start, *start.parents):
-        if (candidate / CONFIG_FILE).is_file():
-            return candidate
-    return None
+    update_check: bool = True
 
 
 def string_errors(path, data, keys):
@@ -165,6 +158,7 @@ def load_config(root, local=True):
         profile_config=data.get(FIELD_PROFILE_CONFIG) or {},
         workspace_gate=data.get(FIELD_WORKSPACE_GATE),
         main_checkout_read_only=data.get(FIELD_MAIN_READ_ONLY, False),
+        update_check=data.get(FIELD_UPDATE_CHECK, True),
     )
 
 

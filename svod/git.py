@@ -1,4 +1,5 @@
 """Git invocation with a timeout and explicit failure."""
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,19 +25,34 @@ class GitResult:
     error: str = ""
 
 
-def run_git(cwd, *args):
-    """Run git in cwd; never raises, failures carry the first line of stderr as the reason."""
+def run_git(cwd, *args, timeout=GIT_TIMEOUT_SEC, env=None):
+    """Run git in cwd; never raises, failures carry the first line of stderr as the reason.
+
+    env, when given, is added to the environment of the process.
+    """
+    full_env = {**os.environ, **env} if env else None
     try:
         proc = subprocess.run([GIT, "-C", str(cwd), *args], capture_output=True, text=True,
-                              encoding=ENCODING, timeout=GIT_TIMEOUT_SEC)
+                              encoding=ENCODING, timeout=timeout, env=full_env)
     except subprocess.TimeoutExpired:
-        return GitResult(ok=False, error=f"git {' '.join(args)}: timeout {GIT_TIMEOUT_SEC}s")
+        return GitResult(ok=False, error=f"git {' '.join(args)}: timeout {timeout}s")
     except OSError as exc:
         return GitResult(ok=False, error=f"git {' '.join(args)}: {exc}")
     if proc.returncode != 0:
         first = next(iter(proc.stderr.strip().splitlines()), "")
         return GitResult(ok=False, error=f"git {' '.join(args)}: {first}")
     return GitResult(ok=True, out=proc.stdout.strip())
+
+
+def common_dir_file(root, name):
+    """File of the given name in the git common directory of root, shared by its worktrees.
+
+    None when root is not in a git repository.
+    """
+    out = run_git(root, "rev-parse", "--git-common-dir")
+    if not out.ok:
+        return None
+    return (Path(root) / out.out).resolve() / name
 
 
 @dataclass(frozen=True)

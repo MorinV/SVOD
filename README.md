@@ -89,8 +89,20 @@ Copy `examples/task`, then change the pipeline: add a step, a gate, a text. The 
 | `svod approve <key>` | records a human approval |
 | `svod render <pipeline> --write` | refreshes the pipeline diagram in your docs |
 | `svod init` | creates the per-person local config |
+| `svod install`, `svod update` | puts a release of the engine into the store, replaces it |
 
 The full format — every key of `svod.yaml`, pipelines, steps, gates, providers, texts and hooks — is in [docs/reference.md](docs/reference.md).
+
+## Updating
+
+A team store can keep its own copy of the engine in `.svod/`, so everyone runs the version the store pins, whatever `svod` they installed:
+
+```bash
+svod install          # once: copy the newest release into .svod/, then commit it
+svod update           # later: replace the copy, migrate the store, show the changelog; then review git diff and open a pull request
+```
+
+`svod validate` catches hand edits of the copy, and the session start summary says when a newer release is out. Closed networks, versions and migrations: [docs/updating.md](docs/updating.md); history: [CHANGELOG.md](CHANGELOG.md).
 
 ## Status
 

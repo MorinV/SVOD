@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path
 
-from .git import run_git
+from .git import common_dir_file
 from .yamlio import ENCODING
 
 MARK_FILE = "svod-approval.json"
@@ -122,10 +122,7 @@ def digest_matches(base, patterns, ignore, sha, strip=None):
 
 def mark_path(root):
     """Mark file in the git common directory of the store, shared by its worktrees; None off git."""
-    out = run_git(root, "rev-parse", "--git-common-dir")
-    if not out.ok:
-        return None
-    return (Path(root) / out.out).resolve() / MARK_FILE
+    return common_dir_file(root, MARK_FILE)
 
 
 def now():
