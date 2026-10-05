@@ -8,7 +8,7 @@
 - A **store** is the directory tree rooted at `svod.yaml`, usually a git repository.
 - A **subject** is one instance the pipeline is evaluated for (a change, a container directory, a document), supplied by a **provider**.
 - A **position** is the result of evaluating a pipeline for one subject: marks, the next step, the code freeze, warnings, order violations.
-- The engine reads `svod.yaml` at the store root, loads a **profile** (pipelines, own gates, texts) and answers `status`, `active`, `render` and `validate`.
+- The engine reads `svod.yaml` at the store root, loads a **profile** (pipelines, own gates, texts) and answers `status`, `active`, `render` and `validate`; as [hooks](#hooks) of a coding agent it brings the summary and positions into the session and guards the approval and frozen code.
 
 How to read this: every table lists the keys the validator accepts; "req" means the key is required. Anything not listed is rejected with `unknown key`. The code in `svod/` is the source of truth; `tests/profile/` is a complete working profile to copy from.
 
@@ -28,6 +28,8 @@ Its presence marks the store root: the CLI walks up from the working directory t
 | `local_config` | no | string / none | per-person config file relative to the root, kept out of version control; see [Local config](#local-config) |
 | `approval` | no | mapping / none | how a person approves in the chat; see [Approval by a person](#approval-by-a-person) |
 | `profile_config` | no | mapping / `{}` | settings of the profile and of the store's own scripts; the core only checks that it is a mapping and exposes it as `ctx.config.profile_config`, it never reads a key inside |
+| `workspace_gate` | no | string / none | name of a gate with a `worktrees(ctx, keys)` method (see [Writing a custom gate](#writing-a-custom-gate)); it tells the `pre-tool` hook which directories are work directories of a subject; without it that check is off |
+| `main_checkout_read_only` | no | bool / `false` | the `pre-tool` hook refuses edits in the main checkout of the store repository, except paths git ignores; work goes into worktrees |
 
 ```yaml
 locale: en
@@ -41,6 +43,8 @@ local_config: .local.yaml
 approval:
   phrases: [approve, "ok, go"]
   window_minutes: 10
+workspace_gate: worktree
+main_checkout_read_only: true
 profile_config:
   publishing: { mode: review }
 ```
@@ -51,7 +55,7 @@ An approval is two acts: a person writes a phrase in the chat, then the agent re
 
 | key | req | type / default | meaning |
 |---|---|---|---|
-| `phrases` | no | list of strings / `[]` | phrases that approve; matching them in a prompt is up to the prompt hook of the store |
+| `phrases` | no | list of strings / `[]` | phrases that approve; the `prompt` [hook](#hooks) matches them against a whole prompt |
 | `window_minutes` | no | positive int / `10` | how long a mark stays fresh |
 
 The mark is `svod-approval.json` in the git common directory of the store (so every worktree of the store shares it, and it is never committed): `{"at": "<ISO time with offset>", "keys": [<keys named in the prompt>]}`. `svod.approval.write_mark(root, keys)` writes it. `approve` accepts a mark younger than the window whose `keys`, when not empty, include a key of the subject (case-insensitively), and removes it after writing: one mark approves once.
@@ -99,7 +103,8 @@ Profile layout:
 | key | req | type / default | meaning |
 |---|---|---|---|
 | `provider` | yes | string | provider name, see [Subject providers](#subject-providers) |
-| `key_gate` | no | string | name of a `KeyGate`; recognises tracker keys in queries and texts; instantiated without params |
+| `key_gate` | no | string | name of a `KeyGate`; recognises tracker keys in queries and texts |
+| `key_params` | no | mapping / `{}` | params of the `key_gate`, validated by it; only together with `key_gate` |
 | `params` | no | mapping / `{}` | provider params |
 
 `violations`: keys are `<later step>.<earlier step>`, values are locale keys (no facts). Both ids must exist, the later step must come after the earlier one, and the earlier step must be `required: true`.
@@ -451,6 +456,13 @@ Core keys (all required in every core locale file):
 | `render.unknown` | `{name}` |
 | `render.written`, `render.current` | `{path}` |
 | `render.no_markers` | `{name}`, `{marker}` |
+| `hook.engine_broken` | `{reason}` |
+| `hook.position_head`, `hook.position_tail` | — |
+| `hook.approval_marked` | `{minutes}` |
+| `hook.approval_joiners` | — (words joining keys after an approval phrase, separated by spaces) |
+| `hook.deny_approval` | `{fields}`, `{file}` |
+| `hook.deny_plan` | `{keys}`, `{text}` |
+| `hook.deny_main` | `{main}` |
 | `init.written`, `init.exists` | `{path}` |
 | `init.not_configured` | `{field}` |
 | `init.need_login`, `init.prompt_login` | — |
@@ -502,6 +514,8 @@ A profile gate is a class in `<profile>/gates/<module>.py`, registered by the mo
 `ctx` carries `config` (`root`, `default_branch`, `workspaces`, …), `locale` (may be `None` in tests), `today`, `bindings`, `root`, `pipelines` — loaded pipelines by name, for a gate that consults another pipeline (for example its subject provider as `ctx.pipelines[name].subject.impl`) — and `cache`, the memory of one run shared by every context rooted in another checkout: `cache.git(cwd, *args)` runs git once per directory and arguments, `cache.prefetch([(cwd, args), …])` runs the calls not known yet in parallel (a pool of `GIT_WORKERS` threads), `cache.value(key, compute)` keeps a value computed from files. Nothing is written to disk: hooks and sessions run in parallel. A gate reads git through `ctx.cache`, not `run_git`; `worktree_list` and `changed_paths` of `svod.git` take it as `run`.
 
 `Result(status, facts={}, display=None, reason=None)`: `status` is `Status.PASS`, `Status.FAIL` or `Status.UNKNOWN`; `facts` fill texts; `display` replaces the standard mark line; `reason` is shown for UNKNOWN. Helpers: `verdict(ok, **facts)` and `unknown(reason, **facts)`.
+
+**Workspace gate.** The gate named by `workspace_gate` in `svod.yaml` must be instantiable without params and implement `worktrees(ctx, keys)`: `(pairs, errors)` where every pair is `(directory, repository name)` of a work directory of the keys and `errors` lists git failures. The `pre-tool` hook only uses the directory. `examples/task/profile/gates/git_work.py` has one.
 
 `KeyGate(Gate)` additionally implements `match(query)` (the key named by a query, or `None`) and `find(text)` (set of keys in a text); it is used as `subject.key_gate`. Its default `evaluate` passes when the subject has keys, with fact `keys`.
 
@@ -558,6 +572,32 @@ gate:
 | `active` | `--all`, `--hook` | summary of open work, including subjects changed in other checkouts of the store repository; `--all` expands `theirs`; `--hook` prints SessionStart hook JSON (`hookSpecificOutput.additionalContext`, with `active.hook_tail` appended); prints nothing when nothing is open | 0 |
 | `render <pipeline>` | `--write` | prints the documentation block, or writes it between the markers | 0, 1 no markers, 2 unknown pipeline |
 | `approve <query>` | — | records the approval of the one open subject the query names: its first `approval` step gate gets `<marker>` (today), `<marker>_by` (login, else email of the local config, else git email) and, with `bind`, `<marker>_sha`; lines are replaced or appended one by one, every other line of the file stays; nothing is committed. Needs a fresh mark (see [Approval by a person](#approval-by-a-person)) and consumes it | 0 recorded, 1 refused (no fresh mark, a mark for other keys, no approver, no approval step), 2 not found or ambiguous |
+| `hook <event>` | — | answers one agent hook event, `session-start`, `prompt` or `pre-tool`, read as JSON on stdin; see [Hooks](#hooks) | 0 always |
 | `init` | `--login`, `--email`, `--force` | writes the local config; without `--login` asks at a terminal, and fails without one; the email defaults to `git config user.email`; an existing file is kept unless `--force` | 0 written, 1 exists, 2 no login or no `local_config` |
 
-`init` reads `svod.yaml` only, so it works while the local config is broken. Every other command except `validate` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. Without PyYAML the CLI exits with 2, or silently with 0 when `--hook` is given.
+`init` reads `svod.yaml` only, so it works while the local config is broken. Every other command except `validate` and `hook` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. Without PyYAML the CLI exits with 2, or silently with 0 when `--hook` is given; `hook` then answers `session-start` and `prompt` with one line about the missing PyYAML and stays silent on `pre-tool`.
+
+## Hooks
+
+`svod hook <event>` is registered as a command hook of Claude Code or Codex (`integrations/setup-claude.sh`, `integrations/setup-codex.sh`). Both agents send the same event JSON (`hook_event_name`, `cwd`, `prompt`, `tool_name`, `tool_input`); the answer is `hookSpecificOutput` with `hookEventName` and either `additionalContext` or `permissionDecision: deny` with `permissionDecisionReason`. Nothing to say prints nothing. The exit code is always 0. A store that does not load is reported as `hook.engine_broken` in `additionalContext` instead of silence (for `pre-tool`, only for file edits).
+
+**The store of the session** is the one holding `CLAUDE_PROJECT_DIR`, else the event `cwd`; else the store at `--root`, a fallback for sessions in a work directory outside the store. No store: silence.
+
+| event | agent event | does |
+|---|---|---|
+| `session-start` | `SessionStart` | the `active` summary, as `active --hook` |
+| `prompt` | `UserPromptSubmit` | approval mark and positions, see below; silent on messages of other agents |
+| `pre-tool` | `PreToolUse` | refuses the tool call by the rules below |
+
+`prompt`:
+
+- **Approval.** When the prompt, as a whole, is one of `approval.phrases` (letter case ignored), optionally followed by keys joined by separators or the words of `hook.approval_joiners`, and closing `.` or `!`, the hook writes the approval mark with those keys (`svod.approval.write_mark`) and says so (`hook.approval_marked`). A phrase inside a longer text does not approve.
+- **Positions.** Keys the `key_gate` of any pipeline recognises in the prompt, then exact names (the last path segment of the id, at least 8 characters, as a whole word) of open subjects, at most three queries. For each, the `status` block of every existing subject it resolves to, between `hook.position_head` and `hook.position_tail`. A key with nothing in the store adds nothing.
+
+`pre-tool` watches `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash` and `apply_patch` (Codex; the files of the patch are read from its `*** Update File:`, `*** Add File:`, `*** Delete File:` and `*** Move to:` lines, relative to `cwd`). It refuses:
+
+1. **Approval fields.** A file whose path ends with the `file` of an `approval` step gate of any pipeline is a metadata file; its fields are `<marker>`, `<marker>_by` and `<marker>_sha`. Refused: `Write` that changes their lines, `Edit`/`MultiEdit` whose old or new text names one, an `apply_patch` section whose changed lines name one, and a `Bash` command naming the file and a field that writes into it (`>`/`>>` to it, `sed -i`, `perl -i`, `yq -i`, `tee` to it, `cp`/`mv` onto it, a `python -c` or heredoc script holding its path as a string literal). Text: `hook.deny_approval`. Only `svod approve` writes them.
+2. **Read-only main checkout.** With `main_checkout_read_only` in the `svod.yaml` of the store holding the path: a path in the first checkout of `git worktree list` of that store, not in a nested repository and not ignored by git. Text: `hook.deny_main`.
+3. **Frozen code.** With `workspace_gate`: the nearest directory above the path holding `.git` is a work directory when a key gate finds a key in its name and `worktrees(ctx, {key})` of the workspace gate returns it. Each existing, not archived subject of that key (in the store and its other checkouts) is checked: the first gate of a `blocks_code` step that does not pass refuses the edit, with `hook.deny_plan` carrying its step text. A key without a subject is not refused.
+
+Edits by `Bash` are not checked by rules 2 and 3.

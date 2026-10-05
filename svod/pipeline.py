@@ -17,6 +17,7 @@ FIELD_VIOLATIONS = "violations"
 FIELD_HEADER = "header"
 FIELD_PROVIDER = "provider"
 FIELD_KEY_GATE = "key_gate"
+FIELD_KEY_PARAMS = "key_params"
 FIELD_PARAMS = "params"
 FIELD_IN_PROGRESS = "in_progress"
 FIELD_FACT = "fact"
@@ -40,7 +41,7 @@ PIPELINE_FIELDS = frozenset({FIELD_PIPELINE, FIELD_SUBJECT, FIELD_ACTIVE, FIELD_
                              FIELD_DONE, FIELD_MISSING, FIELD_STEPS, FIELD_VIOLATIONS,
                              FIELD_HEADER})
 PIPELINE_REQUIRED = (FIELD_PIPELINE, FIELD_SUBJECT, FIELD_STEPS)
-SUBJECT_FIELDS = frozenset({FIELD_PROVIDER, FIELD_KEY_GATE, FIELD_PARAMS})
+SUBJECT_FIELDS = frozenset({FIELD_PROVIDER, FIELD_KEY_GATE, FIELD_KEY_PARAMS, FIELD_PARAMS})
 ACTIVE_FIELDS = frozenset({FIELD_IN_PROGRESS, FIELD_ITEM, FIELD_HEADINGS})
 IN_PROGRESS_FIELDS = frozenset({FIELD_GATE, FIELD_PARAMS, FIELD_FACT})
 ENTRY_FIELDS = frozenset({FIELD_GATE, FIELD_PARAMS, FIELD_WHEN, FIELD_SEVERITY, FIELD_TEXT})
@@ -106,6 +107,7 @@ class SubjectSpec:
     params: dict
     impl: object = None
     key_impl: object = None
+    key_params: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -219,13 +221,13 @@ class _Parser:
             return False
         return value
 
-    def params(self, data, where):
-        """Optional params mapping."""
-        value = data.get(FIELD_PARAMS, {})
+    def params(self, data, where, key=FIELD_PARAMS):
+        """Optional params mapping under the key."""
+        value = data.get(key, {})
         if value is None:
             return {}
         if not isinstance(value, dict):
-            self.error(where, f"{FIELD_PARAMS} must be a mapping")
+            self.error(where, f"{key} must be a mapping")
             return {}
         return value
 
@@ -277,6 +279,7 @@ class _Parser:
             provider=self.string(data, FIELD_PROVIDER, where) or "",
             key_gate=self.string(data, FIELD_KEY_GATE, where),
             params=self.params(data, where),
+            key_params=self.params(data, where, FIELD_KEY_PARAMS),
         )
 
     def active(self, data):
@@ -439,11 +442,14 @@ def bind_pipeline(pipeline, gates, providers):
 
     spec = pipeline.subject
     if spec.key_gate:
-        spec.key_impl = make_gate(spec.key_gate, {}, f"{FIELD_SUBJECT}.{FIELD_KEY_GATE}")
+        spec.key_impl = make_gate(spec.key_gate, spec.key_params,
+                                  f"{FIELD_SUBJECT}.{FIELD_KEY_GATE}")
         if spec.key_impl is not None and not isinstance(spec.key_impl, KeyGate):
             errors.append(f"{prefix}: {FIELD_SUBJECT}.{FIELD_KEY_GATE}: "
                           f"{spec.key_gate} does not recognise keys")
             spec.key_impl = None
+    elif spec.key_params:
+        errors.append(f"{prefix}: {FIELD_SUBJECT}: {FIELD_KEY_PARAMS} needs {FIELD_KEY_GATE}")
     cls = providers.get(spec.provider)
     if cls is None:
         errors.append(f"{prefix}: {FIELD_SUBJECT}: unknown provider: {spec.provider}")

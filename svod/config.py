@@ -18,15 +18,19 @@ FIELD_BINDINGS = "bindings"
 FIELD_LOCAL_CONFIG = "local_config"
 FIELD_APPROVAL = "approval"
 FIELD_PROFILE_CONFIG = "profile_config"
+FIELD_WORKSPACE_GATE = "workspace_gate"
+FIELD_MAIN_READ_ONLY = "main_checkout_read_only"
 APPROVAL_PHRASES = "phrases"
 APPROVAL_WINDOW = "window_minutes"
 APPROVAL_FIELDS = frozenset({APPROVAL_PHRASES, APPROVAL_WINDOW})
 DEFAULT_WINDOW_MINUTES = 10
 REQUIRED_FIELDS = (FIELD_LOCALE, FIELD_PROFILE)
 STRING_FIELDS = (FIELD_LOCALE, FIELD_PROFILE, FIELD_DEFAULT_BRANCH, FIELD_WORKSPACES,
-                 FIELD_BINDINGS, FIELD_LOCAL_CONFIG)
+                 FIELD_BINDINGS, FIELD_LOCAL_CONFIG, FIELD_WORKSPACE_GATE)
 LIST_FIELDS = (FIELD_ACTIVE_ORDER, FIELD_RENDER_EXCLUDE)
-KNOWN_FIELDS = frozenset(STRING_FIELDS + LIST_FIELDS + (FIELD_APPROVAL, FIELD_PROFILE_CONFIG))
+BOOL_FIELDS = (FIELD_MAIN_READ_ONLY,)
+KNOWN_FIELDS = frozenset(STRING_FIELDS + LIST_FIELDS + BOOL_FIELDS
+                         + (FIELD_APPROVAL, FIELD_PROFILE_CONFIG))
 DEFAULT_BRANCH_FALLBACK = "origin/main"
 LOCAL_LOGIN = "login"
 LOCAL_EMAIL = "email"
@@ -53,6 +57,8 @@ class Config:
     approval_phrases: tuple = ()
     approval_window: int = DEFAULT_WINDOW_MINUTES
     profile_config: dict = field(default_factory=dict)
+    workspace_gate: str | None = None
+    main_checkout_read_only: bool = False
 
 
 def find_root(start):
@@ -122,6 +128,8 @@ def load_config(root, local=True):
         if key not in data:
             errors.append(f"{path}: missing key: {key}")
     errors += string_errors(path, data, STRING_FIELDS)
+    errors += [f"{path}: {key} must be a boolean" for key in BOOL_FIELDS
+               if key in data and not isinstance(data[key], bool)]
     if FIELD_APPROVAL in data:
         errors += approval_errors(path, data[FIELD_APPROVAL])
     if not isinstance(data.get(FIELD_PROFILE_CONFIG, {}), dict):
@@ -155,6 +163,8 @@ def load_config(root, local=True):
         approval_phrases=tuple(approval.get(APPROVAL_PHRASES, [])),
         approval_window=approval.get(APPROVAL_WINDOW, DEFAULT_WINDOW_MINUTES),
         profile_config=data.get(FIELD_PROFILE_CONFIG) or {},
+        workspace_gate=data.get(FIELD_WORKSPACE_GATE),
+        main_checkout_read_only=data.get(FIELD_MAIN_READ_ONLY, False),
     )
 
 

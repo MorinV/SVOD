@@ -1,0 +1,12 @@
+locale: en
+profile: profile
+default_branch: origin/main
+workspaces: ..
+active_order: [task]
+bindings: profile/bindings.yaml
+local_config: .svod.local.yaml
+approval:
+  phrases: [approve, approved, lgtm]
+  window_minutes: 10
+workspace_gate: worktree
+main_checkout_read_only: false

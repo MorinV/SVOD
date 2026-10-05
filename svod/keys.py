@@ -72,6 +72,14 @@ RENDER_UNKNOWN = "render.unknown"
 RENDER_WRITTEN = "render.written"
 RENDER_CURRENT = "render.current"
 RENDER_NO_MARKERS = "render.no_markers"
+HOOK_ENGINE_BROKEN = "hook.engine_broken"
+HOOK_POSITION_HEAD = "hook.position_head"
+HOOK_POSITION_TAIL = "hook.position_tail"
+HOOK_APPROVAL_MARKED = "hook.approval_marked"
+HOOK_APPROVAL_JOINERS = "hook.approval_joiners"
+HOOK_DENY_APPROVAL = "hook.deny_approval"
+HOOK_DENY_PLAN = "hook.deny_plan"
+HOOK_DENY_MAIN = "hook.deny_main"
 DESCRIBE_PREFIX = "gate."
 DESCRIBE_EXISTS = "gate.exists"
 DESCRIBE_ARTIFACT_PATH = "gate.artifact_path"
@@ -169,5 +177,13 @@ CORE_KEYS = (
     RENDER_WRITTEN,
     RENDER_CURRENT,
     RENDER_NO_MARKERS,
+    HOOK_ENGINE_BROKEN,
+    HOOK_POSITION_HEAD,
+    HOOK_POSITION_TAIL,
+    HOOK_APPROVAL_MARKED,
+    HOOK_APPROVAL_JOINERS,
+    HOOK_DENY_APPROVAL,
+    HOOK_DENY_PLAN,
+    HOOK_DENY_MAIN,
     *DESCRIBE_KEYS,
 )

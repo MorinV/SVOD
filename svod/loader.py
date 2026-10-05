@@ -3,7 +3,8 @@ from dataclasses import dataclass
 
 from .bindings import check_bindings, load_bindings
 from .config import load_config
-from .errors import LoadError, LocaleError
+from .config import FIELD_WORKSPACE_GATE
+from .errors import LoadError, LocaleError, ParamError
 from .gates import build_registries
 from .keys import CORE_KEYS
 from .locale import load_locale
@@ -12,6 +13,7 @@ from .yamlio import read_yaml
 
 PIPELINES_DIR = "pipelines"
 PIPELINE_GLOB = "*.yaml"
+WORKTREES_METHOD = "worktrees"
 
 
 @dataclass
@@ -23,6 +25,7 @@ class Runtime:
     gates: dict
     pipelines: list
     bindings: object = None
+    workspace_gate: object = None
 
     def by_name(self):
         """Pipelines keyed by name, for gates that consult another pipeline."""
@@ -74,11 +77,28 @@ def description_errors(pipelines, locale):
     return errors
 
 
+def workspace_gate(name, gates):
+    """(instance of the gate naming task workspaces, errors); (None, []) when not configured."""
+    if name is None:
+        return None, []
+    cls = gates.get(name)
+    if cls is None:
+        return None, [f"{FIELD_WORKSPACE_GATE}: unknown gate: {name}"]
+    if not callable(getattr(cls, WORKTREES_METHOD, None)):
+        return None, [f"{FIELD_WORKSPACE_GATE}: {name} has no {WORKTREES_METHOD}(ctx, keys)"]
+    try:
+        return cls(), []
+    except ParamError as exc:
+        return None, [f"{FIELD_WORKSPACE_GATE}: {exc}"]
+
+
 def load_runtime(root):
     """Load the store at root; raise LoadError listing every problem found."""
     config = load_config(root)
     gates, providers = build_registries(config.profile)
     pipelines, errors = load_pipelines(config.profile, gates, providers)
+    workspaces, gate_errors = workspace_gate(config.workspace_gate, gates)
+    errors.extend(gate_errors)
     names = {p.name for p in pipelines}
     for name in config.active_order:
         if name not in names:
@@ -103,4 +123,4 @@ def load_runtime(root):
     if errors:
         raise LoadError(errors)
     return Runtime(config=config, locale=locale, gates=gates, pipelines=pipelines,
-                   bindings=bindings)
+                   bindings=bindings, workspace_gate=workspaces)

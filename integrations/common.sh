@@ -1,0 +1,38 @@
+# Shared by the setup scripts: the svod command for hooks, hook registration, skill links.
+# Sourced, never run on its own.
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BACKUP_SUFFIX=".bak-svod"
+CONFIG_FILE="svod.yaml"
+EXIT_USAGE=2
+
+# Prints the base command of the hooks: svod from PATH, else the module of this repository;
+# with a store argument, that store as the fallback --root.
+svod_command() {
+    local store="${1:-}" base
+    if base="$(command -v svod)"; then
+        printf '%q' "$base"
+    else
+        printf 'PYTHONPATH=%q python3 -m svod.cli' "$REPO"
+    fi
+    if [ -n "$store" ]; then
+        [ -f "$store/$CONFIG_FILE" ] || { echo "No $CONFIG_FILE in $store" >&2; exit "$EXIT_USAGE"; }
+        printf ' --root %q' "$(cd "$store" && pwd)"
+    fi
+}
+
+# Registers the svod hooks in a JSON hooks file: register_hooks <file> <base command>.
+register_hooks() {
+    python3 "$REPO/integrations/register_hooks.py" "$1" "$2" "$BACKUP_SUFFIX"
+}
+
+# Links every skill directory of this repository into the given skills directory.
+link_skills() {
+    local target="$1" skill
+    mkdir -p "$target"
+    for file in "$REPO"/skills/*/SKILL.md; do
+        skill="$(dirname "$file")"
+        ln -sfn "$skill" "$target/$(basename "$skill")"
+        echo "-> skill $(basename "$skill"): $target"
+    done
+}

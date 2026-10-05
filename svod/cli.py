@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from svod.hooks import EVENTS, run as run_hook
+
 PROG = "svod"
 EXIT_OK = 0
 EXIT_FINDINGS = 1
@@ -16,6 +18,7 @@ CMD_ACTIVE = "active"
 CMD_RENDER = "render"
 CMD_INIT = "init"
 CMD_APPROVE = "approve"
+CMD_HOOK = "hook"
 YAML_MODULE = "yaml"
 ERROR_INDENT = "  "
 
@@ -38,6 +41,8 @@ def build_parser():
     approve = commands.add_parser(CMD_APPROVE,
                                   help="record the plan approval a person left in the chat")
     approve.add_argument("query", help="tracker key or subject name")
+    hook = commands.add_parser(CMD_HOOK, help="answer an agent hook event read as JSON on stdin")
+    hook.add_argument("event", choices=EVENTS, help="hook event")
     init = commands.add_parser(CMD_INIT, help="create the local config named in svod.yaml")
     init.add_argument("--login", help="login of the person")
     init.add_argument("--email", help="email of the person, git user.email by default")
@@ -191,12 +196,15 @@ def run(args):
 def main(argv=None):
     """Parse arguments and run; exit quietly in hook mode without PyYAML."""
     argv = sys.argv[1:] if argv is None else list(argv)
-    if importlib.util.find_spec(YAML_MODULE) is None:
+    if importlib.util.find_spec(YAML_MODULE) is None and CMD_HOOK not in argv:
         if HOOK_FLAG in argv:
             return EXIT_OK
         print(MISSING_YAML, file=sys.stderr)
         return EXIT_USAGE
-    return run(build_parser().parse_args(argv))
+    args = build_parser().parse_args(argv)
+    if args.command == CMD_HOOK:
+        return run_hook(args.event, args.root)
+    return run(args)
 
 
 if __name__ == "__main__":

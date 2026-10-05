@@ -1,0 +1,53 @@
+pipeline: task
+header: task.header
+subject:
+  provider: openspec_change
+  key_gate: key
+  key_params: { pattern: "[A-Z][A-Z0-9]{1,9}-[0-9]+" }
+active:
+  in_progress: { gate: worktree, fact: ahead_max }
+
+done: { gate: archived, text: task.done, pending: task.step.archive }
+
+steps:
+  - id: propose
+    title: task.title.propose
+    text: task.step.propose
+    gates: [ { gate: exists } ]
+  - id: spec
+    title: task.title.spec
+    required: true
+    text: task.step.spec
+    gates:
+      - { gate: artifact, params: { path: proposal.md }, label: task.mark.proposal, text: task.step.proposal }
+      - { gate: artifact, params: { path: design.md }, label: task.mark.design, text: task.step.design }
+      - { gate: artifact, params: { glob: "specs/**/spec.md" }, label: task.mark.spec, text: task.step.spec }
+      - { gate: artifact, params: { path: tasks.md }, label: task.mark.tasks, text: task.step.tasks }
+  - id: approve
+    title: task.title.approve
+    required: true
+    blocks_code: true
+    text: task.step.approve
+    gates:
+      - gate: approval
+        params:
+          marker: plan_approved
+          file: .openspec.yaml
+          bind: [proposal.md, design.md, tasks.md, "specs/**/spec.md"]
+        label: task.mark.approved
+  - id: workspace
+    title: task.title.workspace
+    text: task.step.workspace
+    gates: [ { gate: worktree, params: { or_merged: true }, label: task.mark.worktree } ]
+  - id: implement
+    title: task.title.implement
+    role: implementer
+    text: task.step.implement
+    gates: [ { gate: worktree, params: { min_ahead: 1, or_merged: true } } ]
+  - id: merge
+    title: task.title.merge
+    text: task.step.merge
+    gates: [ { gate: merged, label: task.mark.merged } ]
+
+violations:
+  implement.approve: task.violation.implement_approve
