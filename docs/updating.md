@@ -11,7 +11,7 @@ flowchart LR
 
 ## Start using a copy
 
-Every person still installs `svod` once (`pip install …`); it finds the store and hands each command over to the copy of the store. Hooks and setup scripts keep calling plain `svod`.
+Every person still installs `svod` once (`pip install …`); it finds the store and hands each command over to the copy of the store. Hooks and setup scripts keep calling plain `svod`. The hand-over exists since 0.2.0: an installed 0.1.0 ignores `.svod/` and runs its own code, so everyone needs `svod` 0.2.0 or newer — `svod --version` outside a store shows the installed one.
 
 One person adds the copy:
 
