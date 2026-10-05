@@ -223,7 +223,7 @@ class WorktreeGate(Gate):
             if MergedGate().evaluate(ctx, subject).passed:
                 return Result(Status.PASS, facts, self.display(ctx, Status.PASS, facts, True))
         return Result(status, facts, self.display(ctx, status, facts),
-                      REASON_SEPARATOR.join(reasons) or None)
+                      REASON_SEPARATOR.join(dict.fromkeys(reasons)) or None)
 
     def status(self, ahead, known, reasons):
         """PASS with a directory, or with min_ahead own commits in one; UNKNOWN when git failed."""
@@ -294,7 +294,7 @@ class MergedGate(Gate):
                      FACT_OPEN: facts[FACT_OPEN] or none}
             display = mark(ctx, status, MERGED_DISPLAY, **shown)
         return Result(status, facts, display,
-                      REASON_SEPARATOR.join(reasons) if status is Status.UNKNOWN else None)
+                      REASON_SEPARATOR.join(dict.fromkeys(reasons)) if status is Status.UNKNOWN else None)
 
     @staticmethod
     def repositories(ctx):

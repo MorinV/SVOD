@@ -124,9 +124,9 @@ def render_position(locale, pos, skills=None):
         freeze = (keys.STATUS_DO_NOT_TOUCH_BLOCKED if pos.frozen_by_entry
                   else keys.STATUS_DO_NOT_TOUCH)
         body.append(locale.text(freeze, **pos.do_not_touch))
-    for outcome in pos.unknown:
-        body.append(locale.text(keys.STATUS_UNKNOWN, reason=outcome.result.reason,
-                                gate=outcome.ref.gate))
+    unknown_lines = [locale.text(keys.STATUS_UNKNOWN, reason=outcome.result.reason,
+                                 gate=outcome.ref.gate) for outcome in pos.unknown]
+    body += list(dict.fromkeys(unknown_lines))
     for outcome in pos.warnings:
         body.append(gate_text(locale, outcome.ref.text, outcome.result.facts))
     if body:
