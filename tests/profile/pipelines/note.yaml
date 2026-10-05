@@ -1,0 +1,22 @@
+pipeline: note
+header: note.header
+subject:
+  provider: frontmatter_doc
+  params: { glob: "notes/*.md", exclude: [README.md] }
+
+active:
+  item: note.active.item
+  headings:
+    mine_idle: note.active.mine
+    theirs: note.active.theirs
+    theirs_collapsed: note.active.theirs_collapsed
+
+done: { gate: field, params: { name: status, equals: closed }, text: note.done }
+
+steps:
+  - id: review
+    text: note.step.review
+    gates: [ { gate: field, params: { name: review, date_not_past: true }, label: mark.review } ]
+  - id: outcome
+    text: note.step.outcome
+    gates: [ { gate: field, params: { name: outcome, present: true } } ]

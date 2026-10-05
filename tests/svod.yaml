@@ -1,0 +1,3 @@
+locale: en
+profile: profile
+active_order: [task, note]

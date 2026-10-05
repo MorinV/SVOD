@@ -1,0 +1,58 @@
+doc:
+  attr:
+    container: "if the task is in a container"
+task:
+  header: "Task {id}"
+  title:
+    spec: "specification"
+  done: "task closed"
+  missing: "Task {keys}: nothing is known about it in the store."
+  entry:
+    no_design: "Warning: the container has no design document, write it first."
+    no_pyramid: "Warning: the container has no test pyramid."
+  step:
+    propose: "propose a change"
+    spec: "write the delta spec"
+    design: "write design.md"
+    approve: "get the plan approved"
+    build: "start building in a workspace"
+    verify: "run the mandatory cases, report in the change"
+    review: "open a pull request"
+  violation:
+    verify_approve: "verified before the plan was approved"
+project:
+  header: "Project {id}"
+  done: "project closed"
+  entry:
+    store_ahead: "The store is ahead of origin by {count} commits."
+    not_closing: "Mark the onepager with closing before closing the container."
+  step:
+    onepager: "write the onepager"
+    research: "research the open questions"
+    design: "write the solution design"
+    pyramid: "write the test pyramid"
+    wbs: "cut the work breakdown"
+    close: "close the container"
+note:
+  header: "Note {id}"
+  done: "note closed"
+  step:
+    review: "decide whether to continue"
+    outcome: "write the outcome"
+  active:
+    item: "- {id}: {step}"
+    mine: "Your open notes:"
+    theirs: "Team notes:"
+    theirs_collapsed: "Team notes: {count} ({who})"
+mark:
+  review: "review {value}"
+  spec: "spec ({count})"
+  design: "design"
+  approved: "approved"
+  report: "report"
+  progress: "progress"
+  progress_display: "progress +{ahead}"
+  onepager: "onepager"
+  research: "research ({count})"
+  pyramid: "pyramid"
+  wbs: "wbs"

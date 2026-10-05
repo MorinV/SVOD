@@ -1,0 +1,35 @@
+pipeline: project
+header: project.header
+subject:
+  provider: container
+  key_gate: ticket
+  params: { roots: [projects], head_type: onepager }
+
+done: { gate: archived, text: project.done }
+
+steps:
+  - id: onepager
+    required: true
+    text: project.step.onepager
+    gates: [ { gate: doc_type, params: { type: onepager }, label: mark.onepager } ]
+  - id: research
+    optional: true
+    text: project.step.research
+    gates: [ { gate: artifact, params: { glob: "Research/*.md" }, label: mark.research } ]
+  - id: design
+    required: true
+    text: project.step.design
+    gates: [ { gate: doc_type, params: { type: design }, label: mark.design } ]
+  - id: pyramid
+    required: true
+    text: project.step.pyramid
+    gates: [ { gate: doc_type, params: { type: test-strategy }, label: mark.pyramid } ]
+  - id: wbs
+    text: project.step.wbs
+    gates: [ { gate: doc_type, params: { type: wbs }, label: mark.wbs } ]
+  - id: close
+    role: closer
+    text: project.step.close
+    entry:
+      - { gate: git_pushed, severity: warn, text: project.entry.store_ahead }
+      - { gate: field, params: { name: closing, present: true }, severity: block, text: project.entry.not_closing }

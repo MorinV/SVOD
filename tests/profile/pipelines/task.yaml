@@ -1,0 +1,53 @@
+pipeline: task
+header: task.header
+subject:
+  provider: openspec_change
+  key_gate: ticket
+  params: { containers: [projects], ignore_fields: [epic] }
+active:
+  in_progress: { gate: progress, fact: ahead }
+
+entry:
+  - gate: doc_type
+    params: { type: design, scope: container }
+    when: container
+    severity: block
+    text: task.entry.no_design
+  - gate: doc_type
+    params: { type: test-strategy, scope: container }
+    when: container
+    severity: warn
+    text: task.entry.no_pyramid
+
+done: { gate: archived, text: task.done }
+missing: { gate: known, text: task.missing }
+
+steps:
+  - id: propose
+    text: task.step.propose
+    gates: [ { gate: exists } ]
+  - id: spec
+    required: true
+    title: task.title.spec
+    text: task.step.spec
+    gates:
+      - { gate: artifact, params: { glob: "specs/**/spec.md" }, label: mark.spec }
+      - { gate: artifact, params: { path: design.md }, label: mark.design, text: task.step.design }
+  - id: approve
+    required: true
+    blocks_code: true
+    text: task.step.approve
+    gates: [ { gate: approval, params: { marker: approved, file: .openspec.yaml }, label: mark.approved } ]
+  - id: build
+    role: builder
+    text: task.step.build
+    gates: [ { gate: progress, label: mark.progress } ]
+  - id: verify
+    role: checker
+    text: task.step.verify
+    gates: [ { gate: artifact, params: { path: report.md }, label: mark.report } ]
+  - id: review
+    text: task.step.review
+
+violations:
+  verify.approve: task.violation.verify_approve
