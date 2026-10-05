@@ -26,7 +26,7 @@ The engine knows nothing about your team. Everything specific — pipelines, ext
 Requires Python 3.10+ and git.
 
 ```bash
-pip install git+https://github.com/<owner>/svod      # or: pip install -e . from a clone
+pip install git+https://github.com/MorinV/SVOD       # or: pip install -e . from a clone
 
 git init demo-store && cd demo-store
 cp -R <svod>/examples/task/. .                        # svod.yaml and an example profile

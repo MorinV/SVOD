@@ -15,7 +15,7 @@ from .paths import vendor_dir
 from .vendor import Stamp, build, read_stamp, swap
 from .versions import latest_tag, source_version
 
-DEFAULT_SOURCE = "https://github.com/OWNER/svod.git"
+DEFAULT_SOURCE = "https://github.com/MorinV/SVOD.git"
 REMOTE_TIMEOUT_SEC = 60
 CLONE_TIMEOUT_SEC = 600
 SOURCE_PREFIX = "svod-source-"

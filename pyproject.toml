@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "svod"
 version = "0.2.0"
 description = "Declarative work pipelines for coding agents: steps, gates and a position computed from files and git"
+urls = { Homepage = "https://github.com/MorinV/SVOD" }
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
