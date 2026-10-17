@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from svod.context import Context
     from svod.pipeline import Pipeline
     from svod.render import Report
+    from svod.subject import Subject
 
 PROG = "svod"
 EXIT_OK = 0
@@ -41,6 +42,7 @@ CMD_LOCAL = "local"
 CMD_DO = "do"
 CMD_KNOWLEDGE = "knowledge"
 CMD_RETRO = "retro"
+CMD_REPORT = "report"
 CMD_DOCTOR = "doctor"
 KNOWLEDGE_INDEX = "index"
 KNOWLEDGE_ADD = "add"
@@ -153,6 +155,11 @@ def build_parser() -> StatusParser:
     migrate.add_argument("--since", required=True, help="version the store was used with")
     add_knowledge_parser(commands)
     add_retro_parser(commands)
+    report = commands.add_parser(CMD_REPORT,
+                                 help="where the time of a record went, from the evidence log")
+    report.add_argument("query", nargs="?", help="tracker key or subject name, as for status")
+    report.add_argument("--all", action="store_true", help="every pipeline and its records")
+    report.add_argument("--format", choices=("text", "json"), default="text")
     return parser
 
 
@@ -167,6 +174,8 @@ def add_retro_parser(commands: argparse._SubParsersAction) -> None:
                           help="accept proposal n of the list; prints the change to apply")
     decision.add_argument("--reject", type=int, metavar="n", help="reject proposal n of the list")
     retro.add_argument("--note", help="note kept with the decision")
+    retro.add_argument("--explain", action="store_true",
+                       help="print what each rule saw and the threshold it compared with")
 
 
 def add_wizard_arguments(init: argparse.ArgumentParser) -> None:
@@ -315,36 +324,31 @@ def retro(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace) -> 
     from svod import keys
     from svod.document import relative_or_absolute
     from svod.errors import LoadError
-    from svod.resolve import resolve
     from svod.retro import decisions, engine
 
     locale = ctx.locale
     number = args.accept if args.accept is not None else args.reject
-    if bool(args.query) == bool(args.all) or (args.note and number is None):
+    if bool(args.query) == bool(args.all) or (args.note and number is None) \
+            or (args.explain and number is not None):
         print(locale.text(keys.RETRO_USAGE), file=sys.stderr)
         return EXIT_USAGE
-    if args.all:
-        works = engine.open_works(ctx, pipelines)
-    else:
-        found = resolve(ctx, pipelines, args.query)
-        works = [(p, s) for p, s in found.matches if s.exists]
-        if not works:
-            print(locale.text(keys.STATUS_NOT_FOUND, query=args.query), file=sys.stderr)
-            return EXIT_USAGE
-        if found.ambiguous:
-            print_errors(locale.text(keys.STATUS_AMBIGUOUS),
-                         [locale.text(keys.STATUS_CANDIDATE, id=s.id) for _, s in works])
-            return EXIT_USAGE
+    works = engine.open_works(ctx, pipelines) if args.all \
+        else resolved(ctx, pipelines, args.query)
+    if works is None:
+        return EXIT_USAGE
     try:
         rules = engine.load_rules(ctx.config.profile)
         taken = decisions.read_decisions(ctx.root)
     except LoadError as exc:
         print_errors(locale.text(keys.ERROR_LOAD), exc.errors)
         return EXIT_USAGE
-    proposals, failures = engine.review(ctx, works, rules)
-    for failure in failures:
+    outcome = engine.run_rules(ctx, works, rules)
+    for failure in outcome.failures:
         print(locale.text(keys.RETRO_RULE_FAILED, reason=failure), file=sys.stderr)
-    shown = engine.pending(proposals, decisions.decided(taken))
+    if args.explain:
+        print("\n".join(engine.explain(locale, outcome, decisions.decided(taken))))
+        return EXIT_OK
+    shown = engine.pending(outcome.proposals, decisions.decided(taken))
     if number is None:
         print("\n".join(engine.render(locale, shown) or [locale.text(keys.RETRO_NONE)]))
         return EXIT_OK
@@ -360,6 +364,50 @@ def retro(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace) -> 
     lines = engine.hint(locale, proposal) if decision == decisions.ACCEPTED else []
     if lines:
         print("\n".join([locale.text(keys.RETRO_HINT), *lines]))
+    return EXIT_OK
+
+
+def resolved(ctx: Context, pipelines: list[Pipeline],
+             query: str) -> list[tuple[Pipeline, Subject]] | None:
+    """Existing subjects the query resolves to; None, said on stderr, for none or ambiguous."""
+    from svod import keys
+    from svod.resolve import resolve
+
+    found = resolve(ctx, pipelines, query)
+    works = [(p, s) for p, s in found.matches if s.exists]
+    if not works:
+        print(ctx.locale.text(keys.STATUS_NOT_FOUND, query=query), file=sys.stderr)
+        return None
+    if found.ambiguous:
+        print_errors(ctx.locale.text(keys.STATUS_AMBIGUOUS),
+                     [ctx.locale.text(keys.STATUS_CANDIDATE, id=s.id) for _, s in works])
+        return None
+    return works
+
+
+def report(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace) -> int:
+    """Print the report of the records the query resolves to, or of every pipeline.
+
+    Returns 0 when printed; 2 for wrong arguments, a query matching no subject or several.
+    """
+    import datetime as dt
+
+    from svod import keys
+    from svod import report as rp
+
+    if bool(args.query) == bool(args.all):
+        print(ctx.locale.text(keys.REPORT_USAGE), file=sys.stderr)
+        return EXIT_USAGE
+    now = dt.datetime.now().astimezone()
+    works = None if args.all else resolved(ctx, pipelines, args.query)
+    if works is None and not args.all:
+        return EXIT_USAGE
+    data = rp.collect(ctx, works, now) if works is not None \
+        else rp.collect_all(ctx, pipelines, now)
+    if args.format == "json":
+        print(json.dumps(data, ensure_ascii=False, allow_nan=False))
+    else:
+        print("\n".join(rp.render(ctx.locale, data)))
     return EXIT_OK
 
 
@@ -578,6 +626,8 @@ def run(args: argparse.Namespace) -> int:
         return do_action(ctx, runtime.pipelines, args)
     if args.command == CMD_RETRO:
         return retro(ctx, runtime.pipelines, args)
+    if args.command == CMD_REPORT:
+        return report(ctx, runtime.pipelines, args)
     if args.command == CMD_APPROVE:
         from svod.approve import approve
         return emit(approve(ctx, runtime.pipelines, args.query, step=args.step,

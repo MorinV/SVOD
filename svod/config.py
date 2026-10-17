@@ -59,6 +59,10 @@ LOCAL_MAPPINGS = (FIELD_PROFILE_CONFIG,)
 FIELD_AUTONOMY = "autonomy"
 FIELD_EXTERNAL_EFFECTS = "external_effects"
 KNOWN_FIELDS = KNOWN_FIELDS | {FIELD_AUTONOMY, FIELD_EXTERNAL_EFFECTS}
+FIELD_RETRO = "retro"
+RETRO_THRESHOLDS = "thresholds"
+RETRO_FIELDS = frozenset({RETRO_THRESHOLDS})
+KNOWN_FIELDS |= {FIELD_RETRO}
 AUTONOMY_GUIDED = "guided"
 AUTONOMY_SUPERVISED = "supervised"
 AUTONOMY_AUTONOMOUS = "autonomous"
@@ -104,6 +108,7 @@ class Config:
     external_deny: tuple[str, ...] = ()
     external_allow: tuple[str, ...] = ()
     external_phrases: tuple[str, ...] = DEFAULT_EXTERNAL_PHRASES
+    retro_thresholds: dict[str, int] = field(default_factory=dict)
 
 
 def string_errors(path: Path, data: dict[str, Any], keys: Iterable[str]) -> list[str]:
@@ -195,6 +200,26 @@ def autonomy_errors(path: Path, data: Any) -> list[str]:
             for name, level in data.items() if level not in AUTONOMY_LEVELS]
 
 
+def retro_errors(path: Path, data: Any) -> list[str]:
+    """Errors of the retro block: thresholds map core rule names to non-negative integers."""
+    from .retro.rules import RULES
+
+    where = f"{path}: {FIELD_RETRO}"
+    if not isinstance(data, dict):
+        return [f"{where} must be a mapping"]
+    errors = [f"{where}: unknown key: {key}" for key in sorted(set(data) - RETRO_FIELDS, key=str)]
+    thresholds = data.get(RETRO_THRESHOLDS, {})
+    if not isinstance(thresholds, dict):
+        return [*errors, f"{where}.{RETRO_THRESHOLDS} must be a mapping of rule names to integers"]
+    for name, value in thresholds.items():
+        if name not in RULES:
+            errors.append(f"{where}.{RETRO_THRESHOLDS}: unknown rule: {name}; known: "
+                          + ", ".join(RULES))
+        elif isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            errors.append(f"{where}.{RETRO_THRESHOLDS}.{name} must be a non-negative integer")
+    return errors
+
+
 def strings_error(where: str, value: Any) -> str | None:
     """Error of a value that must be a list of non-empty strings, or None."""
     if isinstance(value, list) and all(isinstance(x, str) and x.strip() for x in value):
@@ -276,6 +301,7 @@ def load_config(root: str | Path, local: bool = True) -> Config:
             errors.append(f"{path}: {key} must be a list of strings")
     errors += autonomy_errors(path, data.get(FIELD_AUTONOMY, {}))
     errors += external_errors(path, data.get(FIELD_EXTERNAL_EFFECTS, {}))
+    errors += retro_errors(path, data[FIELD_RETRO]) if FIELD_RETRO in data else []
     if errors:
         raise LoadError(errors)
     profile = root / data[FIELD_PROFILE]
@@ -317,12 +343,13 @@ def load_config(root: str | Path, local: bool = True) -> Config:
 
 
 def policy_settings(data: dict[str, Any]) -> dict[str, Any]:
-    """Config fields of the validated autonomy and external_effects blocks."""
+    """Config fields of the validated autonomy, external_effects and retro blocks."""
     external = data.get(FIELD_EXTERNAL_EFFECTS) or {}
     return {"autonomy": dict(data.get(FIELD_AUTONOMY) or {}),
             "external_deny": tuple(external.get(EXTERNAL_DENY, ())),
             "external_allow": tuple(external.get(EXTERNAL_ALLOW, ())),
-            "external_phrases": tuple(external.get(EXTERNAL_PHRASES, DEFAULT_EXTERNAL_PHRASES))}
+            "external_phrases": tuple(external.get(EXTERNAL_PHRASES, DEFAULT_EXTERNAL_PHRASES)),
+            "retro_thresholds": dict((data.get(FIELD_RETRO) or {}).get(RETRO_THRESHOLDS) or {})}
 
 
 def write_local(path: str | Path, values: dict[str, Any]) -> None:

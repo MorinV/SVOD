@@ -6,6 +6,11 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Added
+
+- `svod report <query>|--all [--format json]` (`svod.report`): from the evidence log, per record the time in each step (the current one counted until now, marked open), approval rounds, failed checks, hook denials by rule and actions run; per pipeline with `--all` their sums and medians; new core keys `report.*`.
+- `svod retro --explain` prints for every rule the facts it saw and the threshold it compared them with, whether it proposed or not (`retro.explain*`); the thresholds are per-rule defaults (`Rule.threshold`, `Rule.reaches`) that `retro: {thresholds: {<rule>: <n>}}` in `svod.yaml` overrides, 0 turning a rule off.
+
 ### Changed
 
 - The sources hold no store any more: the work on Svod is recorded in the instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd), a standard-template store next to a clone of this repository, as every user's instance is.
