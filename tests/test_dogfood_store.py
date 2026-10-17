@@ -72,11 +72,14 @@ class DogfoodStoreTest(unittest.TestCase):
                 self.assertEqual(done.stdout.splitlines()[0], record)
 
     def test_active_lists_the_open_records(self):
-        """svod active is not empty and names every open record."""
+        """svod active names every record whose card is open and none that is done."""
         done = self.cli("active")
         self.assertEqual(done.returncode, EXIT_OK, done.stderr)
         for record in RECORDS:
-            self.assertIn(f"- {record} - ", done.stdout)
+            card = (self.store / record / "card.md").read_text(encoding="utf-8")
+            listed = f"- {record} - " in done.stdout
+            self.assertEqual(listed, "status: done" not in card, record)
+        self.assertIn("Features:", done.stdout)
 
     def test_no_absolute_paths(self):
         """No committed file of the store holds an absolute path of this machine."""
