@@ -28,7 +28,14 @@ APPROVAL_PHRASES = "phrases"
 APPROVAL_WINDOW = "window_minutes"
 APPROVAL_FIELDS = frozenset({APPROVAL_PHRASES, APPROVAL_WINDOW})
 AGENT_CONTEXT = "agent_context"
-AGENT_CONTEXT_FIELDS = frozenset({"session_summary", "prompt_positions", "approval_notice"})
+AGENT_CONTEXT_FIELDS = frozenset({"session_summary", "prompt_positions", "approval_notice",
+                                  "knowledge"})
+FIELD_KNOWLEDGE = "knowledge"
+KNOWLEDGE_DIR = "dir"
+KNOWLEDGE_LIMIT = "limit_lines"
+KNOWLEDGE_FIELDS = frozenset({KNOWLEDGE_DIR, KNOWLEDGE_LIMIT})
+DEFAULT_KNOWLEDGE_DIR = "knowledge"
+DEFAULT_KNOWLEDGE_LIMIT = 20
 DEFAULT_WINDOW_MINUTES = 10
 REQUIRED_FIELDS = (FIELD_LOCALE, FIELD_PROFILE)
 STRING_FIELDS = (FIELD_LOCALE, FIELD_PROFILE, FIELD_DEFAULT_BRANCH, FIELD_WORKSPACES,
@@ -36,7 +43,8 @@ STRING_FIELDS = (FIELD_LOCALE, FIELD_PROFILE, FIELD_DEFAULT_BRANCH, FIELD_WORKSP
 LIST_FIELDS = (FIELD_ACTIVE_ORDER, FIELD_RENDER_EXCLUDE)
 BOOL_FIELDS = (FIELD_MAIN_READ_ONLY, FIELD_UPDATE_CHECK)
 KNOWN_FIELDS = frozenset(STRING_FIELDS + LIST_FIELDS + BOOL_FIELDS
-                         + (FIELD_APPROVAL, FIELD_PROFILE_CONFIG, FIELD_SERVICES))
+                         + (FIELD_APPROVAL, FIELD_PROFILE_CONFIG, FIELD_SERVICES,
+                            FIELD_KNOWLEDGE))
 DEFAULT_BRANCH_FALLBACK = "origin/main"
 LOCAL_LOGIN = "login"
 LOCAL_EMAIL = "email"
@@ -67,6 +75,8 @@ class Config:
     main_checkout_read_only: bool = False
     update_check: bool = True
     services: dict[str, Path] = field(default_factory=dict)
+    knowledge_dir: str = DEFAULT_KNOWLEDGE_DIR
+    knowledge_limit: int = DEFAULT_KNOWLEDGE_LIMIT
 
 
 def string_errors(path: Path, data: dict[str, Any], keys: Iterable[str]) -> list[str]:
@@ -123,6 +133,19 @@ def agent_context_errors(path: Path, profile_config: Any) -> list[str]:
     return errors
 
 
+def knowledge_errors(path: Path, data: Any) -> list[str]:
+    """Errors of the knowledge block: known keys, dir a non-empty string, a positive limit."""
+    where = f"{path}: {FIELD_KNOWLEDGE}"
+    if not isinstance(data, dict):
+        return [f"{where} must be a mapping"]
+    errors = [f"{where}: unknown key: {key}" for key in sorted(set(data) - KNOWLEDGE_FIELDS)]
+    errors += string_errors(path, data, (KNOWLEDGE_DIR,))
+    limit = data.get(KNOWLEDGE_LIMIT, DEFAULT_KNOWLEDGE_LIMIT)
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+        errors.append(f"{where}.{KNOWLEDGE_LIMIT} must be a positive integer")
+    return errors
+
+
 def read_local(path: Path) -> dict[str, Any]:
     """Validated local config mapping, empty when the file is absent."""
     if not path.is_file():
@@ -169,6 +192,7 @@ def load_config(root: str | Path, local: bool = True) -> Config:
     errors += agent_context_errors(path, data.get(FIELD_PROFILE_CONFIG))
     if FIELD_SERVICES in data:
         errors += services_errors(path, root, data[FIELD_SERVICES])
+    errors += knowledge_errors(path, data[FIELD_KNOWLEDGE]) if FIELD_KNOWLEDGE in data else []
     for key in LIST_FIELDS:
         value = data.get(key, [])
         if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
@@ -183,6 +207,7 @@ def load_config(root: str | Path, local: bool = True) -> Config:
     workspaces = own.get(FIELD_WORKSPACES, data.get(FIELD_WORKSPACES))
     approval = data.get(FIELD_APPROVAL) or {}
     store_locale: str = data[FIELD_LOCALE]
+    knowledge = data.get(FIELD_KNOWLEDGE) or {}
     return Config(
         root=root,
         locale=own.get(FIELD_LOCALE, store_locale),
@@ -204,6 +229,8 @@ def load_config(root: str | Path, local: bool = True) -> Config:
         update_check=data.get(FIELD_UPDATE_CHECK, True),
         services={name: (root / value).resolve()
                   for name, value in (data.get(FIELD_SERVICES) or {}).items()},
+        knowledge_dir=knowledge.get(KNOWLEDGE_DIR, DEFAULT_KNOWLEDGE_DIR),
+        knowledge_limit=knowledge.get(KNOWLEDGE_LIMIT, DEFAULT_KNOWLEDGE_LIMIT),
     )
 
 

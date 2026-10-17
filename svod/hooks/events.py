@@ -3,6 +3,7 @@ import json
 import sys
 
 from ..active import hook_payload, summarize
+from ..knowledge import knowledge_context
 from ..notice import update_notice, with_notice
 from .guard import Guard, broken_reason, tool_reason
 from .prompt import prompt_hook
@@ -25,6 +26,7 @@ def session_start(event, fallback):
     if not agent_context_setting(runtime, SETTING_SUMMARY):
         return None
     lines = summarize(context_of(runtime), runtime.pipelines, False)
+    lines += knowledge_context(runtime, context_of(runtime), gap=bool(lines))
     lines = with_notice(lines, update_notice(runtime.config, runtime.locale))
     return hook_payload(runtime.locale, lines) if lines else None
 

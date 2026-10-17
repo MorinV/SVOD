@@ -38,6 +38,11 @@ CMD_MIGRATE = "migrate"
 CMD_NEW = "new"
 CMD_LOCAL = "local"
 CMD_DO = "do"
+CMD_KNOWLEDGE = "knowledge"
+KNOWLEDGE_INDEX = "index"
+KNOWLEDGE_ADD = "add"
+KNOWLEDGE_NOTE = "note"
+KNOWLEDGE_LIST = "list"
 DELIVERY_COMMANDS = (CMD_INSTALL, CMD_UPDATE)
 ERROR_INDENT = "  "
 
@@ -118,7 +123,27 @@ def build_parser() -> StatusParser:
     migrate = commands.add_parser(CMD_MIGRATE,
                                   help="apply the store migrations of the versions after a version")
     migrate.add_argument("--since", required=True, help="version the store was used with")
+    add_knowledge_parser(commands)
     return parser
+
+
+def add_knowledge_parser(commands: argparse._SubParsersAction) -> None:
+    """The knowledge command with its index, add, note and list actions."""
+    knowledge = commands.add_parser(CMD_KNOWLEDGE, help="notes of the store in knowledge/")
+    actions = knowledge.add_subparsers(dest="action", required=True)
+    actions.add_parser(KNOWLEDGE_INDEX, help="rewrite the table in knowledge/INDEX.md")
+    add = actions.add_parser(KNOWLEDGE_ADD, help="copy a markdown file into knowledge/")
+    add.add_argument("file", help="markdown file to copy")
+    add.add_argument("--tags", required=True, help="tags separated by commas")
+    add.add_argument("--title", help="title; the frontmatter title or first heading by default")
+    add.add_argument("--source", help="id of the work the note comes from")
+    note = actions.add_parser(KNOWLEDGE_NOTE, help="write a short note into knowledge/")
+    note.add_argument("text", help="text of the note")
+    note.add_argument("--tags", required=True, help="tags separated by commas")
+    note.add_argument("--title", required=True, help="title; names the file")
+    note.add_argument("--source", help="id of the work the note comes from")
+    listing = actions.add_parser(KNOWLEDGE_LIST, help="list the notes")
+    listing.add_argument("--tags", help="only notes sharing one of these tags")
 
 
 def print_errors(header: str, errors: Iterable[str]) -> None:
@@ -280,6 +305,51 @@ def migrate(root: Path, since: str) -> int:
     return EXIT_OK
 
 
+def knowledge(root: Path, args: argparse.Namespace) -> int:
+    """Run one knowledge action; the index is rewritten after a note is added."""
+    from svod import keys
+    from svod import knowledge as kb
+    from svod.config import load_config
+    from svod.document import relative_or_absolute
+    from svod.errors import LoadError
+
+    locale = error_locale(root)
+    try:
+        config = load_config(root)
+    except LoadError as exc:
+        print_errors(locale.text(keys.ERROR_LOAD), exc.errors)
+        return EXIT_USAGE
+    directory = config.knowledge_dir
+    if args.action == KNOWLEDGE_LIST:
+        wanted = set(kb.tag_list(args.tags or ""))
+        found = [e for e in kb.entries(root, directory) if not wanted or wanted & set(e.tags)]
+        for entry in found:
+            print(locale.text(keys.KNOWLEDGE_ITEM, title=entry.title, path=entry.rel,
+                              tags=kb.TAGS_JOIN.join(entry.tags), date=entry.date,
+                              status=entry.status))
+        if not found:
+            print(locale.text(keys.KNOWLEDGE_NONE))
+        return EXIT_OK
+    if args.action in (KNOWLEDGE_ADD, KNOWLEDGE_NOTE):
+        try:
+            if args.action == KNOWLEDGE_ADD:
+                path = kb.add(root, args.file, args.tags, args.title, args.source, directory)
+            else:
+                path = kb.note(root, args.text, args.tags, args.title, args.source, directory)
+        except FileNotFoundError:
+            print(locale.text(keys.KNOWLEDGE_NO_FILE, path=args.file), file=sys.stderr)
+            return EXIT_USAGE
+        except FileExistsError as exc:
+            print(locale.text(keys.KNOWLEDGE_EXISTS, path=relative_or_absolute(root, exc.filename)),
+                  file=sys.stderr)
+            return EXIT_FINDINGS
+        print(locale.text(keys.KNOWLEDGE_ADDED, path=relative_or_absolute(root, path)))
+    path, changed = kb.write_index(root, directory)
+    print(locale.text(keys.RENDER_WRITTEN if changed else keys.RENDER_CURRENT,
+                      path=relative_or_absolute(root, path)))
+    return EXIT_OK
+
+
 def run(args: argparse.Namespace) -> int:
     """Dispatch the parsed command; return the exit code."""
     from svod import keys
@@ -318,6 +388,8 @@ def run(args: argparse.Namespace) -> int:
                        args.ref)
     if args.command == CMD_MIGRATE:
         return migrate(root, args.since)
+    if args.command == CMD_KNOWLEDGE:
+        return knowledge(root, args)
     if args.command == CMD_LOCAL:
         from svod import local_runner, local_workflow
         try:
