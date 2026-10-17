@@ -1,18 +1,40 @@
 # Compact local workflow
 
+## Terms
+
+This guide, `AGENTS.md`, the skills and the `svod status` texts use one word per idea.
+
+| Term | What it is | File or command |
+|---|---|---|
+| card | the task: description, implementation steps, acceptance | `tasks/<name>/<KEY>-card.md` |
+| contract | the promised result, scope, allowed effects, checks and risks | `tasks/<name>/contract.md` |
+| plan | the source checkout and the command that checks the result | `tasks/<name>/testing/plan.yaml` |
+| approval | the person's "Approved" in the chat, recorded against the current contract and plan | `svod approve tasks/<name> --step initial_approve` writes `approval.yaml` |
+| checks | one recorded run of the plan's command on clean committed source | `svod local checks tasks/<name>` writes `testing/process/` |
+| deliver | recording passed checks as the task's result | `svod local deliver tasks/<name>` writes `delivery/process.yaml` |
+| completion | the state after deliver; status prints "Local completion recorded" | `svod status tasks/<name>` |
+
+Completion names the checked commit and nothing more: merge, push, installation and deployment are separate steps that need their own permission.
+
 ## Create a store
 
-Install Python 3.10+, Git and the current Svod engine. Run `svod new <new-directory>`; an existing destination is refused, not overwritten. `--template task` selects the older OpenSpec/Git example. The local template is opt-in and does not migrate an existing profile.
+```bash
+svod new <new-directory>          # refuses an existing directory; --template task gives the OpenSpec/Git example
+cd <new-directory>
+git init
+svod init --login <your-login>
+svod validate
+```
 
-Initialize the store's Git repository and local identity (`svod init --login <your-login>`). Configure your agent's actual prompt hook before recording approvals; the setup scripts in the framework clone support Claude Code and Codex and modify user configuration only when you explicitly run them. Other agent integrations must deliver actual human events, not agent summaries. Never synthesize a human approval by writing marker files or replaying a historical answer for new inputs.
+Connect the hooks before the first approval: run `integrations/setup-claude.sh <store>` or `integrations/setup-codex.sh <store>` from the framework clone (each keeps a backup of the config it edits). The prompt hook turns the person's "Approved" into the mark `svod approve` requires; without it no approval can be recorded.
 
-The supplied AGENTS.md is project guidance, not sandbox enforcement. Load the efficient-execution skill when performing tasks; when using the source clone, the integration setup scripts discover its skills. Vendored installs include skills under `.svod/skills/`. Without an integration that loads skills, explicitly read the relevant skill or copy its guidance into your project's agent instructions.
+In this template the session-start and prompt hooks print nothing (`profile_config.agent_context` in `svod.yaml`), so ask for the position with `svod status tasks/<name>`. The prompt hook still marks approvals, and the pre-tool hook still refuses edits of frozen code and of `approval.yaml`.
 
-## Prepare one task
+The agent reads `AGENTS.md` and `skills/*/SKILL.md` of the store; the setup scripts link the skills, and a vendored engine keeps them in `.svod/skills/`.
 
-Create `tasks/<name>/` with a canonical `<KEY>-card.md`, compact `contract.md` and `testing/plan.yaml`. A key is optional for addressing: the exact path `tasks/<name>` is unambiguous. Keep the card to description, implementation steps and acceptance; put result, boundaries, authorized effects, checks and risks into the contract. Do not create a full design/spec/WBS set for a small task without a content need. Larger projects may maintain a WBS and dependency diagram separately from bound scope.
+## Write the card, contract and plan
 
-Use the schema below, substituting a real clean canonical absolute Git root and a real argv appropriate to the contract:
+Create `tasks/<name>/` with the card, the contract and the plan. Address the task by the path `tasks/<name>`; a key is optional. Keep the card short; small tasks need no design, spec or WBS files.
 
 ```yaml
 version: 1
@@ -22,19 +44,23 @@ workspace: /absolute/path/to/clean/source
 command: [python3, -m, unittest, discover, -s, tests]
 ```
 
-The source checkout must contain a commit and be clean, including untracked files, before and after the command: Svod runs it with `PYTHONDONTWRITEBYTECODE=1`, so Python leaves no `__pycache__`; other build output belongs in `.gitignore`. Task records and logs must be outside it. An ordinary `git worktree add` provides isolation; Svod adds no source snapshot/import lifecycle. Set Git permissions according to the project; this template does not grant commit, merge, push or deploy consent. Do not copy unrelated dirty input automatically.
+- `workspace`: the absolute root of a Git checkout that has a commit and no changes, untracked files included. Keep task records and logs outside it; `git worktree add` gives an isolated checkout. Never reset, stash or clean someone else's dirty tree to satisfy this.
+- `command`: an argv list, run without a shell, or `null`.
 
-`command: null` explicitly means no command selected, not successful testing. This can support non-code work when its contract and selected policy permit it; substantive acceptance still needs honest evidence.
+`command: null` selects no command. Checks then log "No command selected." with no exit code, and deliver accepts it. Use it only for work without code (a document, a decision) whose contract says how acceptance is shown; it is no evidence that anything was tested.
 
-## Execute
+## Approve
 
-Run `svod status tasks/<name>`. `svod local prepare tasks/<name>` is optional read-only readiness diagnosis. Present the exact ready contract and plan to the human; after their separate fresh approval, record it with:
+1. `svod status tasks/<name>` names the approval as the next step and freezes the code.
+2. Show `contract.md` and `testing/plan.yaml` to the person. `svod local prepare tasks/<name>` prints the parsed plan or why it is not ready; it writes nothing.
+3. The person writes `Approved` (`approval.phrases` in `svod.yaml`) in the chat. The mark lasts `approval.window_minutes`, 10 by default.
+4. Run `svod approve tasks/<name> --step initial_approve`. It writes the date, the approver and the hash of the contract and the plan into `approval.yaml`.
 
-```bash
-svod approve tasks/<name> --step initial_approve
-```
+Any edit of `contract.md` or `testing/plan.yaml` voids the approval: show the new version and repeat steps 3–4. Text written by an agent is never an approval.
 
-Implement within the agreed effects and maintain a clean exact source commit before final execution. Then:
+## Run checks and deliver
+
+Commit the change in the source checkout and leave it clean, then:
 
 ```bash
 svod local checks tasks/<name>
@@ -42,18 +68,12 @@ svod local deliver tasks/<name>
 svod status tasks/<name>
 ```
 
-`checks` runs argv without a shell, retains combined command output and the real exit status, and validates source identity before and after. A failed command or source/contract/approval drift does not become PASS. Command subprocesses have a bounded timeout; POSIX process-group cleanup is best effort, not containment of malicious descendants or a sandbox. Never place secrets into a command or its output: command logs retain what the command emits.
+Checks run the command once in `workspace` with `PYTHONDONTWRITEBYTECODE=1` and a 600-second timeout, write the combined output to `testing/process/command.log`, and the exit code, the commit and the input hashes to `testing/process/receipt.json`. They fail on a non-zero exit, on source that is dirty before or after the run, and on a contract, plan or approval changed since the approval. Add other build output to the source's `.gitignore`, or it makes the source dirty. Keep secrets out of the command and its output: the log keeps everything.
 
-`verify` is a live diagnostic, not another mandatory operation between checks and deliver. Avoid an identical direct final run followed by the same recorded run on unchanged input. Development RED/GREEN and changed source require appropriate new checks.
+Run checks again only after the source or the plan changes, and do not run the same command by hand right before them. `svod local verify tasks/<name>` re-validates the receipt against the live source without running anything; it is a diagnostic, not a step.
 
-## Completion and cleanup
+Deliver re-validates the receipt and writes `delivery/process.yaml`. After that `svod status tasks/<name>` validates the saved contract, plan, approval, receipt and log without the source checkout, so an authorized removal of the checkout keeps completion; an edit of any of those files voids it. Before removing a worktree, stop running processes and keep the logs you need; never force-remove a dirty or locked worktree.
 
-`deliver` records only a validated local result and immediately reads it back. It still honors applicable required YAML conditions. Status after completion validates saved contract/plan/approval/result/log bindings without requiring the disposable source checkout to exist. A fresh checks/verify/deliver still requires live clean source. Tampering or a new unsatisfied required condition invalidates completion.
+## Extend the process
 
-Local completion identifies the checked commit. It does not establish code installation, merge, remote publication, deployment, test adequacy or authenticated provenance against a user deliberately rewriting all local evidence. Preserve real decisions and primary logs. Before separately authorized worktree removal, stop executors and save required evidence outside the worktree. Never force-remove dirty or locked worktrees.
-
-## Context and extensions
-
-The local template disables automatic session summary, prompt positions and approval notices through `profile_config.agent_context`. Native marking and edit protections remain available; explicit `status <query>` and `active` are unchanged. JSON status is bounded advisory data, not execution authorization; it does not contain the full text of instructions/logs or authenticate consent.
-
-Review, CI/static/JUnit/E2E, external trackers, project maps, SSH/DB operations and automatic publication are separate project decisions, not prerequisites of this local route. Conditional declarations and semantic approval purposes let a project compose its chosen guarantees. Change policy through the project's own repository process and test the changed mechanism instead of preserving obsolete ceremony.
+Review, CI, JUnit, E2E, trackers and publication are not part of this route. Add one as a step in `profile/pipelines/local.yaml` with the `svod-pipeline` skill, then run `svod validate`.

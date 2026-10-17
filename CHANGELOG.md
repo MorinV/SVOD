@@ -16,6 +16,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 - A store that does not load no longer lets every write through: writes outside the store are refused until it loads, writes inside it stay allowed so it can be repaired.
 - `svod local checks` runs the command with `PYTHONDONTWRITEBYTECODE=1`, so the recommended test command leaves the checkout clean.
 - The local template's next-step texts name the command to run, show the gate's detail (for example `source workspace is dirty`) and tell a changed contract from a missing approval.
+- The local template's `AGENTS.md`, skills and `docs/local-workflow.md` are rewritten as short imperative steps naming a command and a file; the workflow opens with a glossary (card, contract, plan, approval, checks, deliver, completion) and is the one place that explains `command: null`.
 - The setup scripts say that without a store argument the hooks guard only sessions started inside a store.
 - A gate that raises no longer fails `status` or a hook: the outcome is UNKNOWN with the reason `gate <name> raised <error>`, the step stays unpassed and the status says why.
 - `status` marks every step: a step without a labelled gate is shown as one mark by its `title` or `id`, so a profile without labels still shows where the work stands.
