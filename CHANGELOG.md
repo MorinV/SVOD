@@ -9,6 +9,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 ### Changed
 
 - Removed the unused `gates.build_registry`, `ApprovalGate.effective_bind` and `document.stale_blocks` with the tests that were their only callers.
+- `svod.hooks` is a package (`protocol`, `shell`, `store`, `prompt`, `guard`, `events`) with the same public names; the pre-tool code freeze uses `svod.position.freeze`, and `hook.approval_marked_unnamed` is a core locale key (`svod.keys`).
 
 ## [0.4.0] - 2026-10-17
 

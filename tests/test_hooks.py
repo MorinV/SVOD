@@ -527,7 +527,7 @@ class HookCostTest(HookTestCase):
         )
         for name, command, loads in cases:
             with self.subTest(case=name):
-                with mock.patch.object(hooks, "load", wraps=hooks.load) as load:
+                with mock.patch.object(hooks.guard, "load", wraps=hooks.load) as load:
                     found, calls = self.calls(hooks.EVENT_PRE_TOOL,
                                               self.pre_tool(self.worktree, bash(command)))
                 self.assertEqual(loads, load.called)

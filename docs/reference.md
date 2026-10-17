@@ -648,7 +648,9 @@ Optional `profile_config.agent_context` booleans `session_summary`, `prompt_posi
 
 The hooks run as the same user as the agent and see only the tool calls the agent makes through them: they stop a careless agent, not one that sets out to write a file the user can write. Profile gates are Python the hooks run on every event: open only stores you trust.
 
-Every git call of one event goes through one run cache (`svod.cache.RunCache`), the gates of the store and the approval mark included, so no call repeats within the event. Rule 3 checks the freeze of the subjects of the key before it asks the workspace gate about the directory: an edit in the work directory of an approved subject costs none of the git calls of the gate.
+Every git call of one event goes through one run cache (`svod.cache.RunCache`), the gates of the store and the approval mark included, so no call repeats within the event. Rule 3 checks the freeze of the subjects of the key before it asks the workspace gate about the directory: an edit in the work directory of an approved subject costs none of the git calls of the gate. Rule 3 and `svod local` share one code-freeze rule, `svod.position.freeze`.
+
+The hooks are the package `svod.hooks`, each module importing only those before it: `protocol` (the event JSON), `shell` (tokens of a command, programs known to only read, the paths a command names, the python script exception of rule 1), `store` (the store of the session and its loading), `prompt`, `guard` (the `pre-tool` rules) and `events` (the answer to each event, `svod hook`).
 
 ## Vendored copy
 
