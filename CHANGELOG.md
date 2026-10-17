@@ -8,6 +8,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ### Added
 
+- Tree of works: `active.children` nests open children (by `parent`) under their parent in `svod active` at any depth, `svod status` lists a parent's children after the marks (`status.children`, `status.child`, `status.child_done`, `status.child_open`) and `--format json` gives each position `children`; shared enumeration in `svod.relations`.
 - Core gate `command`: a script (linter, tests, link check) decides a step, run without a shell in a service work directory or a store directory; its result is cached in the git common dir by HEAD, status, changed content and `watch`, so `status` does not rerun it until the source changes.
 - `services` in `svod.yaml` (`ctx.config.services`), the gates `children_done`, `has_children`, `ref_exists` over relations between works (`parent`, `cause`, `leads_to`) and `questions_answered` over a questions file, and `svod answer <query> --q <n> <text>`, which records a person's answer only while a fresh human mark `svod-human.json` is present.
 - Actions: `svod do <action> <query> [-- args]` runs the bash script `<profile>/actions/<action>.sh` for one subject in the store root with `SVOD_*` variables (id, key, pipeline, kind, services, frontmatter, service paths), `svod do --list` lists them, a step may declare `action:` (checked by `validate`, offered by `status` as `status.run`); new core keys `status.run` and `do.*`.

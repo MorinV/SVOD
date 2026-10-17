@@ -8,6 +8,7 @@ from . import evidence_log, keys
 from .checkouts import subject_context
 from .gates import Status
 from .position import evaluate, position
+from .relations import listed_children
 from .resolve import resolve
 
 if TYPE_CHECKING:
@@ -31,6 +32,8 @@ class StatusItem:
     missing_suppressed: bool = False
     skills: list[tuple[str, Any]] | None = None
     instruction_variant: str | None = None
+    # Positions of the children the pipeline lists; None when it lists none.
+    children: list[Position] | None = None
 
 
 @dataclass
@@ -46,6 +49,17 @@ class Collection:
     def positions(self) -> list[Position]:
         """Positions of the evaluated items, in order."""
         return [item.position for item in self.items if item.position is not None]
+
+
+def child_positions(ctx: Context, pipelines: list[Pipeline], pipeline: Pipeline,
+                    subject: Subject) -> list[Position] | None:
+    """Positions of the children the pipeline lists for an existing subject, else None."""
+    if not subject.exists:
+        return None
+    found = listed_children(ctx, pipelines, pipeline, subject)
+    if found is None:
+        return None
+    return [position(ctx, child_pipeline, child) for child_pipeline, child in found]
 
 
 def collect_status(ctx: Context, pipelines: list[Pipeline], query: str) -> Collection:
@@ -82,8 +96,9 @@ def collect_status(ctx: Context, pipelines: list[Pipeline], query: str) -> Colle
         evidence_log.note_position(ctx, pos)
         item.skills = step_skills(own, pos)
         item.instruction_variant = text_key(locale, pos.text, pos.facts) if pos.text else None
+        item.children = child_positions(own, pipelines, pipeline, subject)
         out += render_position(locale, pos, item.skills,
-                               ctx.config.autonomy.get(pipeline.name))
+                               ctx.config.autonomy.get(pipeline.name), item.children)
     for item in items:
         item.missing_suppressed = bool(out) and item.position is None
     return Collection(query, found, Report(bool(out), out=out, err=[] if out else err), items)

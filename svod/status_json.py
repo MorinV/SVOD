@@ -2,6 +2,8 @@
 import re
 from pathlib import PurePosixPath
 
+from .gates import is_done
+
 TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,255}$")
 HASH = re.compile(r"^[0-9a-f]{64}$")
 REASONS = frozenset({"missing", "legacy", "drift", "stale", "unsupported", "not_evaluated"})
@@ -63,6 +65,13 @@ def subject_json(pipeline, subject):
             "checkout": token(subject.checkout.name) if subject.checkout is not None else None}
 
 
+def children_json(children):
+    """JSON of the captured child positions: id, pipeline, current step and done."""
+    return [{"id": safe_path(pos.subject.id), "pipeline": token(pos.pipeline.name),
+             "current": token(pos.current.step.id) if pos.current else None,
+             "done": is_done(pos)} for pos in (children or [])[:128]]
+
+
 def position_json(item):
     """JSON of the captured position of one status item."""
     pos = item.position
@@ -99,6 +108,7 @@ def position_json(item):
         "role": token(pos.current.step.role) if pos.current else None,
         "skills": [{"directory": safe_path(label), "skill": token(skill)}
                    for label, skill in (item.skills or [])[:128]], "refs": [],
+        "children": children_json(item.children),
     })
     return result
 

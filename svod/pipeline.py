@@ -33,6 +33,7 @@ FIELD_IN_PROGRESS = "in_progress"
 FIELD_FACT = "fact"
 FIELD_ITEM = "item"
 FIELD_HEADINGS = "headings"
+FIELD_CHILDREN = "children"
 FIELD_GATE = "gate"
 FIELD_GATES = "gates"
 FIELD_WHEN = "when"
@@ -54,7 +55,7 @@ PIPELINE_FIELDS = frozenset({FIELD_PIPELINE, FIELD_SUBJECT, FIELD_ACTIVE, FIELD_
                              FIELD_HEADER})
 PIPELINE_REQUIRED = (FIELD_PIPELINE, FIELD_SUBJECT, FIELD_STEPS)
 SUBJECT_FIELDS = frozenset({FIELD_PROVIDER, FIELD_KEY_GATE, FIELD_KEY_PARAMS, FIELD_PARAMS})
-ACTIVE_FIELDS = frozenset({FIELD_IN_PROGRESS, FIELD_ITEM, FIELD_HEADINGS})
+ACTIVE_FIELDS = frozenset({FIELD_IN_PROGRESS, FIELD_ITEM, FIELD_HEADINGS, FIELD_CHILDREN})
 IN_PROGRESS_FIELDS = frozenset({FIELD_GATE, FIELD_PARAMS, FIELD_FACT})
 ENTRY_FIELDS = frozenset({FIELD_GATE, FIELD_PARAMS, FIELD_WHEN, FIELD_SEVERITY, FIELD_TEXT})
 ENTRY_REQUIRED = (FIELD_GATE, FIELD_SEVERITY, FIELD_TEXT)
@@ -139,6 +140,8 @@ class ActiveSpec:
     fact: str | None
     item: str | None
     headings: dict[str, str]
+    # Names of the pipelines whose open subjects are shown under a subject of this one.
+    children: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -339,8 +342,16 @@ class _Parser:
                     value = self.string(raw_headings, group, h_where)
                     if value:
                         headings[group] = value
+        children = []
+        c_where = f"{where}.{FIELD_CHILDREN}"
+        for name in self.items(data, FIELD_CHILDREN, where):
+            if not isinstance(name, str) or not name.strip():
+                self.error(c_where, "expected a list of pipeline names")
+            elif name not in children:
+                children.append(name)
         return ActiveSpec(in_progress=in_progress, fact=fact,
-                          item=self.string(data, FIELD_ITEM, where), headings=headings)
+                          item=self.string(data, FIELD_ITEM, where), headings=headings,
+                          children=children)
 
     def step(self, data, index):
         """One step with its gates and entry."""
