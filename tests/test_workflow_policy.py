@@ -503,5 +503,31 @@ class CurrentContractMechanismTest(unittest.TestCase):
         self.assertFalse(gate.evaluate(None, self.subject).passed)
 
 
+class LayeringTest(unittest.TestCase):
+    """Policy sits below position and approve: no import cycle, hidden or not."""
+
+    def imported(self, module):
+        """Sibling modules a svod module imports anywhere in its source."""
+        import ast
+        import svod
+        tree = ast.parse((Path(svod.__file__).parent / f"{module}.py").read_text("utf-8"))
+        return {node.module for node in ast.walk(tree)
+                if isinstance(node, ast.ImportFrom) and node.level == 1 and node.module}
+
+    def test_policy_imports_neither_position_nor_approve(self):
+        self.assertFalse({"position", "approve"} & self.imported("workflow_policy"))
+
+    def test_position_and_pipeline_import_no_policy_layer(self):
+        self.assertFalse({"workflow_policy", "approve"} & self.imported("position"))
+        self.assertFalse({"workflow_policy", "approve", "position"} & self.imported("pipeline"))
+
+    def test_shared_names_stay_importable(self):
+        from svod import approve, position, pipeline, workflow_policy
+        self.assertIs(workflow_policy.step_applies, pipeline.step_applies)
+        self.assertIs(position.applies, pipeline.applies)
+        self.assertIs(position.evaluate, pipeline.evaluate)
+        self.assertIs(approve.applicable_approvals, workflow_policy.applicable_approvals)
+
+
 if __name__ == "__main__":
     unittest.main()

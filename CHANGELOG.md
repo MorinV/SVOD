@@ -8,6 +8,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ### Changed
 
+- One code-freeze rule, `position.freeze()`, behind the readiness check of local `checks`; applicability and single-gate evaluation live in `pipeline`, so `workflow_policy` no longer imports `position` or `approve`.
 - The installed `svod` does not run a copy of the engine that differs from its MANIFEST: it runs itself and says so.
 - `examples/` and the root `skills/` are gone: the templates under `svod/templates/` are the one copy, `svod new --template task|local` creates a store from them, the vendored copy and the setup scripts take the skills from there.
 - README and the reference say what the hooks are: guard rails against a careless agent, not a security boundary against a determined one.

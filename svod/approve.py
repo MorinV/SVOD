@@ -1,6 +1,4 @@
 """The approve command: record a plan approval a person left as a mark in the chat."""
-from dataclasses import replace
-
 from . import keys
 from .approval import (bound_files,
                        consume_mark, digest, field_names, is_fresh, mark_keys, mark_time,
@@ -9,10 +7,10 @@ from .checkouts import subject_context
 from .gates import (ApprovalGate, PARAM_BIND, PARAM_FILE, PARAM_IGNORE, PARAM_MARKER,
                     PARAM_STRIP)
 from .identity import approver
-from .position import applies, evaluate, first_blocking, run_entries
+from .pipeline import applies, evaluate, first_blocking, run_entries, step_applies
 from .render import INDENT, KEYS_SEPARATOR, Report
 from .resolve import resolve
-from .workflow_policy import approval_refs, step_applies
+from .workflow_policy import applicable_approvals
 
 SHA_SHOWN = 12
 NO_SHA = "-"
@@ -21,15 +19,6 @@ NO_SHA = "-"
 def selected_step(pipeline, step):
     """The explicitly named step, or None when the pipeline does not contain it."""
     return next((item for item in pipeline.steps if item.id == step), None)
-
-
-def applicable_approvals(pipeline, subject=None, step=None):
-    """Ordered unique approvals from applicable stages and gate uses."""
-    stages = [item for item in pipeline.steps
-              if (step is None or item.id == step)
-              and (subject is None or step_applies(item, subject))]
-    return [ref for ref in approval_refs(replace(pipeline, steps=stages))
-            if subject is None or applies(ref, subject)]
 
 
 def approval_ref(pipeline, step=None, subject=None):

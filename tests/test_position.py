@@ -11,7 +11,7 @@ from svod.context import Context
 from svod.gates import ArchivedGate, Gate, Status, unknown, verdict
 from svod.loader import load_runtime
 from svod.pipeline import GateRef, Pipeline, SEVERITY_BLOCK, Step, SubjectSpec
-from svod.position import position
+from svod.position import freeze, position
 from svod.providers.openspec_change import DEFAULT_ARCHIVE, DEFAULT_ROOT, METADATA_FILE
 from svod.render import render_position, status_report
 from svod.subject import Subject
@@ -419,6 +419,82 @@ class ArchiveHistoryTest(unittest.TestCase):
                 self.assertIs(pos.done_outcome.result, result)
                 self.assertEqual(pos.unknown, [pos.done_outcome]
                                  if result.status is Status.UNKNOWN else [])
+
+
+class FailGate(Gate):
+    """Fails with one fact for any subject."""
+
+    name = "fail"
+
+    def evaluate(self, ctx, subject):
+        """Always FAIL with a count."""
+        return verdict(False, count=2)
+
+
+class FreezeTest(unittest.TestCase):
+    """freeze(): the first open gate of an applicable blocks_code step."""
+
+    def ref(self, gate, text=None, when=None):
+        """Step gate use of a synthetic gate."""
+        return GateRef(gate.name, {}, "step", text=text, when=when, impl=gate)
+
+    def step(self, step_id, gates, blocks_code=True, when=None):
+        """Synthetic step with its own text."""
+        return Step(step_id, f"{step_id}.text", True, False, blocks_code, None, gates, [],
+                    when=when)
+
+    def frozen(self, *steps, attrs=None):
+        """freeze() over a synthetic pipeline of the steps."""
+        pipeline = Pipeline("synthetic", Path("synthetic.yaml"),
+                            SubjectSpec("synthetic", None, {}), list(steps))
+        return freeze(None, pipeline, Subject("subject", None, attrs=attrs or {}))
+
+    def test_all_gates_pass_is_not_frozen(self):
+        """Passed blocks_code steps and open steps without blocks_code do not freeze."""
+        self.assertIsNone(self.frozen(self.step("plan", [self.ref(FailGate())], False),
+                                      self.step("approve", [self.ref(PassGate())])))
+
+    def test_first_open_gate_gives_text_and_facts(self):
+        """The gate's own text wins over the step text; facts come from that gate."""
+        found = self.frozen(self.step("approve", [self.ref(PassGate()),
+                                                  self.ref(FailGate(), text="gate.text")]))
+        self.assertEqual((found.step.id, found.text, found.facts, found.gate),
+                         ("approve", "gate.text", {"count": 2}, "fail"))
+        self.assertFalse(found.unknown)
+        self.assertIsNone(found.reason)
+        found = self.frozen(self.step("approve", [self.ref(FailGate())]))
+        self.assertEqual(found.text, "approve.text")
+
+    def test_step_without_gates_is_open_with_its_text(self):
+        """A gateless blocks_code step never passes: the step text, no facts, no gate."""
+        found = self.frozen(self.step("approve", []))
+        self.assertEqual((found.text, found.facts, found.gate), ("approve.text", {}, None))
+
+    def test_unknown_gate_is_open_and_carries_reason(self):
+        """A gate that raises is UNKNOWN: it freezes and names the error."""
+        gate = PassGate()
+        with patch.object(gate, "evaluate", side_effect=ValueError("boom")):
+            found = self.frozen(self.step("approve", [self.ref(gate)]))
+        self.assertTrue(found.unknown)
+        self.assertEqual(found.reason, "gate pass raised ValueError: boom")
+
+    def test_inapplicable_steps_and_gates_are_skipped(self):
+        """A step or gate use whose when attribute is falsy does not freeze."""
+        self.assertIsNone(self.frozen(self.step("approve", [self.ref(FailGate())], when="big"),
+                                      self.step("review", [self.ref(FailGate(), when="big")])))
+        found = self.frozen(self.step("approve", [self.ref(FailGate())], when="big"),
+                            attrs={"big": True})
+        self.assertEqual(found.step.id, "approve")
+
+    def test_passed_later_step_does_not_freeze_unlike_status(self):
+        """Status keeps the freeze line for a passed blocks_code step after an open one."""
+        steps = (self.step("spec", [self.ref(FailGate())], False),
+                 self.step("approve", [self.ref(PassGate())]))
+        self.assertIsNone(self.frozen(*steps))
+        pipeline = Pipeline("synthetic", Path("synthetic.yaml"),
+                            SubjectSpec("synthetic", None, {}), list(steps))
+        pos = position(None, pipeline, Subject("subject", None))
+        self.assertEqual(pos.do_not_touch, {"step": "approve"})
 
 
 class StoreAheadTest(SharedStoreTestCase):

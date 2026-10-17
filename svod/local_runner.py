@@ -10,11 +10,16 @@ from . import local_evidence as evidence
 from . import local_workflow as workflow
 from .approval import digest
 from .context import Context
+from .gates import ApprovalGate
 from .loader import load_runtime
+from .pipeline import first_blocking, run_entries, step_applies
+from .position import freeze
 from .resolve import exact_pairs, key_pairs
+from .workflow_policy import required_prerequisites, subject_pipeline
 
 COMMAND_TIMEOUT = 600
 NO_BYTECODE_ENV = 'PYTHONDONTWRITEBYTECODE'
+READINESS_PENDING = 'readiness prerequisites pending at '
 
 
 def state(root, key, *, recorded=False):
@@ -78,20 +83,30 @@ def _stop_owned_group(process):
         raise
 
 
+def unready_step(ctx, pipeline, subject):
+    """Id of the first applicable blocks_code step whose entry blocks or freeze() stops at.
+
+    The gates come from freeze(), the single code-freeze rule; step entries are a readiness
+    condition of their own, checked in step order up to the frozen step.
+    """
+    frozen = freeze(ctx, pipeline, subject)
+    for step in pipeline.steps:
+        if not step.blocks_code or not step_applies(step, subject):
+            continue
+        if first_blocking(run_entries(ctx, step.entry, subject)):
+            return step.id
+        if frozen is not None and step is frozen.step:
+            return step.id
+    return None
+
+
 def checks(root, key):
     """Run once, retain actual output and pre/post Git observations, report failure honestly."""
-    from .workflow_policy import required_prerequisites, subject_pipeline, step_applies
-    from .position import applies, evaluate, first_blocking
-    from .gates import ApprovalGate
     ctx, subject, policy = state(root, key)
     pipeline, resolved = subject_pipeline(ctx, subject)
-    for step in pipeline.steps:
-        if not step.blocks_code or not step_applies(step, resolved):
-            continue
-        entries = [evaluate(ctx, ref, resolved) for ref in step.entry if applies(ref, resolved)]
-        outcomes = [evaluate(ctx, ref, resolved) for ref in step.gates if applies(ref, resolved)]
-        if not step.gates or first_blocking(entries) or any(not item.passed for item in outcomes):
-            raise ValueError('readiness prerequisites pending at ' + step.id)
+    unready = unready_step(ctx, pipeline, resolved)
+    if unready is not None:
+        raise ValueError(READINESS_PENDING + unready)
     if policy['command'] is not None and os.name != 'posix':
         raise ValueError('local command cleanup requires POSIX')
     required_prerequisites(ctx, subject,
