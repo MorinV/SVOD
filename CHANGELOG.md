@@ -23,6 +23,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 - `svod active` says when no pipeline declares `active` instead of printing nothing.
 - The reference documents `GitResult`, the type `ctx.cache.git` returns to a custom gate.
 - The examples, the skills and the docs are checked against the packaged templates by a test, so the copies cannot drift.
+- Removed the unused `render.missing_text` and `versions.tag_of`; added a `[tool.ruff]` configuration (line length 100, rules E, F, W, B, UP, SIM) without mass reformatting.
 
 ### Migration
 

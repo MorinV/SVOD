@@ -5,9 +5,9 @@ key of svod.yaml or a file. svod update applies every migration whose version li
 old version and up to the new one, oldest first, and prints what each one changed.
 """
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 from .keys import MIGRATE_RENAMED_FILE, MIGRATE_RENAMED_KEY
 from .paths import CONFIG_FILE
