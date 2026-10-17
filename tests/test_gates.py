@@ -11,7 +11,7 @@ from svod.approval import digest, normalized
 from svod.config import load_config
 from svod.context import Context
 from svod.errors import LoadError, ParamError
-from svod.gates import CORE_GATES, KeyGate, Status, build_registries, build_registry
+from svod.gates import CORE_GATES, KeyGate, Status, build_registries
 from svod.providers import CORE_PROVIDERS
 from svod.locale import load_locale
 from svod.subject import ATTR_CONTAINER, ATTR_FRONTMATTER, Subject
@@ -426,14 +426,14 @@ class RegistryTest(unittest.TestCase):
 
     def test_test_profile_gates_are_registered(self):
         """The toy gates join the core ones."""
-        registry = build_registry(support.TEST_PROFILE)
+        registry = build_registries(support.TEST_PROFILE)[0]
         self.assertTrue(set(CORE_GATES) < set(registry))
         self.assertTrue(issubclass(registry["ticket"], KeyGate))
         self.assertIn("progress", registry)
 
     def test_private_modules_are_skipped(self):
         """Modules starting with an underscore are helpers, not gate modules."""
-        registry = build_registry(self.profile({"_helper.py": "VALUE = 1\n"}))
+        registry = build_registries(self.profile({"_helper.py": "VALUE = 1\n"}))[0]
         self.assertEqual(set(registry), set(CORE_GATES))
 
     def test_registry_errors(self):
@@ -480,7 +480,7 @@ class RegistryTest(unittest.TestCase):
         for name, gates, message in cases:
             with self.subTest(name=name):
                 with self.assertRaises(LoadError) as ctx:
-                    build_registry(self.profile(gates))
+                    build_registries(self.profile(gates))[0]
                 self.assertIn(message, str(ctx.exception))
 
 
@@ -504,7 +504,7 @@ class ToyGateTest(StoreTestCase):
 
     def test_progress_and_ticket(self):
         """The toy progress gate reads its counter; the ticket gate recognises keys."""
-        registry = build_registry(support.TEST_PROFILE)
+        registry = build_registries(support.TEST_PROFILE)[0]
         config = load_config(self.sb.store)
         ctx = Context(config, load_locale("en", config.profile))
         path = self.sb.store / "work"

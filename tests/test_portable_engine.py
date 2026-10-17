@@ -83,7 +83,6 @@ class PortableApprovalTest(unittest.TestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text('{"sequence": 999, "approved": true}')
         self.assertTrue(ref.impl.evaluate(self.ctx, self.subject).passed)
-        self.assertEqual(ref.impl.effective_bind(self.ctx, self.subject), (ref.params['bind'], None))
         (base / 'design.md').write_text('unapproved new bytes')
         self.assertEqual(ref.impl.evaluate(self.ctx, self.subject).status, Status.FAIL)
 

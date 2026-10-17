@@ -531,7 +531,6 @@ Core keys (all required in every core locale file):
 - Content: the `doc.generated` line naming the source file and the command, a mermaid `flowchart LR` (entry node, one node per step, done node), a legend of the styles used, a table with the columns step, gates, role, next step; the done row names `doc.pending_text` before `doc.done_text` when done has `pending`.
 - Step node: `title` (or `id`), `doc.blocks_code` as a second line. Styles: `required` — bold border, `optional` — dashed, `blocks_code` — red border.
 - Gate captions: the `label` when set, else the gate's `describe`; entry gates also get their `when` wording and severity. Placeholders in texts are shown as `doc.placeholder`.
-- `document.stale_blocks()` lists blocks whose content differs from a fresh rendering or that name an unknown pipeline — for a linter of the store.
 
 ## Writing a custom gate
 

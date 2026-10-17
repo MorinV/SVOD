@@ -224,10 +224,6 @@ class ApprovalGate(Gate):
         """FAIL with the reason among the facts."""
         return Result(Status.FAIL, {**facts, FACT_REASON: reason})
 
-    def effective_bind(self, ctx, subject):
-        """Native approval inputs; no external revision or import authority."""
-        return self.params.get(PARAM_BIND), None
-
     def evaluate(self, ctx, subject):
         """Read the approval fields; facts.value, marker, by, date and reason on failure."""
         marker = self.params[PARAM_MARKER]
@@ -466,7 +462,3 @@ def build_registries(profile_dir):
     gates, providers = load_profile(profile_dir)
     return {**CORE_GATES, **gates}, {**CORE_PROVIDERS, **providers}
 
-
-def build_registry(profile_dir):
-    """Gate registry: core gates plus profile gates, name to class."""
-    return build_registries(profile_dir)[0]

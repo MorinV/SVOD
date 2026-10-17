@@ -8,7 +8,7 @@ from support import CONFIG_FILE, ENCODING, EXIT_FINDINGS, EXIT_OK, core_lead
 
 from svod import keys
 from svod.config import load_config
-from svod.gates import build_registry
+from svod.gates import build_registries
 from svod.locale import load_locale
 
 EN = "en"
@@ -108,7 +108,7 @@ class TaskKeyGateTest(unittest.TestCase):
     def setUpClass(cls):
         """Key gate built from the example profile with its default pattern."""
         config = load_config(te.EXAMPLE, local=False)
-        cls.gate = build_registry(config.profile)["key"]()
+        cls.gate = build_registries(config.profile)[0]["key"]()
 
     def test_match(self):
         """A query names a key in any letter case; the key is upper-cased."""

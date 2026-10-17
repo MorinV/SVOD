@@ -8,7 +8,7 @@ from support import (EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, StoreTestCase, TempStor
 
 from svod import keys
 from svod.context import Context
-from svod.document import MARKER_BEGIN, RENDER_COMMAND, block, stale_blocks
+from svod.document import MARKER_BEGIN, RENDER_COMMAND, block
 from svod.errors import LoadError
 from svod.gates import CORE_GATES
 from svod.loader import load_runtime
@@ -105,16 +105,6 @@ class RenderTest(StoreTestCase):
         none = self.sb.cli("render", "note", "--write")
         self.assertEqual(none.returncode, EXIT_FINDINGS)
         self.assertIn(MARKER_BEGIN.format(name="note"), none.stderr)
-
-    def test_stale_blocks(self):
-        """A block differing from the rendering and a block of an unknown pipeline are stale."""
-        body = "\n".join(self.lines("task")[1:-1]) + "\n"
-        self.sb.write("fresh.md", marked(body))
-        self.sb.write("edited.md", marked(body.replace("propose a change", "edited")))
-        self.sb.write("ghost.md", "<!-- pipeline:ghost:begin -->\nx\n<!-- pipeline:ghost:end -->\n")
-        found = {(item.path.name, item.name, known)
-                 for item, known in stale_blocks(self.ctx, self.runtime.pipelines)}
-        self.assertEqual(found, {("edited.md", "task", True), ("ghost.md", "ghost", False)})
 
 
 class DescribeTest(unittest.TestCase):

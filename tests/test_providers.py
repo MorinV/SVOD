@@ -7,7 +7,7 @@ from support import PEER, StoreTestCase, doc
 
 from svod.config import load_config
 from svod.context import Context
-from svod.gates import build_registry
+from svod.gates import build_registries
 from svod.loader import load_runtime
 from svod.providers import CORE_PROVIDERS
 from svod.providers.openspec_change import DEFAULT_ARCHIVE, DEFAULT_ROOT, METADATA_FILE
@@ -48,7 +48,7 @@ class ProviderTest(StoreTestCase):
         super().setUp()
         build_store(self.sb)
         self.ctx = Context(load_config(self.sb.store))
-        self.ticket = build_registry(support.TEST_PROFILE)["ticket"]()
+        self.ticket = build_registries(support.TEST_PROFILE)[0]["ticket"]()
 
     def provider(self, name, **params):
         """Core provider with the toy key gate."""

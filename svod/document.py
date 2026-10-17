@@ -326,24 +326,3 @@ def write_blocks(ctx, pipeline):
                 fh.write("\n".join(updated))
         results.append((path, changed))
     return results
-
-
-def stale_blocks(ctx, pipelines):
-    """Blocks whose content differs from the rendering, or that name an unknown pipeline.
-
-    Each item is (block, known): known is False for an unknown pipeline name.
-    """
-    by_name = {p.name: p for p in pipelines}
-    rendered, stale, cache = {}, [], {}
-    for item in scan(ctx):
-        pipeline = by_name.get(item.name)
-        if pipeline is None:
-            stale.append((item, False))
-            continue
-        if item.name not in rendered:
-            rendered[item.name] = content(ctx, pipeline)
-        if item.path not in cache:
-            cache[item.path] = read_lines(item.path)
-        if cache[item.path][item.begin + 1:item.end] != rendered[item.name]:
-            stale.append((item, True))
-    return stale

@@ -6,6 +6,10 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Changed
+
+- Removed the unused `gates.build_registry`, `ApprovalGate.effective_bind` and `document.stale_blocks` with the tests that were their only callers.
+
 ## [0.4.0] - 2026-10-17
 
 ### Added
