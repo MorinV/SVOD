@@ -8,6 +8,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ### Added
 
+- `services` in `svod.yaml` (`ctx.config.services`), the gates `children_done`, `has_children`, `ref_exists` over relations between works (`parent`, `cause`, `leads_to`) and `questions_answered` over a questions file, and `svod answer <query> --q <n> <text>`, which records a person's answer only while a fresh human mark `svod-human.json` is present.
 - `svod approve <query> --confirm` records an approval that a person confirms with y at a terminal when there is no fresh mark, for agents without a prompt hook; all YAML is read by one loader that refuses repeated keys, and the approval fields are read and written only through `svod.approval.read_fields` and `write_fields`.
 
 ### Changed

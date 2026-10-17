@@ -23,6 +23,7 @@ FIELD_PROFILE_CONFIG = "profile_config"
 FIELD_WORKSPACE_GATE = "workspace_gate"
 FIELD_MAIN_READ_ONLY = "main_checkout_read_only"
 FIELD_UPDATE_CHECK = "update_check"
+FIELD_SERVICES = "services"
 APPROVAL_PHRASES = "phrases"
 APPROVAL_WINDOW = "window_minutes"
 APPROVAL_FIELDS = frozenset({APPROVAL_PHRASES, APPROVAL_WINDOW})
@@ -35,7 +36,7 @@ STRING_FIELDS = (FIELD_LOCALE, FIELD_PROFILE, FIELD_DEFAULT_BRANCH, FIELD_WORKSP
 LIST_FIELDS = (FIELD_ACTIVE_ORDER, FIELD_RENDER_EXCLUDE)
 BOOL_FIELDS = (FIELD_MAIN_READ_ONLY, FIELD_UPDATE_CHECK)
 KNOWN_FIELDS = frozenset(STRING_FIELDS + LIST_FIELDS + BOOL_FIELDS
-                         + (FIELD_APPROVAL, FIELD_PROFILE_CONFIG))
+                         + (FIELD_APPROVAL, FIELD_PROFILE_CONFIG, FIELD_SERVICES))
 DEFAULT_BRANCH_FALLBACK = "origin/main"
 LOCAL_LOGIN = "login"
 LOCAL_EMAIL = "email"
@@ -65,6 +66,7 @@ class Config:
     workspace_gate: str | None = None
     main_checkout_read_only: bool = False
     update_check: bool = True
+    services: dict[str, Path] = field(default_factory=dict)
 
 
 def string_errors(path: Path, data: dict[str, Any], keys: Iterable[str]) -> list[str]:
@@ -85,6 +87,24 @@ def approval_errors(path: Path, data: Any) -> list[str]:
     window = data.get(APPROVAL_WINDOW, DEFAULT_WINDOW_MINUTES)
     if isinstance(window, bool) or not isinstance(window, int) or window < 1:
         errors.append(f"{path}: {FIELD_APPROVAL}.{APPROVAL_WINDOW} must be a positive integer")
+    return errors
+
+
+def services_errors(path: Path, root: Path, data: Any) -> list[str]:
+    """Errors of the services mapping: names to relative paths of existing directories."""
+    if not isinstance(data, dict):
+        return [f"{path}: {FIELD_SERVICES} must be a mapping of names to directories"]
+    errors = []
+    for name, value in data.items():
+        where = f"{path}: {FIELD_SERVICES}.{name}"
+        if not isinstance(name, str) or not name.strip():
+            errors.append(f"{path}: {FIELD_SERVICES}: names must be non-empty strings")
+        elif not isinstance(value, str) or not value.strip():
+            errors.append(f"{where} must be a non-empty string")
+        elif Path(value).is_absolute():
+            errors.append(f"{where} must be relative to the store root: {value}")
+        elif not (root / value).is_dir():
+            errors.append(f"{where}: service directory not found: {(root / value).resolve()}")
     return errors
 
 
@@ -147,6 +167,8 @@ def load_config(root: str | Path, local: bool = True) -> Config:
     if not isinstance(data.get(FIELD_PROFILE_CONFIG, {}), dict):
         errors.append(f"{path}: {FIELD_PROFILE_CONFIG} must be a mapping")
     errors += agent_context_errors(path, data.get(FIELD_PROFILE_CONFIG))
+    if FIELD_SERVICES in data:
+        errors += services_errors(path, root, data[FIELD_SERVICES])
     for key in LIST_FIELDS:
         value = data.get(key, [])
         if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
@@ -180,6 +202,8 @@ def load_config(root: str | Path, local: bool = True) -> Config:
         workspace_gate=data.get(FIELD_WORKSPACE_GATE),
         main_checkout_read_only=data.get(FIELD_MAIN_READ_ONLY, False),
         update_check=data.get(FIELD_UPDATE_CHECK, True),
+        services={name: (root / value).resolve()
+                  for name, value in (data.get(FIELD_SERVICES) or {}).items()},
     )
 
 
