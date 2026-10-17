@@ -476,7 +476,8 @@ Core keys (all required in every core locale file):
 | `render.no_markers` | `{name}`, `{marker}` |
 | `hook.engine_broken` | `{reason}` |
 | `hook.position_head`, `hook.position_tail` | — |
-| `hook.approval_marked` | `{minutes}` |
+| `hook.approval_marked` | `{minutes}`, `{keys}`, `{commands}` (`svod approve <key>` of each key, joined by `; `) |
+| `hook.approval_marked_unnamed` | `{minutes}` (the approval named no key) |
 | `hook.approval_joiners` | — (words joining keys after an approval phrase, separated by spaces) |
 | `hook.deny_approval` | `{fields}`, `{file}` |
 | `hook.deny_plan` | `{keys}`, `{text}` |
@@ -636,19 +637,19 @@ Optional `profile_config.agent_context` booleans `session_summary`, `prompt_posi
 
 `prompt`:
 
-- **Approval.** When the prompt, as a whole, is one of `approval.phrases` (letter case ignored), optionally followed by keys joined by separators or the words of `hook.approval_joiners`, and closing `.` or `!`, the hook writes the approval mark with those keys (`svod.approval.write_mark`) and says so (`hook.approval_marked`). A phrase inside a longer text does not approve.
+- **Approval.** When the prompt, as a whole, is one of `approval.phrases` (letter case ignored), optionally followed by keys joined by separators or the words of `hook.approval_joiners`, and closing `.` or `!`, the hook writes the approval mark with those keys (`svod.approval.write_mark`) and says so: `hook.approval_marked` names the keys and the `svod approve <key>` command of each, `hook.approval_marked_unnamed` is said when no key was named. A phrase inside a longer text does not approve. In the positions of the same answer, a subject of a marked key whose next step is that approval gets the variant `<text>_marked` of the step text (with `{keys}`, the marked key) when the locale has it, and no next step otherwise: the answer never asks to wait for the approval it has just recorded.
 - **Positions.** Keys the `key_gate` of any pipeline recognises in the prompt, then exact names (the last path segment of the id, at least 8 characters, as a whole word) of open subjects, at most three queries. For each, the `status` block of every existing subject it resolves to, between `hook.position_head` and `hook.position_tail`. A key with nothing in the store adds nothing.
 
 `pre-tool` watches `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash` and `apply_patch` (Codex; the files of the patch are read from its `*** Update File:`, `*** Add File:`, `*** Delete File:` and `*** Move to:` lines, relative to `cwd`). It refuses:
 
 1. **Approval fields.** A file whose path ends with the `file` of an `approval` step gate of any pipeline is a metadata file; its fields are `<marker>`, `<marker>_by` and `<marker>_sha`. Refused: `Write` that changes their lines, `Edit`/`MultiEdit` whose old or new text names one, an `apply_patch` section whose changed lines name one, and a `Bash` command naming the file and a field that writes into it (`>`/`>>` to it, `sed -i`, `perl -i`, `yq -i`, `tee` to it, `cp`/`mv` onto it, a `python -c` or heredoc script holding its path as a string literal). Text: `hook.deny_approval`. Only `svod approve` writes them.
-2. **Read-only main checkout.** With `main_checkout_read_only` in the `svod.yaml` of the store holding the path: a path in the first checkout of `git worktree list` of that store, not in a nested repository and not ignored by git. Text: `hook.deny_main`.
+2. **Read-only main checkout.** With `main_checkout_read_only` in the `svod.yaml` of the store holding the path: a path in the first checkout of `git worktree list` of that store, not in a nested repository nor in the git directory, and not ignored by git. A checkout whose `.git` is a directory is the main one without asking git; `git worktree list` is asked only for a `.git` file. Text: `hook.deny_main`.
 3. **Frozen code.** With `workspace_gate`: the nearest directory above the path holding `.git` is a work directory when a key gate finds a key in its name and `worktrees(ctx, {key})` of the workspace gate returns it. Each existing, not archived subject of that key (in the store and its other checkouts) is checked: the first gate of a `blocks_code` step that does not pass refuses the edit, with `hook.deny_plan` carrying its step text. A key without a subject is not refused.
-4. **Shell commands.** `Bash` is checked against the same rules through the paths it names: every token of the command that exists or looks like a file (a suffix or a directory part) read as a path from its `cwd`; the `cwd` itself counts for the code freeze. A command made only of programs known not to write files (`cat`, `ls`, `grep`, `git status`/`log`/`diff`, `svod`, …) without a redirection is let through; an interpreter, an in-place edit, `git checkout`/`reset`/`stash`/… or an unknown program counts as a write. The approval mark file is refused to every write, by name (`hook.deny_mark`).
+4. **Shell commands.** `Bash` is checked against the same rules through the paths it names: every token of the command that exists or looks like a file (a suffix or a directory part) read as a path from its `cwd`; the `cwd` itself counts for the code freeze. A command made only of programs known not to write files (`cat`, `ls`, `grep`, `git status`/`log`/`diff`, `svod`, …) without a redirection is let through before the store is loaded, so no profile gate runs for it; an interpreter, an in-place edit, `git checkout`/`reset`/`stash`/… or an unknown program counts as a write. The approval mark file is refused to every write, by name (`hook.deny_mark`).
 
 The hooks run as the same user as the agent and see only the tool calls the agent makes through them: they stop a careless agent, not one that sets out to write a file the user can write. Profile gates are Python the hooks run on every event: open only stores you trust.
 
-Edits by `Bash` are not checked by rules 2 and 3.
+Every git call of one event goes through one run cache (`svod.cache.RunCache`), the gates of the store and the approval mark included, so no call repeats within the event. Rule 3 checks the freeze of the subjects of the key before it asks the workspace gate about the directory: an edit in the work directory of an approved subject costs none of the git calls of the gate.
 
 ## Vendored copy
 

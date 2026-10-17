@@ -23,6 +23,7 @@ task:
     tasks: "написать tasks.md в change: шаги работы"
     approve: "показать план человеку и дождаться одобрения в чате; затем svod approve <ключ>"
     approve_missing: "показать план (proposal, design, specs, tasks) человеку и дождаться одобрения в чате; затем svod approve <ключ>"
+    approve_marked: "человек одобрил план в чате: записать одобрение командой svod approve {keys}"
     approve_legacy: "у одобрения нет одобрившего или версии: показать план снова и записать свежее одобрение командой svod approve <ключ>"
     approve_drift: "план изменился после одобрения: показать изменения и записать свежее одобрение командой svod approve <ключ>"
     workspace: "завести рабочий каталог рядом со стором: git worktree add ../<repo>-<KEY>_<slug> -b <KEY>_<slug>"

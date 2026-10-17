@@ -51,6 +51,12 @@ ID_SEPARATOR = "/"
 BLOCK_SEPARATOR = "\n\n"
 LINE_SEPARATOR = "\n"
 FIELDS_SEPARATOR = ", "
+COMMANDS_SEPARATOR = "; "
+APPROVE_COMMAND = "svod approve {key}"
+HOOK_APPROVAL_MARKED_UNNAMED = "hook.approval_marked_unnamed"
+VARIANT_SEPARATOR = "_"
+REASON_MARKED = "marked"
+FACT_KEYS = "keys"
 EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 WRITE_TOOL = "Write"
 BASH_TOOL = "Bash"
@@ -189,11 +195,14 @@ def load(root):
         return None, f"{type(exc).__name__}: {exc}"
 
 
-def context_of(runtime):
-    """Evaluation context of a loaded store."""
+def context_of(runtime, cache=None):
+    """Evaluation context of a loaded store; cache, when given, is the memory of the event."""
     from .context import Context
-    return Context(runtime.config, runtime.locale, bindings=runtime.bindings,
-                   pipelines=runtime.by_name())
+    ctx = Context(runtime.config, runtime.locale, bindings=runtime.bindings,
+                  pipelines=runtime.by_name())
+    if cache is not None:
+        ctx.cache = cache
+    return ctx
 
 
 def agent_context_setting(runtime, name):
@@ -291,8 +300,39 @@ def queries(ctx, pipelines, prompt):
     return list(dict.fromkeys(query_keys(pipelines, prompt) + names))[:MAX_QUERIES]
 
 
-def positions(ctx, pipelines, named):
-    """Status blocks of the existing subjects the queries resolve to, without repeats."""
+def awaits_approval(pos):
+    """Whether the next step of the position is an approval gate that has not passed."""
+    from .gates import ApprovalGate
+    if pos.text_from_entry or pos.current is None:
+        return False
+    first = pos.current.first_open
+    return first is not None and isinstance(first.ref.impl, ApprovalGate)
+
+
+def marked_step(locale, pos, marked):
+    """The position told that the person has just approved, when it waits for that approval.
+
+    The next step becomes the variant <text>_marked of the profile, given the key as {keys},
+    when the locale has it; otherwise it is dropped, the approval notice naming the command
+    instead. Waiting for the approval in the chat is never repeated after the mark is recorded.
+    """
+    wanted = {folded(m) for m in marked}
+    named = sorted(k for k in pos.subject.keys if folded(k) in wanted)
+    if not named or not pos.text or not awaits_approval(pos):
+        return pos
+    variant = f"{pos.text}{VARIANT_SEPARATOR}{REASON_MARKED}"
+    if locale.has(variant):
+        pos.text, pos.facts = variant, {FACT_KEYS: named[0]}
+    else:
+        pos.text = None
+    return pos
+
+
+def positions(ctx, pipelines, named, marked=()):
+    """Status blocks of the existing subjects the queries resolve to, without repeats.
+
+    marked: keys whose approval mark the prompt has just recorded.
+    """
     from .checkouts import subject_context
     from .position import position
     from .render import render_position, step_skills
@@ -306,7 +346,7 @@ def positions(ctx, pipelines, named):
             if not subject.exists:
                 continue
             own = subject_context(ctx, subject)
-            pos = position(own, pipeline, subject)
+            pos = marked_step(ctx.locale, position(own, pipeline, subject), marked)
             found.append(LINE_SEPARATOR.join(render_position(ctx.locale, pos,
                                                              step_skills(own, pos))))
     return list(dict.fromkeys(found))
@@ -329,6 +369,16 @@ def session_start(event, fallback):
     return hook_payload(runtime.locale, lines) if lines else None
 
 
+def marked_text(locale, keys, minutes):
+    """Notice of a recorded approval mark: with the command for each key named, or unnamed."""
+    from .keys import HOOK_APPROVAL_MARKED
+    if not keys:
+        return locale.text(HOOK_APPROVAL_MARKED_UNNAMED, minutes=minutes)
+    return locale.text(HOOK_APPROVAL_MARKED, minutes=minutes, keys=FIELDS_SEPARATOR.join(keys),
+                       commands=COMMANDS_SEPARATOR.join(APPROVE_COMMAND.format(key=key)
+                                                        for key in keys))
+
+
 def prompt_hook(event, fallback, at=None):
     """Mark a human prompt; a verified redelivery keeps its original event time.
 
@@ -336,7 +386,7 @@ def prompt_hook(event, fallback, at=None):
     for treating an old answer as approval of a new plan. Expired events cannot mark.
     """
     from .approval import MARK_AT, is_fresh, write_mark
-    from .keys import HOOK_APPROVAL_MARKED, HOOK_POSITION_HEAD, HOOK_POSITION_TAIL
+    from .keys import HOOK_POSITION_HEAD, HOOK_POSITION_TAIL
     prompt = event.get(FIELD_PROMPT)
     if not isinstance(prompt, str) or not prompt.strip() or is_agent_message(prompt):
         return None
@@ -347,18 +397,20 @@ def prompt_hook(event, fallback, at=None):
     if runtime is None:
         return context_output(EVENT_PROMPT, broken_text(root, reason))
     locale = runtime.locale
+    ctx = context_of(runtime)
     blocks = []
     answers = human_answers(prompt)
     approvals = [keys for answer in answers
                  if (keys := approval_keys(runtime, answer)) is not None]
     keys = list(dict.fromkeys(key for group in approvals for key in group)) if approvals else None
     fresh = at is None or is_fresh({MARK_AT: at.isoformat()}, runtime.config.approval_window)
-    marked = keys is not None and fresh and write_mark(root, keys, at=at) is not None
+    marked = (keys is not None and fresh
+              and write_mark(ctx.root, keys, at=at, run=ctx.cache.git) is not None)
     if marked and agent_context_setting(runtime, "approval_notice"):
-        blocks.append(locale.text(HOOK_APPROVAL_MARKED, minutes=runtime.config.approval_window))
+        blocks.append(marked_text(locale, keys, runtime.config.approval_window))
     if agent_context_setting(runtime, "prompt_positions"):
-        ctx = context_of(runtime)
-        found = positions(ctx, runtime.pipelines, queries(ctx, runtime.pipelines, "\n".join(answers)))
+        found = positions(ctx, runtime.pipelines, queries(ctx, runtime.pipelines, "\n".join(answers)),
+                          keys if marked else ())
         if found:
             blocks += [locale.text(HOOK_POSITION_HEAD), *found, locale.text(HOOK_POSITION_TAIL)]
     return context_output(EVENT_PROMPT, BLOCK_SEPARATOR.join(blocks)) if blocks else None
@@ -680,14 +732,17 @@ def patch_targets(event, patch):
     return [(path, LINE_SEPARATOR.join(lines)) for path, lines in sections.items()]
 
 
-def main_checkout(directory):
+def main_checkout(directory, run=None):
     """(store, main checkout) when the directory lies in a read-only main checkout, else None.
 
-    Nested repositories and other worktrees of the store are not the main checkout.
+    Nested repositories, the git directory and other worktrees of the store are not the main
+    checkout. The checkout of the directory is the nearest one holding .git, which must also
+    hold the store; a .git directory there is a main checkout, anything else is asked of git
+    worktree list. run replaces run_git.
     """
     from .config import find_root, load_config
     from .errors import LoadError
-    from .git import run_git, worktree_list
+    from .git import worktree_list
     store = find_root(directory)
     if store is None:
         return None
@@ -697,22 +752,23 @@ def main_checkout(directory):
         return None
     if not config.main_checkout_read_only:
         return None
-    found, _ = worktree_list(store)
-    if not found or not directory.is_relative_to(found[0].path):
+    top = checkout_dir(directory)
+    if top is None or checkout_dir(store) != top or DOT_GIT in directory.relative_to(top).parts:
         return None
-    main = found[0].path
-    top = run_git(directory, "rev-parse", "--show-toplevel")
-    if not top.ok or Path(top.out).resolve() != main:
+    if (top / DOT_GIT).is_dir():
+        return store, top
+    found, _ = worktree_list(store, run)
+    if not found or found[0].path != top.resolve():
         return None
-    return store, main
+    return store, found[0].path
 
 
-def ignored_paths(main, paths):
-    """Those of the paths that git ignores in the main checkout, as given."""
+def ignored_paths(main, paths, run=None):
+    """Those of the paths that git ignores in the main checkout, as given; run replaces run_git."""
     from .git import run_git
     if not paths:
         return set()
-    result = run_git(main, "check-ignore", "--", *(str(p) for p in paths))
+    result = (run or run_git)(main, "check-ignore", "--", *(str(p) for p in paths))
     return set(result.out.splitlines()) if result.ok else set()
 
 
@@ -723,25 +779,31 @@ def main_text(store, main):
     return error_locale(store).text(HOOK_DENY_MAIN, main=main)
 
 
-def main_reason(path):
+def main_reason(path, run=None):
     """Refusal when the path is in the main checkout of a store that keeps it read-only.
 
-    Paths git ignores, nested repositories and other worktrees are not refused.
+    Paths git ignores, nested repositories and other worktrees are not refused. run replaces
+    run_git.
     """
-    found = main_checkout(existing_dir(path))
-    if found is None or str(path) in ignored_paths(found[1], [path]):
+    found = main_checkout(existing_dir(path), run)
+    if found is None or str(path) in ignored_paths(found[1], [path], run):
         return None
     return main_text(*found)
 
 
 class Guard:
-    """Checks of one pre-tool event against the store of the session."""
+    """Checks of one pre-tool event against the store of the session.
+
+    Every git call of the event goes through one run cache, the gates of the store included.
+    """
 
     def __init__(self, root):
         """Load the store; without one only the main checkout rule applies."""
+        from .cache import RunCache
         self.root = root
+        self.cache = RunCache()
         self.runtime, self.broken = load(root) if root is not None else (None, None)
-        self.ctx = context_of(self.runtime) if self.runtime else None
+        self.ctx = context_of(self.runtime, self.cache) if self.runtime else None
         self.guarded = guarded_files(self.runtime.pipelines) if self.runtime else []
 
     def fields_of(self, path):
@@ -772,7 +834,7 @@ class Guard:
         fields, name = self.fields_of(path)
         if fields and touches(fields):
             return self.approval_text(fields, name)
-        return main_reason(path) or self.plan_reason(path)
+        return main_reason(path, self.cache.git) or self.plan_reason(path)
 
     def bash_reason(self, event, command):
         """Refusal of a shell command writing approval fields, the mark, frozen or read-only code."""
@@ -792,9 +854,9 @@ class Guard:
         for path in bash_paths(event, command):
             by_dir.setdefault(existing_dir(path), []).append(path)
         for directory, paths in by_dir.items():
-            found = main_checkout(directory)
+            found = main_checkout(directory, self.cache.git)
             if found is not None:
-                ignored = ignored_paths(found[1], paths)
+                ignored = ignored_paths(found[1], paths, self.cache.git)
                 if any(str(p) not in ignored for p in paths):
                     return main_text(*found)
             if directory != cwd:
@@ -814,23 +876,34 @@ class Guard:
         return keys
 
     def plan_reason(self, path):
-        """Refusal of an edit in the work directory of a subject whose code is still frozen."""
+        """Refusal of an edit in the work directory of a subject whose code is still frozen.
+
+        The freeze is checked before the directory is asked of the workspace gate: an edit in
+        the work directory of an approved subject needs none of the git calls of the gate.
+        """
         from .keys import HOOK_DENY_PLAN
-        from .resolve import by_key
         gate = self.runtime.workspace_gate if self.runtime else None
         directory = checkout_dir(path) if gate is not None else None
         if directory is None:
             return None
         for key in sorted(self.dir_keys(directory.name)):
-            found, _ = gate.worktrees(self.ctx, {key})
-            if directory not in {Path(item[0]).resolve() for item in found}:
+            text = self.frozen_text(key)
+            if not text:
                 continue
-            for pipeline, subject in by_key(self.ctx, self.runtime.pipelines, key):
-                if not subject.exists or subject.archived:
-                    continue
-                text = self.frozen(pipeline, subject)
-                if text:
-                    return self.runtime.locale.text(HOOK_DENY_PLAN, keys=key, text=text)
+            found, _ = gate.worktrees(self.ctx, {key})
+            if directory in {Path(item[0]).resolve() for item in found}:
+                return self.runtime.locale.text(HOOK_DENY_PLAN, keys=key, text=text)
+        return None
+
+    def frozen_text(self, key):
+        """Freeze text of the first existing, not archived subject of the key, or None."""
+        from .resolve import by_key
+        for pipeline, subject in by_key(self.ctx, self.runtime.pipelines, key):
+            if not subject.exists or subject.archived:
+                continue
+            text = self.frozen(pipeline, subject)
+            if text:
+                return text
         return None
 
     def frozen(self, pipeline, subject):
@@ -916,6 +989,8 @@ def pre_tool(event, fallback):
     tool = event.get(FIELD_TOOL)
     data = event.get(FIELD_INPUT)
     if tool not in GUARDED_TOOLS or not isinstance(data, dict):
+        return None
+    if tool == BASH_TOOL and bash_reads_only(str(data.get(COMMAND_FIELD) or "")):
         return None
     guard = Guard(store_root(event, fallback))
     reason = tool_reason(guard, event, tool, data)

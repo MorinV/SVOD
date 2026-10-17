@@ -120,9 +120,12 @@ def digest_matches(base, patterns, ignore, sha, strip=None):
     return any(digest(base, patterns, i, s) == sha for i, s in accepted_rules(ignore, strip))
 
 
-def mark_path(root):
-    """Mark file in the git common directory of the store, shared by its worktrees; None off git."""
-    return common_dir_file(root, MARK_FILE)
+def mark_path(root, run=None):
+    """Mark file in the git common directory of the store, shared by its worktrees; None off git.
+
+    run replaces run_git: a hook passes the git of its run cache, so the call is not repeated.
+    """
+    return common_dir_file(root, MARK_FILE, run)
 
 
 def now():
@@ -130,9 +133,12 @@ def now():
     return dt.datetime.now().astimezone()
 
 
-def write_mark(root, keys, at=None):
-    """Leave the approval mark with its time and the keys named; return its path or None."""
-    path = mark_path(root)
+def write_mark(root, keys, at=None, run=None):
+    """Leave the approval mark with its time and the keys named; return its path or None.
+
+    run replaces run_git.
+    """
+    path = mark_path(root, run)
     if path is None:
         return None
     data = {MARK_AT: (at or now()).isoformat(), MARK_KEYS: sorted(keys)}
