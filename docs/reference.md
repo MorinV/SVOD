@@ -28,7 +28,7 @@ Its presence marks the store root: the CLI walks up from the working directory t
 | `bindings` | no | string / none | bindings file relative to the root; without it roles are neither checked nor printed |
 | `local_config` | no | string / none | per-person config file relative to the root, kept out of version control; see [Local config](#local-config) |
 | `approval` | no | mapping / none | how a person approves in the chat; see [Approval by a person](#approval-by-a-person) |
-| `profile_config` | no | mapping / `{}` | profile settings exposed as `ctx.config.profile_config`; the core checks only its `agent_context` mapping, read by the [hooks](#hooks): its keys are `session_summary`, `prompt_positions`, `approval_notice` and `knowledge`, each a bool; any other key or a non-bool value is a load error naming the key. Its `checks` mapping (service name to an argv list, `{app: [pytest, -q]}`, or a shell line), written by `init --wizard`, reaches the [actions](#actions) as `SVOD_CHECKS_<NAME>` |
+| `profile_config` | no | mapping / `{}` | profile settings exposed as `ctx.config.profile_config`; the core checks only its `agent_context` mapping, read by the [hooks](#hooks): `session_start` (`index`, `summary` or `off`), `index_lines` (a positive integer) and the bools `session_summary`, `prompt_positions`, `approval_notice` and `knowledge`; any other key, a value of another type, or `session_summary` saying otherwise than `session_start` is a load error naming the key. Its `checks` mapping (service name to an argv list, `{app: [pytest, -q]}`, or a shell line), written by `init --wizard`, reaches the [actions](#actions) as `SVOD_CHECKS_<NAME>` |
 | `workspace_gate` | no | string / none | name of a gate with a `worktrees(ctx, keys)` method (see [Writing a custom gate](#writing-a-custom-gate)); it tells the `pre-tool` hook which directories are work directories of a subject; without it that check is off |
 | `main_checkout_read_only` | no | bool / `false` | the `pre-tool` hook refuses edits in the main checkout of the store repository, except paths git ignores; work goes into worktrees |
 | `knowledge` | no | mapping / `{dir: knowledge, limit_lines: 20}` | where the [knowledge](#knowledge) notes live (`dir`, relative to the root) and how many note lines a hook adds at most (`limit_lines`, a positive integer); any other key is a load error |
@@ -510,7 +510,7 @@ subject:
 
 ## Active summary
 
-`active` lists open subjects of every pipeline that has an `active` block, pipelines ordered by `active_order` in `svod.yaml`, the rest by name.
+`active` lists open subjects of every pipeline that has an `active` block, pipelines ordered by `active_order` in `svod.yaml`, the rest by name. It computes the position of every open subject (its gates, commands and git), so it is given on request: `svod active`, and at session start only with `agent_context.session_start: summary`; by default a session starts with the [session index](#session-index), which computes none.
 
 | key | req | type / default | meaning |
 |---|---|---|---|
@@ -706,6 +706,12 @@ Core keys (all required in every core locale file):
 | `active.no_local_config` | `{file}` |
 | `active.worktree` | `{dir}` |
 | `active.none` | — (printed by `active` when no pipeline declares `active`; not in the hook) |
+| `index.head`, `index.tail` | — ([session index](#session-index)) |
+| `index.pipeline` | `{pipeline}` |
+| `index.item` | `{record}`, `{title}` |
+| `index.item_untitled` | `{record}` |
+| `index.kind` | `{id}`, `{kind}` |
+| `index.more` | `{count}` |
 | `active.theirs_collapsed` | `{count}`, `{who}` |
 | `active.author_count` | `{author}`, `{count}` |
 | `active.item` | `{id}`, `{keys}`, `{pipeline}`, `{step}`, `{frontmatter}` |
@@ -777,7 +783,7 @@ Core keys (all required in every core locale file):
 | `doctor.hooks_ok`, `doctor.hooks_python` | `{file}`, `{python}` |
 | `doctor.hooks_none` | `{files}`, `{command}` |
 | `doctor.hooks_partial` | `{file}`, `{events}` |
-| `doctor.hooks_unreadable` | `{file}`, `{reason}` |
+| `doctor.hooks_unreadable`, `doctor.hooks_format` | `{file}`, `{reason}` |
 | `doctor.copy_ok` | `{version}` |
 | `doctor.version_ok` | `{current}`, `{latest}` |
 | `doctor.version_newer` | `{current}`, `{latest}`, `{command}` |
@@ -1048,7 +1054,7 @@ A refused answer at a terminal is said and asked again; at the end of input noth
 |---|---|---|
 | `config`: the store loads as for `validate` (config, profile, pipelines, gates, locale) | it does not; the further errors follow, indented | — |
 | `service`, one per entry of `services` | the directory is missing or holds no `.git` | — |
-| `hooks`: the svod hooks in `<store>/.claude/settings.json` and `$CLAUDE_CONFIG_DIR/settings.json` (`~/.claude` by default) | the program a hook runs (after `NAME=value` and `env`) is neither an executable path nor on `PATH` | none registered in either file, an event missing, a file that is not JSON |
+| `hooks`: the svod hooks in `<store>/.claude/settings.json`, `<store>/.codex/hooks.json`, `$CLAUDE_CONFIG_DIR/settings.json` and `$CODEX_HOME/hooks.json` (`~/.claude`, `~/.codex` by default); each file is checked against the format (`hooks` mapping events to lists of groups with a list of handlers; a Codex file also only the keys Codex reads, `description` and `hooks` at the top, `matcher` and `hooks` in a group, command handlers with a whole-second `timeout`) | the program a hook runs (after `NAME=value` and `env`) is neither an executable path nor on `PATH`; a Codex file out of format (`doctor.hooks_format`), which Codex would refuse whole | none registered in any file, an event missing, a file that is not JSON, a Claude Code file out of format |
 | `copy`: the [copy of the engine](#vendored-copy) against its `MANIFEST` | it differs, or has no `MANIFEST` | — |
 | `template`: the template the profile follows, by `template` and `template_version` of `.svod/VERSION`; only with a copy | — | no `template` recorded (`svod update` cannot merge the profile), or `template_version` older than `version`: the profile lags the engine's template, bring it up to `.svod/lib/svod/templates/<template>/` by hand, then `svod update --template <template>` |
 | `version`: the engine (the copy's `version`, else the running one) against the newest `vX.Y.Z` tag of its source, through the cache of the [update notice](#update-notice) | — | a newer release, with `svod update` or the `pip install` command; not checked (`update_check: false`, off git or offline) |
@@ -1060,15 +1066,23 @@ A refused answer at a terminal is said and asked again; at the end of input noth
 
 ## Hooks
 
-`svod hook <event>` is registered as a command hook of Claude Code or Codex (`integrations/setup-claude.sh`, `integrations/setup-codex.sh`). The scripts link the skills of the store, `<store>/skills/<name>/SKILL.md`, when it has any, else those of its copy in `.svod/skills`, else those of the clone they run from. They print `-> engine: <file of the svod package>`, the engine the hooks import: the one installed in the Python when it imports without `PYTHONPATH` (an editable install of another checkout shows here), else the clone on `PYTHONPATH`. `--engine <clone>` puts that clone on `PYTHONPATH` of every hook whatever is installed; a directory without `svod/cli.py` is refused (exit 2). Both agents send the same event JSON (`hook_event_name`, `cwd`, `prompt`, `tool_name`, `tool_input`); the answer is `hookSpecificOutput` with `hookEventName` and either `additionalContext` or `permissionDecision: deny` with `permissionDecisionReason`. Nothing to say prints nothing. The exit code is always 0. A store that does not load is reported as `hook.engine_broken` in `additionalContext` instead of silence (for `pre-tool`, only for file edits in the store); a write outside the store is then refused with `hook.deny_broken`, since nothing guards it until the store loads again.
+`svod hook <event>` is registered as a command hook of Claude Code or Codex (`integrations/setup-claude.sh`, `integrations/setup-codex.sh`). Both take `--project <store>`: the hooks go to `<store>/.claude/settings.json` or `<store>/.codex/hooks.json` (Codex reads a `hooks.json` next to each config layer, the project one in a trusted project) and the skills to `skills/` beside it, so they run only in sessions started in that store, with the store as `--root`; without it they go to the user's `$CLAUDE_CONFIG_DIR/settings.json` or `$CODEX_HOME/hooks.json` (`~/.claude`, `~/.codex` by default), the optional store being the fallback `--root`. The scripts link the skills of the store, `<store>/skills/<name>/SKILL.md`, when it has any, else those of its copy in `.svod/skills`, else those of the clone they run from. They print `-> engine: <file of the svod package>`, the engine the hooks import: the one installed in the Python when it imports without `PYTHONPATH` (an editable install of another checkout shows here), else the clone on `PYTHONPATH`. `--engine <clone>` puts that clone on `PYTHONPATH` of every hook whatever is installed; a directory without `svod/cli.py` is refused (exit 2). Both agents send the same event JSON (`hook_event_name`, `cwd`, `prompt`, `tool_name`, `tool_input`); the answer is `hookSpecificOutput` with `hookEventName` and either `additionalContext` or `permissionDecision: deny` with `permissionDecisionReason`. Nothing to say prints nothing. The exit code is always 0. A store that does not load is reported as `hook.engine_broken` in `additionalContext` instead of silence (for `pre-tool`, only for file edits in the store); a write outside the store is then refused with `hook.deny_broken`, since nothing guards it until the store loads again.
 
 **The store of the session** is the one holding `CLAUDE_PROJECT_DIR`, else the event `cwd`; else the store at `--root`, a fallback for sessions in a work directory outside the store. No store: silence.
 
 Optional `profile_config.agent_context` booleans `session_summary`, `prompt_positions` and `approval_notice` default on for compatibility. Setting them to false suppresses those context outputs, not native approval marking, agent-message filtering or pre-tool protection; `active` and `status` remain available on request. These controls do not guarantee token savings or enforce a sandbox. `knowledge` (default on) adds the [knowledge](#knowledge) notes matching the work, whatever `session_summary` says: on `session-start` after the summary when it is on, alone when it is off, on `prompt` after the positions.
+`profile_config.agent_context` chooses what the hooks add to the context. `session_start` is `index` (the default, and what the standard template writes), `summary` or `off`; `session_summary: true|false`, its old spelling, still means `summary|off`, and giving both with different meanings is a load error. YAML reads an unquoted `off` as false, which counts as `off`. The booleans `prompt_positions` and `approval_notice` default on for compatibility; setting them to false suppresses those context outputs, not native approval marking, agent-message filtering or pre-tool protection. The local template turns them off (`session_summary: false`) and uses explicit per-task status; `active` remains available on request. These controls do not guarantee token savings or enforce a sandbox. `knowledge` (default on) adds the [knowledge](#knowledge) notes matching the work: on `session-start` after the summary in `summary` mode, alone in `off` mode (the local template), never in `index` mode; on `prompt` after the positions.
+
+```yaml
+profile_config:
+  agent_context:
+    session_start: index   # index | summary | off
+    index_lines: 40
+```
 
 | event | agent event | does |
 |---|---|---|
-| `session-start` | `SessionStart` | the `active` summary, as `active --hook`, preceded by the [update notice](#update-notice); then the knowledge notes |
+| `session-start` | `SessionStart` | by `session_start`: `index`, the [session index](#session-index); `summary`, the `active` summary, as `active --hook`, preceded by the [update notice](#update-notice), then the knowledge notes; `off`, the knowledge notes alone |
 | `prompt` | `UserPromptSubmit` | human mark, approval mark and positions, see below; silent on messages of other agents |
 | `pre-tool` | `PreToolUse` | refuses the tool call by the rules below |
 
@@ -1092,6 +1106,10 @@ The hooks run as the same user as the agent and see only the tool calls the agen
 Every git call of one event goes through one run cache (`svod.cache.RunCache`), the gates of the store and the approval mark included, so no call repeats within the event. Rule 3 checks the freeze of the subjects of the key before it asks the workspace gate about the directory: an edit in the work directory of an approved subject costs none of the git calls of the gate. Rule 3 uses the one code-freeze rule, `svod.position.freeze`.
 
 The hooks are the package `svod.hooks`, each module importing only those before it: `protocol` (the event JSON), `shell` (tokens of a command, programs known to only read, the paths a command names, the python script exception of rule 1), `store` (the store of the session and its loading), `prompt`, `guard` (the `pre-tool` rules), `external` (the external-effects rule) and `events` (the answer to each event, `svod hook`).
+
+### Session index
+
+`svod.index` gives, for `session_start: index`, the open records of every pipeline loaded from the profile, `active` block or not, grouped under `index.pipeline` (the pipeline name) in the order of `active_order`, the rest by name, after `index.head`. One line per record, `index.item` (`{record}`, `{title}`) or `index.item_untitled` without a title, indented two spaces per level: `{record}` is the id, or `index.kind` (`{id}`, `{kind}`) when the frontmatter `kind` is not the pipeline's name (`work/tasks/crash (hotfix)`); `{title}` is the first heading of the record's head document (the subject file, or the document of its directory whose frontmatter the provider read). A record whose `parent` names an open record of any pipeline (compared as in [`has_children`](#has_children)) is listed under it, at any depth, instead of in its own pipeline; one on a cycle of parents stays in its own pipeline. Open means existing, not archived and, when the pipeline's `done` is a [`field`](#field) condition other than a date, that condition not holding on the frontmatter; another `done` gate is not evaluated, so such a record is listed until archived. At most `index_lines` records (default 40) are listed, the rest counted in one `index.more` line (`{count}`); a missing local config puts `active.no_local_config` first; `index.tail` closes it, naming `svod status <record>`, `svod next <record>` and `svod active`. Nothing open: nothing is said. Only the frontmatter and that heading are read: no position, gate, command, git call, update notice or knowledge note, so it stays well under half a second for 50 records; the depth comes on request, from `prompt` (the positions of the records a prompt names) and from `svod status`. The hook still loads the store, as every hook does, so a store that does not load is reported; `svod.index` itself imports no gate, git or command-cache module.
 
 ## Knowledge
 
@@ -1118,7 +1136,7 @@ Notes come from research automatically (the profile template writes them) and by
 
 `add` and `note` rewrite the index after writing the note. Nothing is committed.
 
-**Given to the agent.** The [hooks](#hooks) add a block headed `hook.knowledge_head` with one line per current note sharing a tag with the work at hand: `- <title> (<path>): <first non-empty line of the body that is not a heading>`, newest first, at most `knowledge.limit_lines` lines. The tags of a work are the `tags` of its frontmatter (`subject.attrs.frontmatter`, given by the `container` and `frontmatter_doc` providers). `session-start` takes the tags of every existing, not archived subject of the pipelines with an `active` block, after the summary, and also when `session_summary` is off; `prompt` takes those of the subjects the prompt names, found as for the positions (keys and exact names). A work without tags adds nothing. `profile_config.agent_context.knowledge: false` turns the block off, and the prompt is then not searched for it.
+**Given to the agent.** The [hooks](#hooks) add a block headed `hook.knowledge_head` with one line per current note sharing a tag with the work at hand: `- <title> (<path>): <first non-empty line of the body that is not a heading>`, newest first, at most `knowledge.limit_lines` lines. The tags of a work are the `tags` of its frontmatter (`subject.attrs.frontmatter`, given by the `container` and `frontmatter_doc` providers). `session-start` takes the tags of every existing, not archived subject of the pipelines with an `active` block, after the summary, and also when session start is `off` (none in the `index` mode); `prompt` takes those of the subjects the prompt names, found as for the positions (keys and exact names). A work without tags adds nothing. `profile_config.agent_context.knowledge: false` turns the block off, and the prompt is then not searched for it.
 
 ```yaml
 knowledge:
@@ -1311,4 +1329,4 @@ Versions are semantic; before 1.0 a minor release may break a store. `svod/migra
 
 ### Update notice
 
-With `update_check` on (the default) and a copy in the store, `hook session-start` and `active --hook` run `git ls-remote --tags <source>` (timeout 3 s) at most once a day and, when a tag is newer than `version` of `.svod/VERSION`, start the summary with `update.available`. The time and the newest release are cached in `svod-update-check.json` in the git common directory of the store, never committed; a failed check is cached too and says nothing. A store outside git is not checked.
+With `update_check` on (the default) and a copy in the store, `hook session-start` in `summary` mode and `active --hook` run `git ls-remote --tags <source>` (timeout 3 s) at most once a day and, when a tag is newer than `version` of `.svod/VERSION`, start the summary with `update.available`. The time and the newest release are cached in `svod-update-check.json` in the git common directory of the store, never committed; a failed check is cached too and says nothing. A store outside git is not checked.

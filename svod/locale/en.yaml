@@ -48,6 +48,14 @@ active:
   no_identity: "Who you are is unknown: no email in the local config nor in git user.email, so all work below is shown as yours"
   worktree: "In progress in the checkout {dir}:"
   none: "No pipeline takes part in the summary: add active: to a pipeline (see the reference)"
+index:
+  head: "Open records by pipeline:"
+  pipeline: "{pipeline}:"
+  item: "- {record}: {title}"
+  item_untitled: "- {record}"
+  kind: "{id} ({kind})"
+  more: "... and {count} more"
+  tail: "One record: svod status <record> or svod next <record>; the whole picture: svod active"
 init:
   written: "Local config written: {path}"
   exists: "Local config already exists: {path} (--force to overwrite)"
@@ -148,6 +156,7 @@ doctor:
   hooks_partial: "hooks in {file} lack {events}: run the setup script again"
   hooks_python: "hooks in {file} run {python}, which is not there: run the setup script again"
   hooks_unreadable: "{file} is not readable JSON: {reason}"
+  hooks_format: "{file} is not a hooks file of Claude Code or Codex: {reason}; run the setup script again"
   copy_none: "no copy of the engine in .svod: the installed svod runs"
   copy_ok: "the copy of the engine {version} matches its MANIFEST"
   version_ok: "engine {current}, newest release {latest}"

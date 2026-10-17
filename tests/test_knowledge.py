@@ -23,6 +23,7 @@ DATE_NEW = "2026-03-05"
 WORK = "migration-plan"
 OTHER_WORK = "frontend-polish"
 OUTSIDE = "Hand-written text outside the markers."
+SUMMARY_MODE = "profile_config:\n  agent_context:\n    session_start: summary\n"
 
 
 def note_doc(title, tags, date, status="current", body="First line.\n", source=""):
@@ -186,7 +187,7 @@ class KnowledgeFilesTest(StoreTestCase):
 
 
 class KnowledgeHookTest(unittest.TestCase):
-    """Session start and prompt hooks add the notes sharing the tags of the work."""
+    """Session start (summary mode) and prompt hooks add the notes sharing the tags of the work."""
 
     def setUp(self):
         """Store with two tagged open notes of the note pipeline and two knowledge notes."""
@@ -197,6 +198,7 @@ class KnowledgeHookTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
         os.environ.pop(hooks.PROJECT_ENV, None)
         self.base = (self.sb.store / "svod.yaml").read_text(encoding=ENCODING)
+        (self.sb.store / "svod.yaml").write_text(self.base + SUMMARY_MODE, encoding=ENCODING)
         self.sb.write(f"notes/{WORK}.md", doc("note", review="2000-01-01", tags="[db]"))
         self.sb.write(f"notes/{OTHER_WORK}.md", doc("note", review="2000-01-01", tags="[ui]"))
         self.sb.write(f"{DIRECTORY}/vacuum.md", note_doc("Vacuum", ["db"], DATE_NEW,
@@ -216,8 +218,8 @@ class KnowledgeHookTest(unittest.TestCase):
         return json.loads(found)[hooks.OUTPUT][hooks.CONTEXT] if found else None
 
     def set_knowledge(self, enabled):
-        """Switch profile_config.agent_context.knowledge."""
-        setting = f"profile_config:\n  agent_context:\n    knowledge: {str(enabled).lower()}\n"
+        """Switch profile_config.agent_context.knowledge, session start giving the summary."""
+        setting = f"{SUMMARY_MODE}    knowledge: {str(enabled).lower()}\n"
         (self.sb.store / "svod.yaml").write_text(self.base + setting, encoding=ENCODING)
 
     def test_session_start_adds_notes_of_every_open_work(self):

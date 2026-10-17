@@ -18,6 +18,11 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 ### Changed
 
 - A cheap `svod status`: the cache key of the `command` gate leaves out `evidence/`, `*.log`, `knowledge/INDEX.md` and the new `cache_ignore` of `svod.yaml`; the gate's new `on: current` (default; `always` as before) runs the command only while its step is current or under `svod status --fresh`, and elsewhere shows the last result with `stale`, `age` and the mark `status.mark.stale` (`status.mark.not_run` when it never ran); 50 records take about 0.2 s instead of 3 s.
+- `integrations/setup-codex.sh --project <store>` registers the three hooks in `<store>/.codex/hooks.json` and links the skills to `<store>/.codex/skills`; `svod doctor` also reads `<store>/.codex/hooks.json` and `$CODEX_HOME/hooks.json` and checks the format of every hooks file (`doctor.hooks_format`; a Codex file Codex would refuse fails).
+
+### Changed
+
+- Session start gives the session index (`svod.index`): the open records of every pipeline from their frontmatter and first heading, children under parents, at most `agent_context.index_lines` (40), and the hint to `svod status`/`svod next` a record; no position, gate, command, git or knowledge note. `agent_context.session_start: index|summary|off` chooses it, `index` by default, also in a store that sets nothing (set `summary` to keep the old summary); `session_summary: true|false` still means `summary|off`, a contradiction is a load error. New core keys `index.*`.
 - The sources hold no store any more: the work on Svod is recorded in the instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd), a standard-template store next to a clone of this repository, as every user's instance is.
 - `svod new` makes a `standard` store by default; `--template local` is a load error naming `standard` (`new.template_retired`).
 - The argv runner (no shell, a timeout, the process group stopped, the output tail) is `svod.run`, shared by the `command` gate and the actions.

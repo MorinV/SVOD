@@ -48,6 +48,14 @@ active:
   no_identity: "Неизвестно, кто вы: почты нет ни в локальном конфиге, ни в git user.email — вся работа ниже показана как ваша"
   worktree: "В работе в чекауте {dir}:"
   none: "Ни один пайплайн не участвует в сводке: добавить active: в пайплайн (см. справочник)"
+index:
+  head: "Открытые записи по пайплайнам:"
+  pipeline: "{pipeline}:"
+  item: "- {record}: {title}"
+  item_untitled: "- {record}"
+  kind: "{id} ({kind})"
+  more: "... и ещё {count}"
+  tail: "Одна запись: svod status <запись> или svod next <запись>; вся картина: svod active"
 init:
   written: "Локальный конфиг записан: {path}"
   exists: "Локальный конфиг уже есть: {path} (--force — перезаписать)"
@@ -148,6 +156,7 @@ doctor:
   hooks_partial: "в хуках {file} нет {events}: запустить скрипт настройки ещё раз"
   hooks_python: "хуки в {file} запускают {python}, которого нет: запустить скрипт настройки ещё раз"
   hooks_unreadable: "{file} — не читаемый JSON: {reason}"
+  hooks_format: "{file} — не файл хуков Claude Code или Codex: {reason}; запустить скрипт настройки ещё раз"
   copy_none: "копии движка в .svod нет: работает установленный svod"
   copy_ok: "копия движка {version} совпадает со своим MANIFEST"
   version_ok: "движок {current}, последний релиз {latest}"

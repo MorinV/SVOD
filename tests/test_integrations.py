@@ -1,4 +1,5 @@
-"""The setup scripts of integrations/: project hooks of Claude Code, hooks.json of Codex.
+"""The setup scripts of integrations/: project hooks of Claude Code, hooks.json of Codex
+(user or project), and svod doctor on the project file.
 
 Each test runs a setup script as a black box in a temporary Claude Code or Codex directory,
 reads the JSON it wrote and runs the hook command it registered.
@@ -7,7 +8,7 @@ The Codex format is checked against the Codex source (github.com/openai/codex, c
 ce0323f2, 2026-10-17; developers.openai.com was not reachable from the test author's network):
 
 - codex-rs/hooks/src/engine/discovery.rs reads `hooks.json` next to each config layer, so the
-  user file is `$CODEX_HOME/hooks.json`;
+  user file is `$CODEX_HOME/hooks.json` and the project file `<project>/.codex/hooks.json`;
 - codex-rs/config/src/hook_config.rs: `HooksFile` has only `description` and `hooks` (unknown
   keys are an error); `hooks` maps event names to matcher groups `{matcher, hooks}`; a command
   handler is `{type: "command", command, timeout}` with the timeout in seconds, plus optional
@@ -41,6 +42,7 @@ CLAUDE_SETUP = INTEGRATIONS / "setup-claude.sh"
 CODEX_SETUP = INTEGRATIONS / "setup-codex.sh"
 PROJECT_FLAG = "--project"
 PROJECT_DIR = ".claude"
+CODEX_PROJECT_DIR = ".codex"
 SETTINGS_FILE = "settings.json"
 HOOKS_FILE = "hooks.json"
 SKILLS_DIR = "skills"
@@ -305,6 +307,96 @@ class CodexTest(IntegrationTestCase):
         out = self.codex()
         self.assertIn(UP_TO_DATE, out.stdout)
         self.assertEqual(hooks_file.read_bytes(), written)
+
+
+class CodexProjectTest(CodexTest):
+    """setup-codex.sh --project writes <store>/.codex/hooks.json; svod doctor reads it."""
+
+    def codex(self, *extra):
+        """Run the script for the store in project mode; return the process."""
+        return self.setup(CODEX_SETUP, PROJECT_FLAG, self.store, *extra,
+                          CODEX_HOME=str(self.agent))
+
+    def doctor(self):
+        """The checks of svod doctor on the store, as JSON, run as a person would."""
+        out = subprocess.run([sys.executable, "-m", CLI_MODULE, "--root", str(self.store),
+                              "doctor", "--format", "json"], cwd=str(self.store),
+                             env=self.env(CODEX_HOME=str(self.agent),
+                                          CLAUDE_CONFIG_DIR=str(self.agent)),
+                             capture_output=True, text=True, encoding=ENCODING,
+                             timeout=CLI_TIMEOUT_SEC)
+        return [c for c in json.loads(out.stdout)["checks"] if c["name"] == "hooks"]
+
+    def test_hooks_json(self):
+        """Hooks and skills go to <store>/.codex, nothing to CODEX_HOME; the hooks run and
+        svod doctor finds them registered."""
+        out = self.codex()
+        self.assertEqual(out.returncode, EXIT_OK, out.stderr)
+        hooks_file = self.store / CODEX_PROJECT_DIR / HOOKS_FILE
+        data = read_json(hooks_file)
+        self.assert_codex_format(data)
+        self.assert_registered(data)
+        self.assertEqual(list(self.agent.iterdir()), [])
+        link = self.store / CODEX_PROJECT_DIR / SKILLS_DIR / SKILL
+        self.assertTrue(link.is_symlink())
+        self.assertTrue((link / SKILL_FILE).is_file())
+        for event in EVENTS:
+            with self.subTest(run=event):
+                self.assert_hook_runs(svod_commands(data, event)[0], event)
+        checks = self.doctor()
+        self.assertEqual([c["status"] for c in checks], ["ok"], checks)
+        self.assertIn(str(hooks_file), checks[0]["text"])
+
+    def test_keeps_other_hooks(self):
+        """A hook of another tool in the project file stays; a rerun changes nothing."""
+        hooks_file = self.store / CODEX_PROJECT_DIR / HOOKS_FILE
+        foreign = {"matcher": FOREIGN_MATCHER,
+                   "hooks": [{"type": COMMAND_TYPE, "command": FOREIGN_COMMAND}]}
+        write_json(hooks_file, {"hooks": {TOOL_EVENT: [foreign]}})
+        self.assertEqual(self.codex().returncode, EXIT_OK)
+        data = read_json(hooks_file)
+        self.assert_codex_format(data)
+        self.assertIn(foreign, data["hooks"][TOOL_EVENT])
+        written = hooks_file.read_bytes()
+        self.assertIn(UP_TO_DATE, self.codex().stdout)
+        self.assertEqual(hooks_file.read_bytes(), written)
+
+    def test_doctor_refuses_a_file_codex_refuses(self):
+        """A key Codex does not read or a timeout that is not whole seconds fails the check."""
+        self.assertEqual(self.codex().returncode, EXIT_OK)
+        hooks_file = self.store / CODEX_PROJECT_DIR / HOOKS_FILE
+        good = read_json(hooks_file)
+        handler = good["hooks"]["SessionStart"][0]["hooks"][0]
+        cases = (
+            ("top key", {**good, "version": 1}, "unknown key version"),
+            ("timeout", {"hooks": {"SessionStart": [{"hooks": [{**handler, "timeout": 2.5}]}]}},
+             "timeout must be a positive integer"),
+            ("not a list", {"hooks": {"SessionStart": {}}}, "must be a list"),
+        )
+        for name, data, reason in cases:
+            with self.subTest(case=name):
+                write_json(hooks_file, data)
+                checks = self.doctor()
+                self.assertIn("fail", [c["status"] for c in checks], checks)
+                self.assertTrue(any(reason in c["text"] for c in checks), checks)
+
+    def test_usage(self):
+        """A missing or extra argument, an unknown flag or a directory without svod.yaml."""
+        empty = Path(tempfile.mkdtemp(prefix="svod-empty-"))
+        self.addCleanup(shutil.rmtree, empty, ignore_errors=True)
+        cases = (
+            ("no store", [PROJECT_FLAG]),
+            ("two stores", [PROJECT_FLAG, self.store, self.store]),
+            ("unknown flag", ["--global"]),
+            ("not a store", [PROJECT_FLAG, empty]),
+        )
+        for name, args in cases:
+            with self.subTest(case=name):
+                out = self.setup(CODEX_SETUP, *args, CODEX_HOME=str(self.agent))
+                self.assertEqual(out.returncode, EXIT_USAGE, out.stderr)
+                self.assertFalse((self.store / CODEX_PROJECT_DIR).exists())
+                self.assertFalse((empty / CODEX_PROJECT_DIR).exists())
+                self.assertEqual(list(self.agent.iterdir()), [])
 
 
 class SkillsSourceTest(IntegrationTestCase):
