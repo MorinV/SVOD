@@ -1,0 +1,18 @@
+# Compact plan of the example task; it must keep exactly these five keys.
+# The person approves this file together with contract.md, and editing either
+# afterwards invalidates the approval.
+
+# Schema version: keep 1.
+version: 1
+# Plan kind: keep process.
+kind: process
+# Contract file, relative to the task directory.
+contract: contract.md
+# Placeholder. Replace with the canonical absolute path of the Git root of a clean
+# source checkout (for example one made with git worktree add): it must contain a
+# commit, have no uncommitted or untracked files and lie outside this store.
+# Until it names a real checkout, svod status stops at the contract step.
+workspace: /absolute/path/to/clean/checkout
+# Argv that svod local checks runs without a shell inside the workspace; replace it
+# with the real check. null means no command selected, not passing tests.
+command: [python3, -m, unittest, discover, -s, tests]
