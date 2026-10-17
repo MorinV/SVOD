@@ -1,8 +1,13 @@
-"""The approve command: record a plan approval a person left as a mark in the chat."""
+"""The approve command: record a plan approval a person left as a mark in the chat.
+
+Without a fresh mark, --confirm asks the person at the terminal instead: the path for agents
+without a prompt hook, where the person, not the agent, answers.
+"""
+import sys
+
 from . import keys
-from .approval import (bound_files,
-                       consume_mark, digest, field_names, is_fresh, mark_keys, mark_time,
-                       names_any, now, read_mark, set_fields)
+from .approval import (bound_files, consume_mark, digest, is_fresh, mark_keys, mark_time,
+                       names_any, now, read_mark, write_fields)
 from .checkouts import subject_context
 from .gates import (ApprovalGate, PARAM_BIND, PARAM_FILE, PARAM_IGNORE, PARAM_MARKER,
                     PARAM_STRIP)
@@ -14,6 +19,8 @@ from .workflow_policy import applicable_approvals
 
 SHA_SHOWN = 12
 NO_SHA = "-"
+YES_ANSWERS = frozenset({"y", "yes"})
+SAME_LINE = ""
 
 
 def selected_step(pipeline, step):
@@ -92,8 +99,50 @@ def changed_after_mark(base, bind, mark):
         return True
 
 
-def approve(ctx, pipelines, query, at=None, step=None):
-    """Write approval fields, then consume only this subject's named approval keys."""
+def at_terminal():
+    """Whether stdin is a terminal a person types into, not a pipe or a file."""
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def subject_label(subject):
+    """Keys of the subject as one text, or its id when it has none."""
+    return KEYS_SEPARATOR.join(sorted(subject.keys)) or subject.id
+
+
+def confirmed(ctx, subject, step, ref, files, sha):
+    """Show what is approved on stderr and whether the person at the terminal answers yes.
+
+    The binding shown is the subject, the step, the approval file and the bound files with
+    the version recorded. Only y or yes, letter case ignored, confirms; end of input does not.
+    """
+    locale = ctx.locale
+    root = subject_context(ctx, subject).root
+    label = subject_label(subject)
+    target = (subject.path / ref.params[PARAM_FILE]).relative_to(root).as_posix()
+    print(locale.text(keys.APPROVE_CONFIRM_PLAN, subject=label, step=step,
+                      marker=ref.params[PARAM_MARKER], file=target), file=sys.stderr)
+    if files:
+        print(locale.text(keys.APPROVE_CONFIRM_FILES, sha=sha[:SHA_SHOWN]), file=sys.stderr)
+        for path in files:
+            print(INDENT + path.relative_to(root).as_posix(), file=sys.stderr)
+    print(locale.text(keys.APPROVE_CONFIRM_QUESTION, subject=label), end=SAME_LINE,
+          file=sys.stderr, flush=True)
+    try:
+        answer = input()
+    except EOFError:
+        return False
+    return answer.strip().casefold() in YES_ANSWERS
+
+
+def approve(ctx, pipelines, query, at=None, step=None, confirm=False):
+    """Write approval fields, then consume only this subject's named approval keys.
+
+    With confirm and no fresh mark, the person at the terminal is asked instead; there is no
+    mark to consume then. Without a terminal confirm changes nothing.
+    """
     locale = ctx.locale
     found, resolution = candidates(ctx, pipelines, query, step)
     if not any(subject.exists for _, subject in resolution.matches):
@@ -123,17 +172,19 @@ def approve(ctx, pipelines, query, at=None, step=None):
             return refusal(ctx, keys.APPROVE_NOT_READY, query=query, step=step,
                            pending=KEYS_SEPARATOR.join(pending))
     mark = read_mark(ctx.root)
-    if not is_fresh(mark, ctx.config.approval_window, at):
+    marked = is_fresh(mark, ctx.config.approval_window, at)
+    if not marked and not (confirm and at_terminal()):
         return refusal(ctx, keys.APPROVE_NO_MARK)
-    named = mark_keys(mark)
+    named = mark_keys(mark) if marked else set()
     if named and not names_any(named, subject.keys):
         return refusal(ctx, keys.APPROVE_FOREIGN_KEY, mark_keys=KEYS_SEPARATOR.join(sorted(named)),
                        keys=KEYS_SEPARATOR.join(sorted(subject.keys)))
     bind = ref.params.get(PARAM_BIND)
     try:
-        if bind and not bound_files(subject.path, bind):
+        files = bound_files(subject.path, bind) if bind else []
+        if bind and not files:
             return refusal(ctx, keys.APPROVE_NOT_READY, query=query, step=step, pending=step)
-        if step is not None and bind and changed_after_mark(subject.path, bind, mark):
+        if marked and step is not None and bind and changed_after_mark(subject.path, bind, mark):
             return refusal(ctx, keys.APPROVE_CHANGED_AFTER_MARK, query=query, step=step)
         sha = digest(subject.path, bind, ref.params.get(PARAM_IGNORE),
                      ref.params.get(PARAM_STRIP)) if bind else ""
@@ -142,15 +193,14 @@ def approve(ctx, pipelines, query, at=None, step=None):
     who = approver(ctx)
     if who is None:
         return refusal(ctx, keys.APPROVE_NO_APPROVER)
-    marker, by_field, sha_field = field_names(ref.params[PARAM_MARKER])
+    if not marked and not confirmed(ctx, subject, step, ref, files, sha):
+        return refusal(ctx, keys.APPROVE_NOT_CONFIRMED, subject=subject_label(subject))
+    marker = ref.params[PARAM_MARKER]
     date = (at or now()).date().isoformat()
-    values = {marker: date, by_field: who}
-
-    if bind:
-        values[sha_field] = sha
     path = subject.path / ref.params[PARAM_FILE]
-    set_fields(path, values)
-    consume_mark(ctx.root, subject.keys, mark)
+    write_fields(path, marker, date, who, sha)
+    if marked:
+        consume_mark(ctx.root, subject.keys, mark)
     root = subject_context(ctx, subject).root
     return Report(ok=True, out=[locale.text(
         keys.APPROVE_DONE, file=path.relative_to(root).as_posix(), marker=marker, date=date,

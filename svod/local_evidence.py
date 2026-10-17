@@ -5,19 +5,12 @@ import json
 import re
 import subprocess
 
-import yaml
+from .errors import LoadError
+from .yamlio import ENCODING, parse_yaml
 
 PLAN = 'testing/plan.yaml'
 RECEIPT = 'testing/process/receipt.json'
 LOG = 'testing/process/command.log'
-
-
-class UniqueLoader(yaml.SafeLoader):
-    def construct_mapping(self, node, deep=False):
-        keys = [self.construct_object(key, deep=True) for key, _ in node.value]
-        if len(keys) != len(set(keys)):
-            raise ValueError('duplicate YAML field')
-        return super().construct_mapping(node, deep=deep)
 
 
 def unique_json_object(pairs):
@@ -30,7 +23,15 @@ def unique_json_object(pairs):
 
 
 def strict_yaml(path):
-    value = yaml.load(Path(path).read_text(encoding='utf-8'), Loader=UniqueLoader)
+    """YAML mapping of the file read by the shared loader; ValueError when malformed or repeated.
+
+    OSError of reading passes through as it is; a load error becomes a ValueError, which the
+    local workflow reports as a refused input.
+    """
+    try:
+        value = parse_yaml(Path(path).read_text(encoding=ENCODING), path)
+    except LoadError as exc:
+        raise ValueError(str(exc)) from None
     if not isinstance(value, dict):
         raise ValueError('expected YAML mapping')
     return value

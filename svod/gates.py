@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
-from .approval import bound_files, digest_matches, field_names
+from .approval import bound_files, digest_matches, read_fields
 from .errors import LoadError, ParamError
 from .frontmatter import documents, read_frontmatter
 from .keys import (
@@ -18,7 +18,6 @@ from .keys import (
 )
 from .params import Configurable
 from .subject import ATTR_CONTAINER, ATTR_FRONTMATTER
-from .yamlio import read_yaml
 
 PARAM_PATH = "path"
 PARAM_GLOB = "glob"
@@ -236,12 +235,9 @@ class ApprovalGate(Gate):
         if path is None or not path.is_file():
             return self.failed(REASON_MISSING, **empty)
         try:
-            data = read_yaml(path)
+            value, by, sha = read_fields(path, marker)
         except LoadError as exc:
             return unknown(str(exc), **empty)
-        data = data if isinstance(data, dict) else {}
-        date_field, by_field, sha_field = field_names(marker)
-        value, by, sha = (text_of(data.get(f)) for f in (date_field, by_field, sha_field))
         facts = {FACT_VALUE: value, FACT_MARKER: marker, FACT_BY: by, FACT_DATE: value}
         if not value:
             return self.failed(REASON_MISSING, **facts)
@@ -268,11 +264,6 @@ def non_empty_strings(value):
     """Whether the value is a non-empty list of non-blank strings."""
     return isinstance(value, list) and bool(value) and all(
         isinstance(item, str) and item.strip() for item in value)
-
-
-def text_of(value):
-    """Stripped text of a field value; empty for a missing one."""
-    return "" if value is None else str(value).strip()
 
 
 class FieldGate(Gate):

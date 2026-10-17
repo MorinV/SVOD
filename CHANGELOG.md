@@ -6,6 +6,10 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Added
+
+- `svod approve <query> --confirm` records an approval that a person confirms with y at a terminal when there is no fresh mark, for agents without a prompt hook; all YAML is read by one loader that refuses repeated keys, and the approval fields are read and written only through `svod.approval.read_fields` and `write_fields`.
+
 ### Changed
 
 - Removed the unused `gates.build_registry`, `ApprovalGate.effective_bind` and `document.stale_blocks` with the tests that were their only callers.

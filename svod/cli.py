@@ -79,6 +79,8 @@ def build_parser():
                                   help="record an approval a person left in the chat")
     approve.add_argument("query", help="tracker key or subject name")
     approve.add_argument("--step", help="approval step id; first pending approval by default")
+    approve.add_argument("--confirm", action="store_true",
+                         help="without a fresh mark, ask the person at the terminal to confirm")
     hook = commands.add_parser(CMD_HOOK, help="answer an agent hook event read as JSON on stdin")
     hook.add_argument("event", choices=EVENTS, help="hook event")
     init = commands.add_parser(CMD_INIT, help="create the local config named in svod.yaml")
@@ -292,7 +294,8 @@ def run(args):
         return render(ctx, runtime.pipelines, args)
     if args.command == CMD_APPROVE:
         from svod.approve import approve
-        return emit(approve(ctx, runtime.pipelines, args.query, step=args.step))
+        return emit(approve(ctx, runtime.pipelines, args.query, step=args.step,
+                            confirm=args.confirm))
     lines = summarize(ctx, runtime.pipelines, args.all)
     if not args.hook and not any(p.active for p in runtime.pipelines):
         lines.append(runtime.locale.text(keys.ACTIVE_NONE))
