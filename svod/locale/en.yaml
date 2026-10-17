@@ -31,6 +31,8 @@ status:
     pass: "+ {label}"
     fail: "- {label}"
     unknown: "? {label}"
+    stale: "{mark} (stale: last run {age} ago; svod status --fresh runs it again)"
+    not_run: "{mark} (not run yet: runs when its step is current, or with svod status --fresh)"
 active:
   mine_active: "Your work in progress:"
   mine_idle: "Your work without progress:"

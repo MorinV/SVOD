@@ -31,6 +31,8 @@ status:
     pass: "+ {label}"
     fail: "- {label}"
     unknown: "? {label}"
+    stale: "{mark} (устарело: последний запуск {age} назад; svod status --fresh запустит заново)"
+    not_run: "{mark} (ещё не запускалась: запустится, когда шаг станет текущим, или по svod status --fresh)"
 active:
   mine_active: "Ваша работа в процессе:"
   mine_idle: "Ваша работа без движения:"

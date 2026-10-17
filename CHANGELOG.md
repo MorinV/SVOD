@@ -8,6 +8,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ### Changed
 
+- A cheap `svod status`: the cache key of the `command` gate leaves out `evidence/`, `*.log`, `knowledge/INDEX.md` and the new `cache_ignore` of `svod.yaml`; the gate's new `on: current` (default; `always` as before) runs the command only while its step is current or under `svod status --fresh`, and elsewhere shows the last result with `stale`, `age` and the mark `status.mark.stale` (`status.mark.not_run` when it never ran); 50 records take about 0.2 s instead of 3 s.
 - The sources hold no store any more: the work on Svod is recorded in the instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd), a standard-template store next to a clone of this repository, as every user's instance is.
 
 ## [0.5.0] - 2026-10-17
