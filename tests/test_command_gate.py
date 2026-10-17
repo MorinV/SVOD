@@ -1,7 +1,9 @@
 """The command gate: exit codes, the output tail, timeouts, places and the disk cache."""
+import os
 import sys
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 from support import StoreTestCase, TempStore
 
@@ -228,6 +230,33 @@ class CommandGateTest(StoreTestCase):
                 ctx = Context(config, pipelines=pipelines)
                 self.assertEqual(self.evaluate(params, ctx, subject).facts["detail"],
                                  str(expected.resolve()))
+
+    def test_placeholders_of_argv(self):
+        """{id}, {path} and {root} are replaced in argv; other braces stay as written."""
+        script = "import sys; print('|'.join(sys.argv[1:]))"
+        self.sb.write("work/tasks/x/card.md", "x\n")
+        subject = Subject(id="tasks/x", path=self.sb.store / "work" / "tasks" / "x")
+        result = self.evaluate({"argv": [PY, "-c", script, "{id}", "{path}/a", "{root}", "{a}"],
+                                "cache": False}, subject=subject)
+        self.assertEqual(result.facts["detail"],
+                         f"tasks/x|work/tasks/x/a|{self.sb.store.resolve()}|{{a}}")
+
+    def test_action_variables_in_a_pipeline(self):
+        """A gate of a loaded pipeline gives the command the variables of an action."""
+        names = ("SVOD_ID", "SVOD_PIPELINE", "SVOD_SERVICES", "SVOD_CHECKS_APP", "SVOD_ACTION")
+        script = f"import os; print('|'.join(os.environ.get(n, '-') for n in {names!r}))"
+        gate = CommandGate({"argv": [PY, "-c", script], "cache": False})
+        config = ServicesConfig(load_config(self.sb.store), {SERVICE: f"../{SERVICE}"})
+        config.profile_config = {"checks": {SERVICE: ["make", "test"]}}
+        pipelines = {"p": SimpleNamespace(name="p", gate_refs=lambda: [SimpleNamespace(
+            impl=gate)])}
+        subject = Subject(id="one", path=self.sb.store,
+                          attrs={"frontmatter": {"services": [SERVICE]}})
+        with mock.patch.dict(os.environ, {"SVOD_ACTION": "checks", "SVOD_ID": "outer"}):
+            found = gate.evaluate(Context(config, pipelines=pipelines), subject)
+            alone = gate.evaluate(Context(config), subject)
+        self.assertEqual(found.facts["detail"], f"one|p|{SERVICE}|make test|")
+        self.assertEqual(alone.facts["detail"], "outer|-|-|-|checks")
 
     def test_params(self):
         """Wrong params are load errors."""

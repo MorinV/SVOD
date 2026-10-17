@@ -91,11 +91,13 @@ RULE_MAIN = "main"
 RULE_MARK = "mark"
 RULE_BROKEN = "broken"
 RULE_EXTERNAL = "external"
+RULE_QUESTIONS = "questions"
+RULE_HUMAN = "human"
 # The locale key of each refusal of the pre-tool hook, in the order they are told apart.
-HOOK_DENY_EXTERNAL = "hook.deny_external"
 RULE_KEYS = ((RULE_APPROVAL, keys.HOOK_DENY_APPROVAL), (RULE_PLAN, keys.HOOK_DENY_PLAN),
              (RULE_MAIN, keys.HOOK_DENY_MAIN), (RULE_MARK, keys.HOOK_DENY_MARK),
-             (RULE_BROKEN, keys.HOOK_DENY_BROKEN), (RULE_EXTERNAL, HOOK_DENY_EXTERNAL))
+             (RULE_BROKEN, keys.HOOK_DENY_BROKEN), (RULE_EXTERNAL, keys.HOOK_DENY_EXTERNAL),
+             (RULE_QUESTIONS, keys.HOOK_DENY_QUESTIONS), (RULE_HUMAN, keys.HOOK_DENY_HUMAN))
 
 APPROVE_PREFIX = "approve."
 APPROVE_REFUSALS = (keys.APPROVE_NO_MARK, keys.APPROVE_FOREIGN_KEY, keys.APPROVE_NO_GATE,

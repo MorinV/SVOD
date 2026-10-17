@@ -59,8 +59,8 @@ steps:
     text: feature.step.integration
     gates:
       - { gate: artifact, params: { path: checks.md }, label: work.mark.checks }
-      # With services declared in svod.yaml, let a script decide instead of the file:
-      # - { gate: command, params: { argv: [bash, profile/actions/checks.sh], service: app }, label: work.mark.checks_pass }
+      # checks.sh --check repeats the checks without writing; cached while the store is unchanged:
+      - { gate: command, params: { argv: [bash, profile/actions/checks.sh, "{id}", --check], cwd: . }, label: work.mark.checks_pass }
   - id: deliver
     title: work.title.deliver
     role: feature

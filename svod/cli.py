@@ -56,6 +56,17 @@ def emit_json_error(code: str, query: str | None = None) -> int:
     return EXIT_USAGE
 
 
+def positive_seconds(text: str) -> float:
+    """A positive number of seconds given on the command line."""
+    try:
+        value = float(text)
+    except ValueError:
+        value = 0
+    if not value > 0 or value == float("inf"):
+        raise argparse.ArgumentTypeError(f"not a positive number of seconds: {text}")
+    return value
+
+
 class StatusParser(argparse.ArgumentParser):
     """Preserve argparse text behavior except explicit JSON status failures."""
 
@@ -86,6 +97,10 @@ def build_parser() -> StatusParser:
     do.add_argument("query", nargs="?", help="tracker key or subject name, as for status")
     do.add_argument("extra", nargs="*", help="arguments passed to the script, after --")
     do.add_argument("--list", action="store_true", help="list the actions of the profile")
+    do.add_argument("--force", action="store_true",
+                    help="run an action of a step the subject has not reached yet")
+    do.add_argument("--timeout", type=positive_seconds, default=None, metavar="SECONDS",
+                    help="stop the script after this many seconds (default 600)")
     commands.add_parser(CMD_VALIDATE, help="check declarations, locale keys and registries")
     status = commands.add_parser(CMD_STATUS, help="position of a task or container")
     status.add_argument("query", help="tracker key or container name")
@@ -224,12 +239,14 @@ def render(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace) ->
 def do_action(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace) -> int:
     """List the actions, or run one for the one existing subject the query resolves to.
 
-    Returns the exit code of the script; 2 for an unknown action, a query matching no subject
-    or several, and a script that could not start.
+    An action named by a step the subject has not reached yet is refused with do.not_current
+    unless --force is given; with it the warning is printed and the script runs. Returns the
+    exit code of the script; 2 for an unknown action, a query matching no subject or several,
+    a step not reached without --force and a script that could not start.
     """
     from svod import keys
     from svod.actions import (ACTION_SUFFIX, ACTION_TIMEOUT, actions_dir, list_actions,
-                              run_action, script_path)
+                              run_action, script_path, step_ahead)
     from svod.document import relative_or_absolute
     from svod.resolve import resolve
 
@@ -261,14 +278,22 @@ def do_action(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace)
                      [locale.text(keys.STATUS_CANDIDATE, id=s.id) for _, s in matches])
         return EXIT_USAGE
     pipeline, subject = matches[0]
+    ahead = step_ahead(ctx, pipeline, subject, args.name)
+    if ahead is not None:
+        print(locale.text(keys.DO_NOT_CURRENT, name=args.name, step=ahead.step, id=subject.id,
+                          current=ahead.current or locale.text(keys.DO_NO_CURRENT)),
+              file=sys.stderr)
+        if not args.force:
+            return EXIT_USAGE
+    timeout = args.timeout or ACTION_TIMEOUT
     try:
-        run = run_action(ctx, args.name, pipeline, subject, args.extra)
+        run = run_action(ctx, args.name, pipeline, subject, args.extra, timeout=timeout)
     except OSError as exc:
         print(locale.text(keys.DO_FAILED, name=args.name, reason=f"{type(exc).__name__}: {exc}"),
               file=sys.stderr)
         return EXIT_USAGE
     if run.timed_out:
-        print(locale.text(keys.DO_TIMEOUT, name=args.name, seconds=ACTION_TIMEOUT),
+        print(locale.text(keys.DO_TIMEOUT, name=args.name, seconds=f"{timeout:g}"),
               file=sys.stderr)
     return run.code
 

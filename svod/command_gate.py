@@ -19,6 +19,7 @@ from .git import COMMON_DIR
 if TYPE_CHECKING:
     from .context import Context
     from .locale import Locale
+    from .pipeline import Pipeline
     from .subject import Subject
 
 PARAM_ARGV = "argv"
@@ -47,6 +48,10 @@ ENCODING = "utf-8"
 POSIX = "posix"
 SERVICES_ATTR = "services"
 WORKTREES_ATTR = "worktrees"
+# Placeholders of argv: the subject id, its path relative to the store root, the store root.
+SUB_ID = "{id}"
+SUB_PATH = "{path}"
+SUB_ROOT = "{root}"
 REASON_POSIX = "command: running a command requires POSIX"
 REASON_SERVICE = "command: service {service} is not declared in services of svod.yaml"
 REASON_CWD = "command: directory not found: {cwd}"
@@ -91,6 +96,49 @@ def subject_worktree(ctx: Context, subject: Subject, service: Path) -> Path | No
     return next((Path(path) for path, _ in pairs if common_dir(ctx, Path(path)) == target), None)
 
 
+def subject_rel(ctx: Context, subject: Subject) -> str:
+    """Path of the subject relative to the store root; the id when it has no path there."""
+    if subject.path is None:
+        return subject.id
+    path = Path(subject.path)
+    path = path if path.is_absolute() else ctx.root / path
+    try:
+        return path.resolve().relative_to(ctx.root.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def substitute(argv: list[str], ctx: Context, subject: Subject) -> list[str]:
+    """argv with {id}, {path} and {root} replaced in every item; other braces stay as written."""
+    values = ((SUB_ID, subject.id), (SUB_PATH, subject_rel(ctx, subject)),
+              (SUB_ROOT, str(ctx.root)))
+    out = []
+    for item in argv:
+        for token, value in values:
+            item = item.replace(token, value)
+        out.append(item)
+    return out
+
+
+def own_pipeline(ctx: Context, gate: Gate) -> Pipeline | None:
+    """The loaded pipeline holding this gate use, or None."""
+    return next((pipeline for pipeline in ctx.pipelines.values()
+                 if any(ref.impl is gate for ref in pipeline.gate_refs())), None)
+
+
+def action_vars(ctx: Context, gate: Gate, subject: Subject) -> dict[str, str]:
+    """SVOD_ variables an action of the subject gets, with SVOD_ACTION empty; {} outside a
+    loaded pipeline. SVOD_CHECKS_<NAME> already set in the environment wins, as for actions."""
+    from .actions import ENV_ACTION, ENV_CHECKS_PREFIX, action_env
+
+    pipeline = own_pipeline(ctx, gate)
+    if pipeline is None:
+        return {}
+    base = {name: value for name, value in os.environ.items()
+            if name.startswith(ENV_CHECKS_PREFIX)}
+    return {**action_env(ctx, pipeline, subject, base=base), ENV_ACTION: ""}
+
+
 def output_tail(output: IO[bytes]) -> str:
     """Last TAIL_LINES lines of the output, at most TAIL_CHARS characters from its end."""
     size = output.seek(0, os.SEEK_END)
@@ -123,8 +171,10 @@ class CommandGate(Gate):
     """Passes when a command exits with 0; the result is kept until what it reads changes.
 
     The command runs without a shell in the work directory of the subject for a service, in a
-    directory of the store or in the store root. Its result is cached on disk per repository
-    and per run in memory; a command that cannot finish is UNKNOWN and never cached.
+    directory of the store or in the store root, with {id}, {path} and {root} of argv replaced
+    and the SVOD_ variables of an action of the subject added to its environment. Its result
+    is cached on disk per repository and per run in memory; a command that cannot finish is
+    UNKNOWN and never cached.
     """
 
     name = "command"
@@ -177,8 +227,8 @@ class CommandGate(Gate):
         cwd, reason = self.directory(ctx, subject)
         if cwd is None:
             return self.unknown(reason or "")
-        argv = list(self.params[PARAM_ARGV])
-        env = dict(self.params.get(PARAM_ENV) or {})
+        argv = substitute(list(self.params[PARAM_ARGV]), ctx, subject)
+        env = {**action_vars(ctx, self, subject), **(self.params.get(PARAM_ENV) or {})}
         memo = (MEMO, str(cwd), tuple(argv), tuple(sorted(env.items())),
                 tuple(self.params.get(PARAM_WATCH) or ()), self.params.get(PARAM_CACHE, True))
         return ctx.cache.value(memo, lambda: self.outcome(ctx, cwd, argv, env))

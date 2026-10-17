@@ -3,6 +3,7 @@
 An action is `<profile>/actions/<name>.sh`, run as `bash <script> [extra args]` without a shell
 around it, in the store root, with the output going to the terminal as it is and the exit code
 handed back. Scripts keep themselves idempotent: each checks what is already done and exits 0.
+Each run is an action_run event of the evidence log.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from . import evidence_log
 from .subject import ATTR_FRONTMATTER
 
 if TYPE_CHECKING:
@@ -48,6 +50,8 @@ ENV_KIND = "SVOD_KIND"
 ENV_SERVICES = "SVOD_SERVICES"
 ENV_SUBJECT_PATH = "SVOD_SUBJECT_PATH"
 ENV_LOCALE = "SVOD_LOCALE"
+# Marker of a run by svod do: the action's name; empty when a gate runs a profile script.
+ENV_ACTION = "SVOD_ACTION"
 ENV_SERVICE_PREFIX = "SVOD_SERVICE_"
 ENV_FM_PREFIX = "SVOD_FM_"
 ENV_CHECKS_PREFIX = "SVOD_CHECKS_"
@@ -249,30 +253,66 @@ def stop_group(process: subprocess.Popen) -> None:
         process.wait(timeout=STOP_GRACE_SEC)
 
 
-def record_run(ctx: Context, action: str, pipeline: Pipeline, subject: Subject,
-               code: int, started: dt.datetime, seconds: float) -> None:
-    """Journal one run of an action.
+def action_step(pipeline: Pipeline, action: str) -> str | None:
+    """Id of the first step of the pipeline naming the action, or None."""
+    return next((step.id for step in pipeline.steps if step.action == action), None)
 
-    A placeholder: svod.evidence_log replaces it with the record of the run in the evidence
-    journal; until then a run leaves no record.
+
+@dataclass(frozen=True)
+class Ahead:
+    """A step naming the action that the subject has not reached, and its current step."""
+
+    step: str
+    current: str | None
+
+
+def step_ahead(ctx: Context, pipeline: Pipeline, subject: Subject, action: str) -> Ahead | None:
+    """The step naming the action when the position of the subject has not reached it.
+
+    None when no applicable step names the action, when the subject is done, or when one such
+    step passed, is current or lies before the current step: a run there repeats work already
+    done, which the script keeps idempotent. A step lies ahead when it comes after the current
+    step, or when an entry holds the subject before any step.
     """
+    from .position import position
+
+    if action_step(pipeline, action) is None:
+        return None
+    pos = position(ctx, pipeline, subject)
+    named = [i for i, state in enumerate(pos.steps) if state.step.action == action]
+    if not named or pos.done is not None:
+        return None
+    current = next((i for i, state in enumerate(pos.steps) if state is pos.current), None)
+    if current is None and pos.blocked is None:
+        return None
+    for index in named:
+        if pos.steps[index].passed or (current is not None and index <= current):
+            return None
+    return Ahead(pos.steps[named[0]].step.id,
+                 pos.current.step.id if pos.current is not None else None)
 
 
 def run_action(ctx: Context, action: str, pipeline: Pipeline, subject: Subject,
                extra: Sequence[str] = (), timeout: float = ACTION_TIMEOUT) -> Run:
     """Run the script of the action for the subject; return its exit code and timeout flag.
 
-    The code is EXIT_TIMEOUT when the script overran the timeout; its process group is stopped
-    then and on an interrupt. A script that cannot start raises OSError.
+    The environment is action_env with SVOD_ACTION set to the action. The code is EXIT_TIMEOUT
+    when the script overran the timeout; its process group is stopped then and on an interrupt.
+    A script that cannot start raises OSError. Every run that started is an action_run of the
+    evidence log, with the step naming the action; an interrupted one has the code None.
     """
     script = script_path(ctx, action)
     if script is None:
         raise FileNotFoundError(actions_dir(ctx) / f"{action}{ACTION_SUFFIX}")
-    started = dt.datetime.now(dt.timezone.utc)
+    env = {**action_env(ctx, pipeline, subject), ENV_ACTION: action}
     clock = time.monotonic()
     process = subprocess.Popen([SHELL, str(script), *extra], cwd=ctx.root, shell=False,
-                               env=action_env(ctx, pipeline, subject),
-                               start_new_session=os.name == "posix")
+                               env=env, start_new_session=os.name == "posix")
+
+    def journal(code: int | None) -> None:
+        """Record the run in the evidence log of the subject."""
+        evidence_log.record_action(ctx.root, pipeline.name, subject.id, action, code,
+                                   time.monotonic() - clock, action_step(pipeline, action))
     try:
         run = Run(process.wait(timeout=timeout))
     except subprocess.TimeoutExpired:
@@ -280,6 +320,7 @@ def run_action(ctx: Context, action: str, pipeline: Pipeline, subject: Subject,
         run = Run(EXIT_TIMEOUT, timed_out=True)
     except BaseException:
         stop_group(process)
+        journal(None)
         raise
-    record_run(ctx, action, pipeline, subject, run.code, started, time.monotonic() - clock)
+    journal(run.code)
     return run

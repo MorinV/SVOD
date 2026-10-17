@@ -32,4 +32,10 @@ Name the services of a task in its card (`services: [app]`). The actions in `pro
     bash profile/actions/pr.sh work/tasks/<name>           # the pull request description
     bash profile/actions/cleanup.sh work/tasks/<name>      # after status: done, removes clean worktrees
 
+`svod do <action> <record>` runs the same scripts (`svod do start-task work/tasks/<name>`); it refuses an action of a step the record has not reached unless `--force`, and stops a script after 600 s unless `--timeout <seconds>`. The record given as argument always wins over `SVOD_*` variables inherited from another run.
+
+Worktrees and branches: the worktree of service `<service>` for `work/<kind>/<name>` of pipeline `<pipeline>` (task, feature, ...) is `<service>-<pipeline>-<name>` in the directory holding the service checkout, on branch `<pipeline>/<name>`; `work.yaml` lists it relative to the store root (`app: ../app-task-login`), so it can be committed. A store inside its service gets the worktree next to the service, not inside it.
+
+The steps `checks` (task) and `integration` (feature) also run `checks.sh <record> --check` as a `command` gate: it writes nothing, repeats the checks and passes when they pass; a record without services passes, one without `checks.md` fails without running.
+
 Process changes: `profile/pipelines/*.yaml`, texts in `profile/locale/`, skills in `skills/`; run `svod validate` after each change.

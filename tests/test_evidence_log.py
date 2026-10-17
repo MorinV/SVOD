@@ -2,13 +2,14 @@
 import datetime as dt
 import json
 import os
+import string
 import unittest
 from types import SimpleNamespace
 from unittest import mock
 
 import task_example as te
 import test_local_workflow as local_fixture
-from support import ENCODING, EXIT_OK, ME, StoreTestCase, TempStore
+from support import ENCODING, EXIT_OK, ME, TEST_PROFILE, StoreTestCase, TempStore
 
 from svod import evidence_log as ev
 from svod import hooks
@@ -17,6 +18,7 @@ from svod.approval import MARK_FILE, write_mark
 from svod.config import load_config
 from svod.errors import LoadError
 from svod.gates import unknown
+from svod.locale import FALLBACK_LOCALE, load_locale
 from svod.pipeline import GateRef, Outcome
 from svod.position import Position
 from svod.subject import Subject
@@ -251,6 +253,23 @@ class TaskPointsTest(unittest.TestCase):
             out = self.sb.cli("status", te.KEY)
         self.assertEqual(EXIT_OK, out.returncode)
         self.assertEqual(1, out.stderr.count(WARNING_HEAD))
+
+
+class RuleKeysTest(unittest.TestCase):
+    """Every refusal text of the pre-tool hook is told apart by its rule code."""
+
+    def test_each_refusal_has_its_rule(self):
+        """A rendered refusal is found as its own key; questions, human and external are there."""
+        locale = load_locale(FALLBACK_LOCALE, TEST_PROFILE)
+        candidates = [key for _, key in ev.RULE_KEYS]
+        for rule, key in ev.RULE_KEYS:
+            with self.subTest(rule=rule):
+                fields = {name for _, name, _, _ in
+                          string.Formatter().parse(locale.text_template(key)) if name}
+                text = locale.text(key, **{name: f"<{name}>" for name in fields})
+                self.assertEqual(ev.rendered_from([locale], text, candidates)[0], key)
+        self.assertLessEqual({ev.RULE_QUESTIONS, ev.RULE_HUMAN, ev.RULE_EXTERNAL},
+                             {rule for rule, _ in ev.RULE_KEYS})
 
 
 class LocalPointsTest(unittest.TestCase):

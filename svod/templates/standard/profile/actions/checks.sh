@@ -1,5 +1,7 @@
 # Run the checks of every service in its worktree (work.yaml) or checkout; checks.md on success, checks.log always.
-# Usage: bash profile/actions/checks.sh work/<kind>/<name>. The command: SVOD_CHECKS_<NAME>, else found by the files.
+# Usage: bash profile/actions/checks.sh work/<kind>/<name> [--check]. The command: SVOD_CHECKS_<NAME>, else found by the files.
+# --check writes nothing: it runs the checks again with their output on stdout and exits with their result, for the
+# command gate of the checks step; a record naming no services passes, one without checks.md fails without running.
 # shellcheck source-path=SCRIPTDIR source=_env.sh
 . "$(dirname "$0")/_env.sh"
 
@@ -16,14 +18,29 @@ check_command() {
   fi
 }
 
+check=""
+if has_option --check; then check=1; fi
+log="$SVOD_SUBJECT_PATH/checks.log"
+report="$SVOD_SUBJECT_PATH/checks.md"
 if [ -z "$SVOD_SERVICES" ]; then
+  if [ -n "$check" ]; then
+    echo "no services declared in ${CARD#"$SVOD_ROOT"/}: nothing to check"
+    exit 0
+  fi
   echo "no services: name them in ${CARD#"$SVOD_ROOT"/} as services: [app]" >&2
   exit 1
 fi
-log="$SVOD_SUBJECT_PATH/checks.log"
-report="$SVOD_SUBJECT_PATH/checks.md"
-: > "$log"
-rm -f "$report"
+if [ -n "$check" ]; then
+  if [ ! -f "$report" ]; then
+    echo "not checked yet: run bash profile/actions/checks.sh $SVOD_ID"
+    exit 1
+  fi
+  exec 3>&1
+else
+  : > "$log"
+  rm -f "$report"
+  exec 3>>"$log"
+fi
 lines=()
 failed=0
 for name in $SVOD_SERVICES; do
@@ -40,9 +57,12 @@ for name in $SVOD_SERVICES; do
     failed=1; continue
   fi
   commit="$(git -C "$path" rev-parse --short HEAD)"
-  echo "== $name @ $commit: $cmd" >> "$log"
-  if (cd "$path" && bash -c "$cmd") >> "$log" 2>&1; then
+  echo "== $name @ $commit: $cmd" >&3
+  if (cd "$path" && bash -c "$cmd") >&3 2>&1; then
     lines+=("- $name @ $commit: \`$cmd\` passed")
+  elif [ -n "$check" ]; then
+    echo "$name: \`$cmd\` failed" >&2
+    failed=1
   else
     echo "$name: \`$cmd\` failed, see ${log#"$SVOD_ROOT"/}" >&2
     failed=1
@@ -50,6 +70,10 @@ for name in $SVOD_SERVICES; do
 done
 if [ "$failed" != 0 ]; then
   exit 1
+fi
+if [ -n "$check" ]; then
+  printf '%s\n' "${lines[@]}"
+  exit 0
 fi
 { echo "# Checks"; echo; printf '%s\n' "${lines[@]}"; } > "$report"
 cat "$report"
