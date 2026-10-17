@@ -11,7 +11,10 @@ from .paths import LIB_DIR, PACKAGE_DIR, VENDOR_DIR, package_dir, vendor_dir
 from .yamlio import dump_yaml, read_yaml
 
 SKILLS_DIR = "skills"
-SKILLS_SOURCE = Path(PACKAGE_DIR) / "templates" / "local" / SKILLS_DIR
+SKILLS_SOURCE = Path(PACKAGE_DIR) / SKILLS_DIR
+# Where the skills of older sources lie, for svod update --to an earlier release: 0.4 and 0.5
+# kept them in the local template, 0.3 at the root of the repository.
+LEGACY_SKILLS = (Path(PACKAGE_DIR) / "templates" / "local" / SKILLS_DIR, Path(SKILLS_DIR))
 VERSION_FILE = "VERSION"
 MANIFEST_FILE = "MANIFEST"
 IGNORE_FILE = ".gitignore"
@@ -153,8 +156,8 @@ def build(root, tree, stamp):
     try:
         skip = shutil.ignore_patterns(IGNORED_DIR, *[f"*{s}" for s in IGNORED_SUFFIXES])
         shutil.copytree(Path(tree) / PACKAGE_DIR, staging / LIB_DIR / PACKAGE_DIR, ignore=skip)
-        skills = next((d for d in (Path(tree) / SKILLS_SOURCE, Path(tree) / SKILLS_DIR)
-                       if d.is_dir()), None)
+        skills = next((Path(tree) / d for d in (SKILLS_SOURCE, *LEGACY_SKILLS)
+                       if (Path(tree) / d).is_dir()), None)
         if skills is not None:
             shutil.copytree(skills, staging / SKILLS_DIR, ignore=skip)
         write_stamp(staging, stamp)

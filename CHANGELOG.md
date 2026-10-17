@@ -9,6 +9,17 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 ### Changed
 
 - The sources hold no store any more: the work on Svod is recorded in the instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd), a standard-template store next to a clone of this repository, as every user's instance is.
+- `svod new` makes a `standard` store by default; `--template local` is a load error naming `standard` (`new.template_retired`).
+- The argv runner (no shell, a timeout, the process group stopped, the output tail) is `svod.run`, shared by the `command` gate and the actions.
+- The engine skills `svod-pipeline` and `svod-efficient-execution` live in `svod/skills/` (in the package data); the vendored copy and the setup scripts take them from there, and they name no `svod local` command.
+
+### Removed
+
+- The local template (`svod/templates/local`, its copies of `docs/` and `tests/test_copies.py`), `svod local prepare|checks|verify|deliver`, the modules `local_workflow`, `local_evidence` and `local_runner` with `LocalWorkflowError` and the evidence-log decorators of the local commands, and `docs/local-workflow.md`.
+
+### Migration
+
+An instance made from the local template recreates itself from the standard one: `svod new <directory> --template standard`, copy its records into `work/`, then `svod install` there. Run the setup scripts again so the skill links of a clone point at `svod/skills/`.
 
 ## [0.5.0] - 2026-10-17
 

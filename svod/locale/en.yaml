@@ -1,6 +1,8 @@
 error:
   not_root: "Run from the store root: svod.yaml not found"
   load: "Store configuration failed to load:"
+new:
+  template_retired: "Template {template} is retired: create the store with svod new <directory> --template {replacement}"
 validate:
   ok: "Configuration is valid: {count} pipelines"
   failed: "Configuration errors: {count}"

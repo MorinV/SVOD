@@ -22,7 +22,7 @@ version = { attr = "svod.__version__" }
 include = ["svod*"]
 
 [tool.setuptools.package-data]
-svod = ["locale/*.yaml", "templates/**/*", "templates/**/.gitignore"]
+svod = ["locale/*.yaml", "skills/**/*", "templates/**/*", "templates/**/.gitignore"]
 
 [tool.ruff]
 line-length = 100

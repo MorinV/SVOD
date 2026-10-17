@@ -1,6 +1,8 @@
 error:
   not_root: "Запускать из корня стора: svod.yaml не найден"
   load: "Конфигурация стора не загрузилась:"
+new:
+  template_retired: "Шаблон {template} снят: создать стор командой svod new <directory> --template {replacement}"
 validate:
   ok: "Конфигурация в порядке: пайплайнов {count}"
   failed: "Ошибок в конфигурации: {count}"

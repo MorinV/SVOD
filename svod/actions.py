@@ -7,12 +7,10 @@ Each run is an action_run event of the evidence log.
 """
 from __future__ import annotations
 
-import contextlib
 import datetime as dt
 import os
 import re
 import shlex
-import signal
 import subprocess
 import time
 from collections.abc import Mapping, Sequence
@@ -21,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from . import evidence_log
+from .run import POSIX, stop_group
 from .subject import ATTR_FRONTMATTER
 
 if TYPE_CHECKING:
@@ -35,8 +34,6 @@ ACTION_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 SHELL = "bash"
 ACTION_TIMEOUT = 600
 EXIT_TIMEOUT = 124
-STOP_GRACE_SEC = 2
-STOP_POLL_SEC = .01
 ENCODING = "utf-8"
 COMMENT = "#"
 SHEBANG = "#!"
@@ -230,29 +227,6 @@ class Run:
     timed_out: bool = False
 
 
-def stop_group(process: subprocess.Popen) -> None:
-    """Stop the process group of an action that overran or was interrupted, then reap it.
-
-    Without POSIX process groups only the script itself is killed.
-    """
-    if os.name != "posix":
-        process.kill()
-        process.wait()
-        return
-
-    def send(sig: int) -> None:
-        """Signal the group; a group already gone needs nothing."""
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(process.pid, sig)
-    send(signal.SIGTERM)
-    until = time.monotonic() + STOP_GRACE_SEC
-    while time.monotonic() < until and process.poll() is None:
-        time.sleep(STOP_POLL_SEC)
-    send(signal.SIGKILL)
-    with contextlib.suppress(subprocess.TimeoutExpired):
-        process.wait(timeout=STOP_GRACE_SEC)
-
-
 def action_step(pipeline: Pipeline, action: str) -> str | None:
     """Id of the first step of the pipeline naming the action, or None."""
     return next((step.id for step in pipeline.steps if step.action == action), None)
@@ -307,7 +281,7 @@ def run_action(ctx: Context, action: str, pipeline: Pipeline, subject: Subject,
     env = {**action_env(ctx, pipeline, subject), ENV_ACTION: action}
     clock = time.monotonic()
     process = subprocess.Popen([SHELL, str(script), *extra], cwd=ctx.root, shell=False,
-                               env=env, start_new_session=os.name == "posix")
+                               env=env, start_new_session=os.name == POSIX)
 
     def journal(code: int | None) -> None:
         """Record the run in the evidence log of the subject."""

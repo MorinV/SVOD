@@ -8,13 +8,14 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path, PurePosixPath
-from typing import IO, TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from . import command_cache
 from .cache import RunCache
 from .errors import ParamError
 from .gates import CORE_GATES, Gate, Result, Status, non_empty_strings, unknown
 from .git import COMMON_DIR
+from .run import output_tail, run_argv
 
 if TYPE_CHECKING:
     from .context import Context
@@ -35,16 +36,11 @@ FACT_CACHED = "cached"
 FACT_DURATION = "duration"
 DESCRIBE_COMMAND = "gate.command"
 DEFAULT_TIMEOUT_SEC = 120
-TAIL_LINES = 20
-TAIL_CHARS = 2000
-# Bytes read from the end of the output for its tail.
-TAIL_READ_BYTES = 64 * 1024
 DURATION_DIGITS = 3
 EXIT_OK = 0
 STORE_ROOT = "."
 PARENT = ".."
 MEMO = "command"
-ENCODING = "utf-8"
 POSIX = "posix"
 SERVICES_ATTR = "services"
 WORKTREES_ATTR = "worktrees"
@@ -139,19 +135,9 @@ def action_vars(ctx: Context, gate: Gate, subject: Subject) -> dict[str, str]:
     return {**action_env(ctx, pipeline, subject, base=base), ENV_ACTION: ""}
 
 
-def output_tail(output: IO[bytes]) -> str:
-    """Last TAIL_LINES lines of the output, at most TAIL_CHARS characters from its end."""
-    size = output.seek(0, os.SEEK_END)
-    output.seek(max(0, size - TAIL_READ_BYTES))
-    text = output.read().decode(ENCODING, "replace")
-    lines = text.rstrip().splitlines()[-TAIL_LINES:]
-    return "\n".join(lines)[-TAIL_CHARS:]
-
-
 def run_command(argv: list[str], cwd: Path, env: dict[str, str],
                 timeout: float) -> tuple[command_cache.Record | None, str | None]:
     """(record of one run, None) or (None, the reason the command gave no exit code)."""
-    from .local_runner import run_argv
     started = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     clock = time.monotonic()
     shown = shlex.join(argv)

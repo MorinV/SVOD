@@ -9,7 +9,7 @@ from svod.locale import read_locale_file
 LOCALE_DIRS = (
     REPO_DIR / "svod" / "locale",
     REPO_DIR / "svod" / "templates" / "task" / "profile" / "locale",
-    REPO_DIR / "svod" / "templates" / "local" / "profile" / "locale",
+    REPO_DIR / "svod" / "templates" / "standard" / "profile" / "locale",
 )
 LOCALES = ("en", "ru")
 

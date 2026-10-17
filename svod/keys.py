@@ -2,6 +2,7 @@
 
 ERROR_NOT_ROOT = "error.not_root"
 ERROR_LOAD = "error.load"
+NEW_TEMPLATE_RETIRED = "new.template_retired"
 VALIDATE_OK = "validate.ok"
 VALIDATE_FAILED = "validate.failed"
 STATUS_HEADER = "status.header"
@@ -249,6 +250,7 @@ DESCRIBE_KEYS = (
 CORE_KEYS = (
     ERROR_NOT_ROOT,
     ERROR_LOAD,
+    NEW_TEMPLATE_RETIRED,
     VALIDATE_OK,
     VALIDATE_FAILED,
     STATUS_HEADER,

@@ -15,7 +15,6 @@ import os
 import re
 import string
 import sys
-import time
 from collections import Counter
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -60,6 +59,7 @@ EVENT_POSITION_CHANGED = "position_changed"
 EVENT_APPROVAL_RECORDED = "approval_recorded"
 EVENT_APPROVAL_DRIFT = "approval_drift"
 EVENT_APPROVAL_REFUSED = "approval_refused"
+# checks_run and delivered were written by svod local up to 0.5; logs of then still read.
 EVENT_CHECKS_RUN = "checks_run"
 EVENT_DELIVERED = "delivered"
 EVENT_HOOK_DENIED = "hook_denied"
@@ -73,8 +73,6 @@ FACT_FROM = "from"
 FACT_TO = "to"
 FACT_BY = "by"
 FACT_REASON = "reason"
-FACT_SERVICE = "service"
-FACT_WORKSPACE = "workspace"
 FACT_CODE = "code"
 FACT_SECONDS = "seconds"
 FACT_PASSED = "passed"
@@ -104,10 +102,6 @@ APPROVE_REFUSALS = (keys.APPROVE_NO_MARK, keys.APPROVE_FOREIGN_KEY, keys.APPROVE
                     keys.APPROVE_NO_STEP, keys.APPROVE_STEP_NO_GATE, keys.APPROVE_NOT_READY,
                     keys.APPROVE_CHANGED_AFTER_MARK, keys.APPROVE_NO_APPROVER,
                     keys.APPROVE_NOT_CONFIRMED)
-RESULT_PASSED = "passed"
-RESULT_EXIT_CODE = "exit_code"
-RESULT_RECEIPT = "receipt"
-RECEIPT_CWD = "cwd"
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -364,72 +358,6 @@ def approval_outcome(func: F) -> F:
             warn(exc)
         return report
     return cast(F, wrapper)
-
-
-def local_subject(root: str | Path, key: str) -> tuple[Path, str, str] | None:
-    """(store root, pipeline, subject id) of the one current subject a local command names.
-
-    The lookup of local_runner.state without its policy: a result is recorded even when the
-    source is no longer clean after the command.
-    """
-    from .context import Context
-    from .loader import load_runtime
-    from .resolve import exact_pairs, key_pairs
-
-    runtime = load_runtime(Path(root).resolve())
-    ctx = Context(runtime.config, runtime.locale, bindings=runtime.bindings,
-                  pipelines=runtime.by_name())
-    pairs = ([(p, s) for p in runtime.pipelines for s in p.subject.impl.enumerate(ctx)
-              if s.id == key] or exact_pairs(ctx, runtime.pipelines, key)
-             or key_pairs(ctx, runtime.pipelines, key))
-    pairs = [(p, s) for p, s in pairs if s.exists and not s.archived]
-    if len(pairs) != 1:
-        return None
-    return ctx.root, pairs[0][0].name, pairs[0][1].id
-
-
-def note_local(event: str, root: str | Path, key: str, result: dict[str, Any],
-               seconds: float) -> None:
-    """Record checks_run or delivered of a local command that returned its result."""
-    if not settings(root)[0]:
-        return
-    found = local_subject(root, key)
-    if found is None:
-        return
-    store, pipeline, subject_id = found
-    if event == EVENT_DELIVERED:
-        record(store, pipeline, subject_id, EVENT_DELIVERED)
-        return
-    facts: dict[str, Any] = {}
-    try:
-        receipt = json.loads(Path(result[RESULT_RECEIPT]).read_text(encoding=ENCODING))
-        if receipt.get(FACT_SERVICE):
-            facts[FACT_SERVICE] = receipt[FACT_SERVICE]
-        else:
-            facts[FACT_WORKSPACE] = Path(receipt[RECEIPT_CWD]).name
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
-    facts.update({FACT_CODE: result.get(RESULT_EXIT_CODE), FACT_SECONDS: seconds,
-                  FACT_PASSED: bool(result.get(RESULT_PASSED))})
-    record(store, pipeline, subject_id, EVENT_CHECKS_RUN, None, **facts)
-
-
-def local_outcome(event: str) -> Callable[[F], F]:
-    """Decorate a local command (root, key) -> result: record the event when it returns."""
-    def decorate(func: F) -> F:
-        """The command, timed, recording the event after it returns."""
-        @functools.wraps(func)
-        def wrapper(root: str | Path, key: str, *args: Any, **kwargs: Any) -> Any:
-            """Run the command, then record the event; the result is returned as it is."""
-            started = time.monotonic()
-            result = func(root, key, *args, **kwargs)
-            try:
-                note_local(event, root, key, result, time.monotonic() - started)
-            except Exception as exc:
-                warn(exc)
-            return result
-        return cast(F, wrapper)
-    return decorate
 
 
 def denied_subject(guard: Guard, event: dict[str, Any], tool: str,

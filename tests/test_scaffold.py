@@ -6,45 +6,43 @@ import sys
 import unittest
 from tempfile import TemporaryDirectory
 
-import yaml
+from support import (CLI_MODULE, CLI_TIMEOUT_SEC, ENCODING, EXIT_OK, EXIT_USAGE, core_text,
+                     git_env)
+from svod import keys
+from svod.errors import LoadError
+from svod.scaffold import DEFAULT_TEMPLATE, RETIRED, TEMPLATES, scaffold
 
-from support import CLI_MODULE, CLI_TIMEOUT_SEC, ENCODING, EXIT_OK, git_env
-from svod.scaffold import scaffold
-
-EXAMPLE_TASK = 'tasks/example'
-EXAMPLE_FILES = ('EXAMPLE-card.md', 'contract.md', 'testing/plan.yaml')
-EXAMPLE_PLAN = 'testing/plan.yaml'
-PLAN_KEYS = {'version', 'kind', 'contract', 'workspace', 'command'}
-FIRST_STEP = 'Next step: Prepare a compact contract.md'
-PLACEHOLDER_REASON = 'workspace must be an explicit absolute Git directory'
-ACTIVE_HEADING = 'Local tasks:'
-ACTIVE_ITEM = f'  - {EXAMPLE_TASK} - Prepare a compact contract.md'
+REPO = Path(__file__).resolve().parents[1]
+RETIRED_NAME = 'local'
+REPLACEMENT = 'standard'
 
 
 def isolated_env(home):
     """Process environment with git isolated from the developer's configuration."""
-    return dict(os.environ, **git_env(home), PYTHONDONTWRITEBYTECODE='1', PYTHONUTF8='1')
+    env = {k: v for k, v in os.environ.items() if not k.startswith('SVOD_')}
+    return dict(env, **git_env(home), PYTHONDONTWRITEBYTECODE='1', PYTHONUTF8='1')
 
 
-def run_cli(store, home, *args):
-    """Run the CLI as a black box in the store."""
-    return subprocess.run([sys.executable, '-m', CLI_MODULE, *args], cwd=str(store),
+def run_cli(cwd, home, *args):
+    """Run the CLI as a black box in cwd."""
+    return subprocess.run([sys.executable, '-m', CLI_MODULE, *args], cwd=str(cwd),
                           env=isolated_env(home), capture_output=True, text=True,
                           encoding=ENCODING, timeout=CLI_TIMEOUT_SEC)
 
 
+def files_of(directory):
+    """Bytes of every file under the directory by its relative path, byte-code left out."""
+    return {p.relative_to(directory): p.read_bytes() for p in directory.rglob('*')
+            if p.is_file() and '__pycache__' not in p.parts}
+
+
 class ScaffoldTest(unittest.TestCase):
     def test_scaffold_copies_the_template_and_refuses_overwrite(self):
-        repo = Path(__file__).resolve().parents[1]
-        for name in ('local', 'task'):
+        for name in TEMPLATES:
             with self.subTest(template=name), TemporaryDirectory() as temp:
                 target = scaffold(Path(temp) / 'store', name)
-                source = repo / 'svod' / 'templates' / name
-                expected = {p.relative_to(source): p.read_bytes()
-                            for p in source.rglob('*')
-                            if p.is_file() and '__pycache__' not in p.parts}
-                actual = {p.relative_to(target): p.read_bytes()
-                          for p in target.rglob('*') if p.is_file()}
+                expected = files_of(REPO / 'svod' / 'templates' / name)
+                actual = files_of(target)
                 self.assertTrue(expected)
                 self.assertEqual(actual, expected)
                 with self.assertRaises(ValueError):
@@ -58,28 +56,56 @@ class ScaffoldTest(unittest.TestCase):
                 scaffold(target, '../outside')
             self.assertFalse(target.exists())
 
+    def test_shipped_templates(self):
+        """standard and task ship and standard is the default; the local template is gone."""
+        shipped = {p.name for p in (REPO / 'svod' / 'templates').iterdir() if p.is_dir()}
+        self.assertEqual(shipped, set(TEMPLATES))
+        self.assertEqual(DEFAULT_TEMPLATE, REPLACEMENT)
+        self.assertEqual(RETIRED, {RETIRED_NAME: REPLACEMENT})
 
-class LocalTemplateExampleTest(unittest.TestCase):
-    def test_fresh_local_store_shows_the_example_task(self):
-        """A new local store validates, stops the example task at the contract with the
-        reason and lists it in the active summary."""
+
+class RetiredTemplateTest(unittest.TestCase):
+    """svod new --template local is a load error naming the standard template."""
+
+    def test_scaffold_refuses_with_the_replacement(self):
         with TemporaryDirectory() as temp:
-            store = scaffold(Path(temp) / 'store', 'local')
-            home = Path(temp) / 'home'
+            target = Path(temp) / 'store'
+            with self.assertRaises(LoadError) as caught:
+                scaffold(target, RETIRED_NAME)
+            self.assertEqual(caught.exception.errors,
+                             [core_text(keys.NEW_TEMPLATE_RETIRED, template=RETIRED_NAME,
+                                        replacement=REPLACEMENT)])
+            self.assertFalse(target.exists())
+
+    def test_cli_new_local_and_default(self):
+        """The CLI exits with 2 and the load error; without --template it makes a standard
+        store; an unknown name is a usage error listing the templates."""
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            home = base / 'home'
             home.mkdir()
-            for name in EXAMPLE_FILES:
-                self.assertTrue((store / EXAMPLE_TASK / name).is_file(), name)
-            plan = yaml.safe_load((store / EXAMPLE_TASK / EXAMPLE_PLAN).read_text(ENCODING))
-            self.assertEqual(set(plan), PLAN_KEYS)
-            subprocess.run(['git', 'init', '-q', str(store)], env=isolated_env(home),
-                           check=True, capture_output=True)
-            validate = run_cli(store, home, 'validate')
-            self.assertEqual(validate.returncode, EXIT_OK, validate.stdout + validate.stderr)
-            status = run_cli(store, home, 'status', EXAMPLE_TASK)
-            self.assertEqual(status.returncode, EXIT_OK, status.stderr)
-            self.assertIn(FIRST_STEP, status.stdout)
-            self.assertIn(PLACEHOLDER_REASON, status.stdout)
-            active = run_cli(store, home, 'active')
-            self.assertEqual(active.returncode, EXIT_OK, active.stderr)
-            self.assertIn(ACTIVE_HEADING, active.stdout)
-            self.assertIn(ACTIVE_ITEM, active.stdout)
+            refused = run_cli(base, home, 'new', 'old', '--template', RETIRED_NAME)
+            self.assertEqual(refused.returncode, EXIT_USAGE, refused.stdout)
+            self.assertIn(core_text(keys.ERROR_LOAD), refused.stderr)
+            self.assertIn(f'--template {REPLACEMENT}', refused.stderr)
+            self.assertFalse((base / 'old').exists())
+            created = run_cli(base, home, 'new', 'fresh')
+            self.assertEqual(created.returncode, EXIT_OK, created.stderr)
+            self.assertEqual(files_of(base / 'fresh'),
+                             files_of(REPO / 'svod' / 'templates' / REPLACEMENT))
+            unknown = run_cli(base, home, 'new', 'other', '--template', 'nope')
+            self.assertEqual(unknown.returncode, EXIT_USAGE)
+            self.assertIn(REPLACEMENT, unknown.stderr)
+            self.assertFalse((base / 'other').exists())
+
+    def test_task_template_has_no_local_workflow(self):
+        """The task template names neither svod local nor the local workflow."""
+        for path, data in files_of(REPO / 'svod' / 'templates' / 'task').items():
+            text = data.decode(ENCODING)
+            for word in ('svod local', 'local_workflow', 'local-workflow', 'current_process'):
+                with self.subTest(path=str(path), word=word):
+                    self.assertNotIn(word, text)
+
+
+if __name__ == '__main__':
+    unittest.main()

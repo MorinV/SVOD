@@ -8,12 +8,10 @@ from types import SimpleNamespace
 from unittest import mock
 
 import task_example as te
-import test_local_workflow as local_fixture
 from support import ENCODING, EXIT_OK, ME, TEST_PROFILE, StoreTestCase, TempStore
 
 from svod import evidence_log as ev
 from svod import hooks
-from svod import local_runner
 from svod.approval import MARK_FILE, write_mark
 from svod.config import load_config
 from svod.errors import LoadError
@@ -31,7 +29,6 @@ FIELDS = ["at", "event", "subject", "pipeline", "step", "facts"]
 LONG = "x" * 300
 IGNORE_LINE = "evidence/"
 WARNING_HEAD = "svod: the evidence log is not written"
-LOCAL_TASK = "demo-task"
 
 
 def events(entries):
@@ -270,41 +267,6 @@ class RuleKeysTest(unittest.TestCase):
                 self.assertEqual(ev.rendered_from([locale], text, candidates)[0], key)
         self.assertLessEqual({ev.RULE_QUESTIONS, ev.RULE_HUMAN, ev.RULE_EXTERNAL},
                              {rule for rule, _ in ev.RULE_KEYS})
-
-
-class LocalPointsTest(unittest.TestCase):
-    """local checks and deliver write checks_run and delivered."""
-
-    def setUp(self):
-        """The store of the local workflow tests, its contract approved."""
-        self.fx = local_fixture.LocalWorkflowTest()
-        self.addCleanup(self.fx.doCleanups)
-        self.fx.setUp()
-        self.fx.consent()
-
-    def test_checks_and_deliver(self):
-        """A passing run, then the delivery, each one line of the task log."""
-        self.assertTrue(local_runner.checks(self.fx.root, LOCAL_TASK)["passed"])
-        local_runner.deliver(self.fx.root, LOCAL_TASK)
-        (path,) = (self.fx.root / ev.EVIDENCE_DIR).glob("*/*.jsonl")
-        entries = [json.loads(line) for line in path.read_text(encoding=ENCODING).splitlines()]
-        self.assertEqual(["approval_recorded", "checks_run", "delivered"], events(entries))
-        facts = entries[1]["facts"]
-        self.assertEqual({"workspace": self.fx.source.name, "code": 0, "passed": True},
-                         {k: v for k, v in facts.items() if k != "seconds"})
-        self.assertIsInstance(facts["seconds"], float)
-
-    def test_failed_run_is_recorded(self):
-        """A failing command: checks_run with its exit code and passed false."""
-        self.fx.plan["command"] = [*self.fx.plan["command"][:2], "raise SystemExit(3)"]
-        self.fx.save_plan()
-        self.fx.consent()
-        result = local_runner.checks(self.fx.root, LOCAL_TASK)
-        self.assertFalse(result["passed"])
-        (path,) = (self.fx.root / ev.EVIDENCE_DIR).glob("*/*.jsonl")
-        last = json.loads(path.read_text(encoding=ENCODING).splitlines()[-1])
-        self.assertEqual(("checks_run", 3, False),
-                         (last["event"], last["facts"]["code"], last["facts"]["passed"]))
 
 
 if __name__ == "__main__":

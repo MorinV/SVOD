@@ -13,6 +13,7 @@ from svod import __version__
 from svod.hooks import EVENTS, run as run_hook
 from svod.launcher import launch
 from svod.locale import error_locale
+from svod.scaffold import DEFAULT_TEMPLATE, RETIRED, TEMPLATES
 
 if TYPE_CHECKING:
     from svod.context import Context
@@ -37,7 +38,6 @@ CMD_INSTALL = "install"
 CMD_UPDATE = "update"
 CMD_MIGRATE = "migrate"
 CMD_NEW = "new"
-CMD_LOCAL = "local"
 CMD_DO = "do"
 CMD_KNOWLEDGE = "knowledge"
 CMD_RETRO = "retro"
@@ -68,6 +68,14 @@ def positive_seconds(text: str) -> float:
     return value
 
 
+def template_name(text: str) -> str:
+    """A packaged template, or a retired one, which svod new refuses with its replacement."""
+    if text not in TEMPLATES and text not in RETIRED:
+        raise argparse.ArgumentTypeError(
+            f"invalid choice: {text!r} (choose from {', '.join(TEMPLATES)})")
+    return text
+
+
 class StatusParser(argparse.ArgumentParser):
     """Preserve argparse text behavior except explicit JSON status failures."""
 
@@ -88,10 +96,9 @@ def build_parser() -> StatusParser:
     commands = parser.add_subparsers(dest="command", required=True)
     new = commands.add_parser(CMD_NEW, help="create a new store from packaged templates")
     new.add_argument("directory", help="new destination directory; must not exist")
-    new.add_argument("--template", choices=("local", "task", "standard"), default="local")
-    local = commands.add_parser(CMD_LOCAL, help="run the compact local workflow")
-    local.add_argument("action", choices=("prepare", "checks", "verify", "deliver"))
-    local.add_argument("query", help="exact task path, name or supported key")
+    new.add_argument("--template", type=template_name, default=DEFAULT_TEMPLATE,
+                     metavar="{" + ",".join(TEMPLATES) + "}",
+                     help=f"packaged template, {DEFAULT_TEMPLATE} by default")
     do = commands.add_parser(CMD_DO, help="run an action script of the profile for a subject")
     do.add_argument("name", nargs="?", metavar="action",
                     help="action name: <profile>/actions/<name>.sh")
@@ -496,6 +503,9 @@ def run(args: argparse.Namespace) -> int:
         try:
             print(scaffold(args.directory, args.template))
             return EXIT_OK
+        except LoadError as exc:
+            print_errors(bootstrap_locale().text(keys.ERROR_LOAD), exc.errors)
+            return EXIT_USAGE
         except (OSError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
             return EXIT_FINDINGS
@@ -523,18 +533,6 @@ def run(args: argparse.Namespace) -> int:
         return migrate(root, args.since)
     if args.command == CMD_KNOWLEDGE:
         return knowledge(root, args)
-    if args.command == CMD_LOCAL:
-        from svod import local_runner, local_workflow
-        try:
-            result = getattr(local_runner, args.action)(root, args.query)
-            print(json.dumps(result, ensure_ascii=False))
-            return EXIT_OK if result.get("passed", True) else EXIT_FINDINGS
-        except LoadError as exc:
-            print_errors(error_locale(root).text(keys.ERROR_LOAD), exc.errors)
-            return EXIT_USAGE
-        except local_workflow.ERRORS as exc:
-            print(str(exc), file=sys.stderr)
-            return EXIT_FINDINGS
 
     copy_errors = []
     if args.command == CMD_VALIDATE:

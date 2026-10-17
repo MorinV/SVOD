@@ -42,23 +42,6 @@ svod status work/tasks/example            # stops at the card until it names its
 svod active                               # projects, features, tasks, research
 ```
 
-### Local template: compact local work
-
-```bash
-svod new demo-store --template local
-cd demo-store
-git init
-svod init --login your-login
-svod validate
-svod render local
-```
-
-The local template takes each task through contract → approval → checks → deliver. A task is `tasks/<name>/` with a card, `contract.md` and `testing/plan.yaml`; the plan names a clean Git checkout of the source and the command that checks it. [docs/local-workflow.md](docs/local-workflow.md) defines the terms and walks through the first task.
-
-Ask for the position of one task with `svod status tasks/<name>` (`--format json` for tools). In this template the session-start and prompt hooks print nothing; approval marking and the edit guards still work. `svod local checks tasks/<name>` runs the command once on committed source, and `svod local deliver tasks/<name>` records completion. Completion stays valid after the source checkout is removed and breaks when a recorded file is edited; merge, push and deployment remain separate steps.
-
-The store ships `AGENTS.md` and two skills: `svod-efficient-execution` for running a task, `svod-pipeline` for changing the process.
-
 **Svod develops itself with Svod.** The instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd) is a standard-template store next to a clone of this repository: the work on the engine is recorded there as features, tasks and research, with their questions, contracts, approvals and evidence log. The layout and what the first runs found: [docs/dogfooding.md](docs/dogfooding.md).
 
 ## OpenSpec/Git example
@@ -109,7 +92,7 @@ integrations/setup-claude.sh [<store>]           # hooks in ~/.claude/settings.j
 integrations/setup-codex.sh  [<store>]           # hooks in ~/.codex/hooks.json, skills in ~/.codex/skills
 ```
 
-With `--project` the hooks run only in Claude Code sessions started in the store. Without it they run on every tool call in every project of yours, and the script warns about that; use it when sessions start in work directories outside the store. Both scripts keep a backup of the file they change and do nothing on a second run. Codex asks to trust new hooks on the next start; until you do, they do not run.
+With `--project` the hooks run only in Claude Code sessions started in the store. Without it they run on every tool call in every project of yours, and the script warns about that; use it when sessions start in work directories outside the store. Both scripts keep a backup of the file they change and do nothing on a second run. The skills linked are the store's own `skills/` when it has any, else those of its copy of the engine (`.svod/skills/`), else the engine's [`svod/skills/`](svod/skills): `svod-pipeline` for changing the process, `svod-efficient-execution` for running one record with one run of its checks. Codex asks to trust new hooks on the next start; until you do, they do not run.
 
 The hooks are `svod hook <event>`, registered as `<python> -m svod.cli hook <event>` with the absolute path of the Python that has `svod` installed (or with this clone on `PYTHONPATH` when none has); after switching to another Python or virtual environment, run the script again:
 
@@ -123,7 +106,7 @@ The hooks are `svod hook <event>`, registered as `<python> -m svod.cli hook <eve
 
 ## Your own process
 
-Start from `svod new <dir> --template standard|task|local` ([the templates](svod/templates)), then change the pipeline: add a step, a gate, a text. The skill [`svod-pipeline`](svod/templates/local/skills/svod-pipeline/SKILL.md) walks an agent through it, and `svod validate` checks every declaration. Gates that do not exist yet are small Python classes in `profile/gates/`.
+Start from `svod new <dir> --template standard|task` ([the templates](svod/templates)), then change the pipeline: add a step, a gate, a text. The skill [`svod-pipeline`](svod/skills/svod-pipeline/SKILL.md) walks an agent through it, and `svod validate` checks every declaration. Gates that do not exist yet are small Python classes in `profile/gates/`.
 
 | Command | Does |
 |---|---|
@@ -132,8 +115,7 @@ Start from `svod new <dir> --template standard|task|local` ([the templates](svod
 | `svod status <query> --format json` | bounded structured outcomes and advisory next action |
 | `svod active` | everything open |
 | `svod approve <key> [--step <id>]` | records the selected ready human approval |
-| `svod new <directory> [--template standard\|task\|local]` | creates a new store without overwriting existing files; `local` by default |
-| `svod local checks <query>`, `svod local deliver <query>` | observes a real local result, then records local completion |
+| `svod new <directory> [--template standard\|task]` | creates a new store without overwriting existing files; `standard` by default |
 | `svod render <pipeline> --write` | refreshes the pipeline diagram in your docs |
 | `svod init [--wizard]` | creates the per-person local config; `--wizard` also sets services, autonomy, checks and hooks |
 | `svod doctor [--format json]` | checks that the store is ready to work in, one ok, warn or fail line per check |

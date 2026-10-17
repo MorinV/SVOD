@@ -72,9 +72,11 @@ The path is cloned too, so exactly the tag is taken, and it is recorded as the s
 
 ## Versions and migrations
 
-Version 0.3 adds a compact local profile, packaged templates (`svod new`) and local command helpers. Updating the engine does not install or overwrite a project's profile: opt into a new store or adapt selected declarations explicitly. Update the engine before using `when`, `purpose` or new CLI commands. Existing human decisions and logs remain history; no automatic consent or lifecycle import is performed. Stricter readiness/timestamp checks can require presenting inputs again and obtaining a fresh human answer. See [local-workflow.md](local-workflow.md).
+Version 0.3 adds a compact local profile, packaged templates (`svod new`) and local command helpers. Updating the engine does not install or overwrite a project's profile: opt into a new store or adapt selected declarations explicitly. Update the engine before using `when`, `purpose` or new CLI commands. Existing human decisions and logs remain history; no automatic consent or lifecycle import is performed. Stricter readiness/timestamp checks can require presenting inputs again and obtaining a fresh human answer.
 
-Version 0.4 changes no store format. The skills of a Svod clone moved to `svod/templates/local/skills/`: run the setup scripts again so the links point there.
+Version 0.4 changes no store format. The skills of a Svod clone moved into the local template: run the setup scripts again so the links point there.
+
+Version 0.6 retires the local template and `svod local prepare|checks|verify|deliver`; `svod new` makes a `standard` store by default and refuses `--template local`. An instance made from the local template recreates itself from the standard one: `svod new <directory> --template standard`, copy its records into `work/` (cards, contracts, approvals, logs), then `svod install` there. The engine skills `svod-pipeline` and `svod-efficient-execution` moved to `svod/skills/`: run the setup scripts again so the links of a clone point there; links into `.svod/skills/` keep working after `svod update`.
 
 Tags are separate from source versions: the version in `svod/__init__.py` names the release a tag will publish, and a commit on main publishes nothing. No release had a tag before `v0.4.0` (there is no `v0.3.0` tag), so until `v0.4.0` is published `svod install` and `svod update` without `--to` find no release and stop, and the session start notice says nothing; `--to` takes a branch or a tag in the meantime. Once `v0.4.0` is pushed, `svod install` and `svod update` take it as the newest release, `--to v0.4.0` names it, and the session start notice compares the copy of a store with it.
 

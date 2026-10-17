@@ -664,7 +664,7 @@ class SetupSkillsTest(SourceTestCase):
         """
         cases = (
             ("copy", True, vendor_dir(self.sb.store) / "skills" / SKILL),
-            ("repository", False, REPO_DIR / "svod" / "templates" / "local" / "skills" / SKILL),
+            ("repository", False, REPO_DIR / "svod" / "skills" / SKILL),
         )
         for name, installed, target in cases:
             with self.subTest(case=name):
