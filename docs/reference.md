@@ -28,7 +28,7 @@ Its presence marks the store root: the CLI walks up from the working directory t
 | `bindings` | no | string / none | bindings file relative to the root; without it roles are neither checked nor printed |
 | `local_config` | no | string / none | per-person config file relative to the root, kept out of version control; see [Local config](#local-config) |
 | `approval` | no | mapping / none | how a person approves in the chat; see [Approval by a person](#approval-by-a-person) |
-| `profile_config` | no | mapping / `{}` | profile settings exposed as `ctx.config.profile_config`; the core checks only its `agent_context` mapping, read by the [hooks](#hooks): its keys are `session_summary`, `prompt_positions`, `approval_notice` and `knowledge`, each a bool; any other key or a non-bool value is a load error naming the key |
+| `profile_config` | no | mapping / `{}` | profile settings exposed as `ctx.config.profile_config`; the core checks only its `agent_context` mapping, read by the [hooks](#hooks): its keys are `session_summary`, `prompt_positions`, `approval_notice` and `knowledge`, each a bool; any other key or a non-bool value is a load error naming the key. Its `checks` mapping (service name to an argv list, `{app: [pytest, -q]}`, or a shell line), written by `init --wizard`, reaches the [actions](#actions) as `SVOD_CHECKS_<NAME>` |
 | `workspace_gate` | no | string / none | name of a gate with a `worktrees(ctx, keys)` method (see [Writing a custom gate](#writing-a-custom-gate)); it tells the `pre-tool` hook which directories are work directories of a subject; without it that check is off |
 | `main_checkout_read_only` | no | bool / `false` | the `pre-tool` hook refuses edits in the main checkout of the store repository, except paths git ignores; work goes into worktrees |
 | `knowledge` | no | mapping / `{dir: knowledge, limit_lines: 20}` | where the [knowledge](#knowledge) notes live (`dir`, relative to the root) and how many note lines a hook adds at most (`limit_lines`, a positive integer); any other key is a load error |
@@ -112,7 +112,7 @@ Agents without a prompt hook (Cursor, Aider, a plain terminal) have no mark to l
 
 ### Local config
 
-The file named by `local_config` holds what differs per person. It is optional: when absent, nothing is read and the `active` summary starts with `active.no_local_config`; `init` creates it. Unknown keys and non-string values are load errors.
+The file named by `local_config` holds what differs per person. It is optional: when absent, nothing is read and the `active` summary starts with `active.no_local_config`; `init` creates it, and `init --wizard` writes it again when the login or the email it is given differs, keeping its other keys. Unknown keys and non-string values are load errors.
 
 | key | type | meaning |
 |---|---|---|
@@ -618,6 +618,7 @@ Environment of the script: the environment of `svod`, without inherited `SVOD_SE
 | `SVOD_KIND` | frontmatter field `kind` of the subject, or empty |
 | `SVOD_SERVICES` | frontmatter field `services` (a list or a comma separated string), joined by commas, or empty |
 | `SVOD_SERVICE_<NAME>` | absolute path of every service declared in `svod.yaml` `services` (a path, or a mapping with `path`), the name in upper case with every sign other than a letter, digit or `_` as `_` |
+| `SVOD_CHECKS_<NAME>` | the check command of every service in `profile_config.checks` of `svod.yaml`, an argv list quoted as a shell line, a string as written; named as services are; a variable already set in the environment wins |
 | `SVOD_SUBJECT_PATH` | absolute path of the subject (in the checkout that holds its version), or empty |
 | `SVOD_LOCALE` | the locale of the store |
 | `SVOD_FM_<NAME>` | every other scalar frontmatter field (strings, numbers, `true`/`false`, dates as ISO, empty for `null`), named as services are; lists and mappings are left out |
@@ -718,6 +719,40 @@ Core keys (all required in every core locale file):
 | `do.timeout` | `{name}`, `{seconds}` |
 | `do.list_item` | `{name}`, `{description}` |
 | `do.list_none` | `{dir}` |
+| `wizard.not_tty`, `wizard.prompt_service`, `wizard.checks_auto`, `wizard.unchanged`, `wizard.aborted`, `wizard.next` | — |
+| `wizard.prompt_login`, `wizard.prompt_hooks` | `{default}` |
+| `wizard.services_current` | `{services}` (`name=path` joined by `, `) |
+| `wizard.prompt_path`, `wizard.prompt_checks` | `{name}`, `{default}` |
+| `wizard.bad_service` | `{name}`, `{path}` |
+| `wizard.bad_pair` | `{flag}`, `{value}` |
+| `wizard.prompt_autonomy` | `{name}`, `{default}`, `{levels}` |
+| `wizard.bad_level` | `{name}`, `{level}`, `{levels}` |
+| `wizard.unknown_pipeline`, `wizard.unknown_service` | `{name}`, `{names}` |
+| `wizard.bad_checks` | `{name}`, `{command}`, `{reason}` |
+| `wizard.bad_hooks` | `{answer}` |
+| `wizard.written` | `{keys}` (the changed keys of `svod.yaml`) |
+| `wizard.write_failed` | `{reason}` (the keys that would differ) |
+| `wizard.hooks_manual` | `{command}` |
+| `wizard.hooks_failed` | `{command}`, `{code}` |
+| `doctor.config_ok` | `{count}` |
+| `doctor.config_fail` | `{error}` |
+| `doctor.services_none`, `doctor.copy_none`, `doctor.evidence_off`, `doctor.knowledge_none` | — |
+| `doctor.service_ok`, `doctor.service_missing`, `doctor.service_not_git` | `{name}`, `{path}` |
+| `doctor.hooks_ok`, `doctor.hooks_python` | `{file}`, `{python}` |
+| `doctor.hooks_none` | `{files}`, `{command}` |
+| `doctor.hooks_partial` | `{file}`, `{events}` |
+| `doctor.hooks_unreadable` | `{file}`, `{reason}` |
+| `doctor.copy_ok` | `{version}` |
+| `doctor.version_ok` | `{current}`, `{latest}` |
+| `doctor.version_newer` | `{current}`, `{latest}`, `{command}` |
+| `doctor.version_unchecked` | `{current}`, `{reason}` |
+| `doctor.evidence_ok` | `{dir}` |
+| `doctor.evidence_fail` | `{dir}`, `{reason}` |
+| `doctor.knowledge_ok` | `{path}`, `{count}` |
+| `doctor.knowledge_stale`, `doctor.local_missing` | `{path}` |
+| `doctor.local_ok` | `{path}`, `{login}` |
+| `doctor.local_invalid` | `{path}`, `{error}` |
+| `doctor.local_not_configured` | `{field}` |
 | `gate.exists`, `gate.archived`, `gate.git_pushed` | — |
 | `gate.artifact_path` | `{path}` |
 | `gate.artifact_glob` | `{glob}`, `{min}` |
@@ -863,18 +898,51 @@ gate:
 | `render <pipeline>` | `--write` | prints the documentation block, or writes it between the markers | 0, 1 no markers, 2 unknown pipeline |
 | `approve <query>` | `--step <id>`, `--confirm` | records the ready selected applicable approval with date, approver and digest, consuming this subject's mark keys; refuses changed-after-answer inputs; with `--confirm` and no fresh mark asks the person at a terminal, see [Approval by a person](#approval-by-a-person); nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
 | `answer <query>` | `--q <n>`, `<text>` | writes the person's answer under question `n` of the subject's questions file with the approver, the date and the prompt digest of a fresh human mark; see [Questions before work](#questions-before-work); nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
-| `new <directory>` | `--template local\|task` | creates an absent directory from installed templates without a pre-existing store; default local, never merges or overwrites | 0 created, 1 refused |
+| `new <directory>` | `--template standard\|task\|local` | creates an absent directory from installed templates without a pre-existing store; default local, never merges or overwrites | 0 created, 1 refused |
 | `do <action> <query> [-- args]` | `--list` | runs the [action](#actions) script `<profile>/actions/<action>.sh` for the one existing subject the query resolves to, in the store root, with the output not captured; extra args after `--` go to the script; `--list` prints every action with its description | the exit code of the script (124 after the timeout); 2 unknown action, missing arguments, not found, ambiguous or the script did not start |
 | `local <action> <query>` | — | `prepare` diagnoses readiness, `checks` runs the chosen argv, `verify` validates the live result, `deliver` records and reads back local completion; see [local-workflow.md](local-workflow.md) | 0 success, 1 failed/refused, 2 invalid root/load/arguments |
 | `hook <event>` | — | answers one agent hook event, `session-start`, `prompt` or `pre-tool`, read as JSON on stdin; see [Hooks](#hooks) | 0 always |
 | `init` | `--login`, `--email`, `--force` | writes the local config; without `--login` asks at a terminal, and fails without one; the email defaults to `git config user.email`; an existing file is kept unless `--force` | 0 written, 1 exists, 2 no login or no `local_config` |
+| `init --wizard` | `--wizard`, `--login`, `--email`, `--service <name>=<path>`, `--autonomy <pipeline>=<level>`, `--checks <service>=<command>`, `--hooks project\|global\|none` | sets up a store, see [the wizard](#the-wizard); each of the last four flags runs it too and is repeatable but `--hooks` | 0 done, 1 the hook setup failed, 2 an answer refused, no terminal and no flags, or input ended |
+| `doctor` | `--format text\|json` | checks that the store is ready to work in, see [the doctor](#the-doctor) | 0 no check failed, 1 a check failed |
 | `install` | `--from`, `--to` | puts a copy of the engine into `.svod/` of the store, see [Vendored copy](#vendored-copy); refuses when `.svod/` exists | 0 done, 1 refused or the store does not validate after it, 2 nothing fetched (the store is unchanged) |
 | `update` | `--from`, `--to` | replaces the copy in `.svod/`, migrates the store, validates it with the new engine, prints the changelog between the versions and the migration notes; refuses without `.svod/` | as `install` |
 | `knowledge <action>` | `--tags`, `--title`, `--source` | `index`, `add <file>`, `note "<text>"`, `list`: see [Knowledge](#knowledge) | 0 done, 1 the note exists, 2 no such file or the config does not load |
 | `retro <query>` | `--all`, `--accept <n>`, `--reject <n>`, `--note <text>` | prints the proposals of the [retrospective](#retrospective) for the works the query resolves to, or with `--all` for every open work: number, rule, facts, proposed change; `--accept` or `--reject` records the decision on proposal `n` in `evidence/decisions.yaml` (with `--note`), after which it is not shown again; `--accept` prints the diff to apply by hand, no file is changed | 0 listed or recorded; 2 wrong arguments, not found, ambiguous, no such number, or profile rules or decisions that do not load |
 | `migrate` | `--since <version>` | applies the [migrations](#migrations) of the versions after `<version>` up to the running engine and prints what they changed; `update` runs it in the new copy | 0 done, 1 a migration failed, 2 not a version |
 
-`init`, `install`, `update` and `migrate` read `svod.yaml` at most for the locale, `knowledge` reads only `svod.yaml`, so they work while the store does not load. Every other command except `validate` and `hook` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. PyYAML is a dependency of the package: without it the engine does not import, so neither the CLI nor `hook` answers.
+`init`, `install`, `update` and `migrate` read `svod.yaml` at most for the locale (`init --wizard` reads and edits it, and asks for the pipelines only when the store loads), `knowledge` reads only `svod.yaml`, `doctor` reports a store that does not load as one failed check, so they work while the store does not load. Every other command except `validate` and `hook` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. PyYAML is a dependency of the package: without it the engine does not import, so neither the CLI nor `hook` answers.
+
+### The wizard
+
+`svod init --wizard`, run in a store made by `svod new`, asks in turn, each question showing its default from `svod.yaml` in brackets (an empty answer takes it):
+
+1. login and email (`wizard.prompt_login`, `init.prompt_email`), the defaults from the local config, the email else from `git config user.email`; skipped when `svod.yaml` names no `local_config`;
+2. services, one at a time (`wizard.prompt_service`, `wizard.prompt_path`, default `../<name>`), until an empty name; a path must be a directory holding `.git`, relative to the store root or absolute (written relative);
+3. the autonomy of every loaded pipeline and of every other name already in `autonomy` (`wizard.prompt_autonomy`): `guided`, `supervised` or `autonomous`;
+4. the check command of every service (`wizard.prompt_checks`), split as a shell would (`shlex`) and written as an argv list to `profile_config.checks`; an empty answer keeps the current one, or none, leaving `checks.sh` of the standard template to find the command by the files;
+5. where to register the Claude Code hooks (`wizard.prompt_hooks`): `project` (the default) runs `integrations/setup-claude.sh --project <store>`, `global` runs it with the store as argument, `none` skips it. The script is run from the clone the package was installed from; an installed package without it (a wheel, a copy in `.svod/`) prints the `git clone` and setup command to run instead (`wizard.hooks_manual`).
+
+A refused answer at a terminal is said and asked again; at the end of input nothing is written (`wizard.aborted`). Without a terminal the answers come from the flags, those not given keep `svod.yaml` as it is, `--hooks` defaults to `none`, and a refused one stops before anything is written; with neither a terminal nor a flag it refuses with `wizard.not_tty`, which names the flags. At a terminal a question answered by a flag is not asked; services given as flags are listed, and more can be added.
+
+`svod.yaml` is edited line by line, never dumped whole: only the lines of a changed key are rewritten (`services`, `autonomy`, `checks` inside `profile_config`), a mapping written on one line (`autonomy: {task: supervised}`) stays on one line, a new key goes after its commented example (`# services:` and the indented comment lines under it) or at the end. The result is parsed back and compared with the answers; any difference is refused with `wizard.write_failed` and nothing is written. The local config is written only when it changes. It ends with `wizard.next`: run `svod doctor`.
+
+### The doctor
+
+`svod doctor` prints one line per check, `ok: <text>`, `warn: <text>` or `fail: <text>`, in this order; each check reads only what it needs, so a store that does not load still gets the others:
+
+| check (`name` in JSON) | fail | warn |
+|---|---|---|
+| `config`: the store loads as for `validate` (config, profile, pipelines, gates, locale) | it does not; the further errors follow, indented | — |
+| `service`, one per entry of `services` | the directory is missing or holds no `.git` | — |
+| `hooks`: the svod hooks in `<store>/.claude/settings.json` and `$CLAUDE_CONFIG_DIR/settings.json` (`~/.claude` by default) | the program a hook runs (after `NAME=value` and `env`) is neither an executable path nor on `PATH` | none registered in either file, an event missing, a file that is not JSON |
+| `copy`: the [copy of the engine](#vendored-copy) against its `MANIFEST` | it differs, or has no `MANIFEST` | — |
+| `version`: the engine (the copy's `version`, else the running one) against the newest `vX.Y.Z` tag of its source, through the cache of the [update notice](#update-notice) | — | a newer release, with `svod update` or the `pip install` command; not checked (`update_check: false`, off git or offline) |
+| `evidence`: a temporary file can be written in `evidence/` (the store root before the directory exists); skipped with `evidence.enabled: false` | it cannot | — |
+| `knowledge`: the table between the markers of `knowledge/INDEX.md` is what `svod knowledge index` would write now | — | it is not, or the file is missing while notes exist |
+| `local_config`: the file named by `local_config` exists and reads | it does not | `svod.yaml` names none |
+
+`--format json` prints `{"ok": <no check failed>, "checks": [{"name", "status", "text", "details"}, ...]}`. The exit code is 0 when no check failed, warnings included, and 1 otherwise.
 
 ## Hooks
 

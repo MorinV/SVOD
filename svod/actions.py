@@ -10,6 +10,7 @@ import contextlib
 import datetime as dt
 import os
 import re
+import shlex
 import signal
 import subprocess
 import time
@@ -49,6 +50,9 @@ ENV_SUBJECT_PATH = "SVOD_SUBJECT_PATH"
 ENV_LOCALE = "SVOD_LOCALE"
 ENV_SERVICE_PREFIX = "SVOD_SERVICE_"
 ENV_FM_PREFIX = "SVOD_FM_"
+ENV_CHECKS_PREFIX = "SVOD_CHECKS_"
+PROFILE_CHECKS = "checks"
+PROFILE_CONFIG = "profile_config"
 ENV_GENERATED_PREFIXES = (ENV_SERVICE_PREFIX, ENV_FM_PREFIX)
 ENV_NAME_INVALID = re.compile(r"[^A-Z0-9_]")
 ENV_NAME_REPLACEMENT = "_"
@@ -162,12 +166,29 @@ def service_path(root: Path, value: Any) -> str | None:
     return str((root / value).resolve())
 
 
+def check_commands(profile_config: Mapping[str, Any]) -> dict[str, str]:
+    """Check command of each service from profile_config.checks, as a shell line.
+
+    A list is an argv, quoted for the shell; a string is taken as written; other values are
+    left out.
+    """
+    checks = profile_config.get(PROFILE_CHECKS)
+    found = {}
+    for name, value in (checks.items() if isinstance(checks, Mapping) else ()):
+        if isinstance(value, list) and value and all(isinstance(x, str) for x in value):
+            found[str(name)] = shlex.join(value)
+        elif isinstance(value, str) and value.strip():
+            found[str(name)] = value
+    return found
+
+
 def action_env(ctx: Context, pipeline: Pipeline, subject: Subject,
                base: Mapping[str, str] | None = None) -> dict[str, str]:
     """Environment of an action: the base (the process environment) and the SVOD_ variables.
 
     Inherited SVOD_SERVICE_ and SVOD_FM_ variables are dropped, so a script sees only those
-    of its own subject and store.
+    of its own subject and store. SVOD_CHECKS_<NAME> comes from profile_config.checks unless
+    the environment already sets it.
     """
     env = {name: value for name, value in (os.environ if base is None else base).items()
            if not name.startswith(ENV_GENERATED_PREFIXES)}
@@ -177,6 +198,8 @@ def action_env(ctx: Context, pipeline: Pipeline, subject: Subject,
         path = service_path(ctx.root, value)
         if path is not None:
             env[env_name(ENV_SERVICE_PREFIX, name)] = path
+    for name, command in check_commands(getattr(ctx.config, PROFILE_CONFIG, None) or {}).items():
+        env.setdefault(env_name(ENV_CHECKS_PREFIX, name), command)
     for name, value in frontmatter.items():
         text = scalar_text(value)
         if name not in OWN_FIELDS and text is not None:
