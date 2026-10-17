@@ -9,6 +9,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 ### Changed
 
 - The sources hold no store any more: the work on Svod is recorded in the instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd), a standard-template store next to a clone of this repository, as every user's instance is.
+- Releases are made by CI: `.github/workflows/release.yml` creates the annotated tag `v<version>` and a GitHub Release with the `## [<version>]` section of this changelog when a push to `main` changes `svod/__init__.py` (no PyPI); the section is read by `svod/changelog.py` through `.github/scripts/release_notes.py`. Nobody pushes a tag by hand any more. `workflow_dispatch` with `ref` releases a version already on `main`: run it for `v0.4.0` (8a9851f) and then `v0.5.0` (578a9d5), whose tags were never pushed; see `docs/updating.md`.
 
 ## [0.5.0] - 2026-10-17
 
