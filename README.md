@@ -101,6 +101,8 @@ The hooks are `svod hook <event>`, registered as `<python> -m svod.cli hook <eve
 | prompt | the position of every task named in the prompt; an approval mark when the prompt is an approval phrase |
 | before a tool call | a refusal to edit code of a task whose plan is not approved, to edit approval fields by hand, and optionally to edit the main checkout |
 
+**Knowledge.** What the team has learned is kept as notes in `knowledge/<topic>.md` with `title`, `tags`, `source`, `date` and `status` in the frontmatter, written by research or by `svod knowledge add <file>` and `svod knowledge note "<text>"`, and listed in `knowledge/INDEX.md` by `svod knowledge index`. At session start and on a prompt naming a task, the hooks add the title, path and first line of every current note sharing a tag with that work, so the agent sees what is already known without searching for it. `profile_config.agent_context.knowledge: false` turns this off; the format and the keys are in [docs/reference.md](docs/reference.md#knowledge).
+
 ## Your own process
 
 Start from `svod new <dir> --template task` or `--template local` ([the templates](svod/templates)), then change the pipeline: add a step, a gate, a text. The skill [`svod-pipeline`](svod/templates/local/skills/svod-pipeline/SKILL.md) walks an agent through it, and `svod validate` checks every declaration. Gates that do not exist yet are small Python classes in `profile/gates/`.

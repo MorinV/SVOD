@@ -113,6 +113,12 @@ HOOK_DENY_PLAN = "hook.deny_plan"
 HOOK_DENY_MAIN = "hook.deny_main"
 HOOK_DENY_MARK = "hook.deny_mark"
 HOOK_DENY_BROKEN = "hook.deny_broken"
+HOOK_KNOWLEDGE_HEAD = "hook.knowledge_head"
+KNOWLEDGE_ADDED = "knowledge.added"
+KNOWLEDGE_EXISTS = "knowledge.exists"
+KNOWLEDGE_NO_FILE = "knowledge.no_file"
+KNOWLEDGE_ITEM = "knowledge.item"
+KNOWLEDGE_NONE = "knowledge.none"
 DESCRIBE_PREFIX = "gate."
 DESCRIBE_EXISTS = "gate.exists"
 DESCRIBE_ARTIFACT_PATH = "gate.artifact_path"
@@ -250,5 +256,11 @@ CORE_KEYS = (
     HOOK_DENY_MAIN,
     HOOK_DENY_MARK,
     HOOK_DENY_BROKEN,
+    HOOK_KNOWLEDGE_HEAD,
+    KNOWLEDGE_ADDED,
+    KNOWLEDGE_EXISTS,
+    KNOWLEDGE_NO_FILE,
+    KNOWLEDGE_ITEM,
+    KNOWLEDGE_NONE,
     *DESCRIBE_KEYS,
 )

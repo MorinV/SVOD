@@ -123,6 +123,7 @@ hook:
   deny_main: "The main checkout {main} is read-only: make a worktree of it (git worktree add) and edit there."
   deny_mark: "The approval mark {file} is left by the prompt hook when a person approves in the chat; it is never written by hand or by a command. Show the plan to the person and wait for their answer."
   deny_broken: "The pipeline engine failed to load: {reason}. Until the store loads (svod validate), writes outside the store are refused: repair the store first."
+  knowledge_head: "Knowledge on the tags of this work; open the file before relying on it:"
 gate:
   exists: "the subject exists"
   artifact_path: "{path} exists"
@@ -140,3 +141,9 @@ gate:
   archived: "archived"
   git_pushed: "the store has no commits ahead of origin"
   git_pushed_repo: "{repo} has no commits ahead of origin"
+knowledge:
+  added: "Added: {path}"
+  exists: "{path} already exists: choose another title or edit the file"
+  no_file: "No such file: {path}"
+  item: "- {title} ({path}) [{tags}] {date} {status}"
+  none: "No knowledge entries"

@@ -27,9 +27,10 @@ Its presence marks the store root: the CLI walks up from the working directory t
 | `bindings` | no | string / none | bindings file relative to the root; without it roles are neither checked nor printed |
 | `local_config` | no | string / none | per-person config file relative to the root, kept out of version control; see [Local config](#local-config) |
 | `approval` | no | mapping / none | how a person approves in the chat; see [Approval by a person](#approval-by-a-person) |
-| `profile_config` | no | mapping / `{}` | profile settings exposed as `ctx.config.profile_config`; the core checks only its `agent_context` mapping, read by the [hooks](#hooks): its keys are `session_summary`, `prompt_positions` and `approval_notice`, each a bool; any other key or a non-bool value is a load error naming the key |
+| `profile_config` | no | mapping / `{}` | profile settings exposed as `ctx.config.profile_config`; the core checks only its `agent_context` mapping, read by the [hooks](#hooks): its keys are `session_summary`, `prompt_positions`, `approval_notice` and `knowledge`, each a bool; any other key or a non-bool value is a load error naming the key |
 | `workspace_gate` | no | string / none | name of a gate with a `worktrees(ctx, keys)` method (see [Writing a custom gate](#writing-a-custom-gate)); it tells the `pre-tool` hook which directories are work directories of a subject; without it that check is off |
 | `main_checkout_read_only` | no | bool / `false` | the `pre-tool` hook refuses edits in the main checkout of the store repository, except paths git ignores; work goes into worktrees |
+| `knowledge` | no | mapping / `{dir: knowledge, limit_lines: 20}` | where the [knowledge](#knowledge) notes live (`dir`, relative to the root) and how many note lines a hook adds at most (`limit_lines`, a positive integer); any other key is a load error |
 | `update_check` | no | bool / `true` | with a [copy of the engine](#vendored-copy) in the store, the session start summary says when a newer release is out, checked at most once a day; `false` turns the check off |
 
 ```yaml
@@ -47,6 +48,7 @@ approval:
 workspace_gate: worktree
 main_checkout_read_only: true
 update_check: false
+knowledge: { dir: knowledge, limit_lines: 20 }
 profile_config:
   publishing: { mode: review }
 ```
@@ -486,6 +488,7 @@ Core keys (all required in every core locale file):
 | `hook.deny_main` | `{main}` |
 | `hook.deny_mark` | `{file}` |
 | `hook.deny_broken` | `{reason}` |
+| `hook.knowledge_head` | — (heading of the [knowledge](#knowledge) lines a hook adds) |
 | `init.written`, `init.exists` | `{path}` |
 | `init.not_configured` | `{field}` |
 | `init.need_login`, `init.prompt_login` | — |
@@ -522,6 +525,10 @@ Core keys (all required in every core locale file):
 | `migrate.bad_version` | `{version}` |
 | `migrate.renamed_key` | `{old}`, `{new}`, `{file}` |
 | `migrate.renamed_file` | `{old}`, `{new}` |
+| `knowledge.added`, `knowledge.exists` | `{path}` |
+| `knowledge.no_file` | `{path}` (the file given to `knowledge add`) |
+| `knowledge.item` | `{title}`, `{path}`, `{tags}`, `{date}`, `{status}` |
+| `knowledge.none` | — |
 
 ## Render
 
@@ -621,9 +628,10 @@ gate:
 | `init` | `--login`, `--email`, `--force` | writes the local config; without `--login` asks at a terminal, and fails without one; the email defaults to `git config user.email`; an existing file is kept unless `--force` | 0 written, 1 exists, 2 no login or no `local_config` |
 | `install` | `--from`, `--to` | puts a copy of the engine into `.svod/` of the store, see [Vendored copy](#vendored-copy); refuses when `.svod/` exists | 0 done, 1 refused or the store does not validate after it, 2 nothing fetched (the store is unchanged) |
 | `update` | `--from`, `--to` | replaces the copy in `.svod/`, migrates the store, validates it with the new engine, prints the changelog between the versions and the migration notes; refuses without `.svod/` | as `install` |
+| `knowledge <action>` | `--tags`, `--title`, `--source` | `index`, `add <file>`, `note "<text>"`, `list`: see [Knowledge](#knowledge) | 0 done, 1 the note exists, 2 no such file or the config does not load |
 | `migrate` | `--since <version>` | applies the [migrations](#migrations) of the versions after `<version>` up to the running engine and prints what they changed; `update` runs it in the new copy | 0 done, 1 a migration failed, 2 not a version |
 
-`init`, `install`, `update` and `migrate` read `svod.yaml` at most for the locale, so they work while the store does not load. Every other command except `validate` and `hook` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. PyYAML is a dependency of the package: without it the engine does not import, so neither the CLI nor `hook` answers.
+`init`, `install`, `update` and `migrate` read `svod.yaml` at most for the locale, `knowledge` reads only `svod.yaml`, so they work while the store does not load. Every other command except `validate` and `hook` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. PyYAML is a dependency of the package: without it the engine does not import, so neither the CLI nor `hook` answers.
 
 ## Hooks
 
@@ -631,7 +639,7 @@ gate:
 
 **The store of the session** is the one holding `CLAUDE_PROJECT_DIR`, else the event `cwd`; else the store at `--root`, a fallback for sessions in a work directory outside the store. No store: silence.
 
-Optional `profile_config.agent_context` booleans `session_summary`, `prompt_positions` and `approval_notice` default on for compatibility. Setting them to false suppresses those context outputs, not native approval marking, agent-message filtering or pre-tool protection. The local template turns them off and uses explicit per-task status; `active` remains available on request. These controls do not guarantee token savings or enforce a sandbox.
+Optional `profile_config.agent_context` booleans `session_summary`, `prompt_positions` and `approval_notice` default on for compatibility. Setting them to false suppresses those context outputs, not native approval marking, agent-message filtering or pre-tool protection. The local template turns them off and uses explicit per-task status; `active` remains available on request. These controls do not guarantee token savings or enforce a sandbox. `knowledge` (default on) adds the [knowledge](#knowledge) notes matching the work: on `session-start` after the summary, on `prompt` after the positions.
 
 | event | agent event | does |
 |---|---|---|
@@ -656,6 +664,42 @@ The hooks run as the same user as the agent and see only the tool calls the agen
 Every git call of one event goes through one run cache (`svod.cache.RunCache`), the gates of the store and the approval mark included, so no call repeats within the event. Rule 3 checks the freeze of the subjects of the key before it asks the workspace gate about the directory: an edit in the work directory of an approved subject costs none of the git calls of the gate. Rule 3 and `svod local` share one code-freeze rule, `svod.position.freeze`.
 
 The hooks are the package `svod.hooks`, each module importing only those before it: `protocol` (the event JSON), `shell` (tokens of a command, programs known to only read, the paths a command names, the python script exception of rule 1), `store` (the store of the session and its loading), `prompt`, `guard` (the `pre-tool` rules) and `events` (the answer to each event, `svod hook`).
+
+## Knowledge
+
+What the team has learned lives in the store as notes, one markdown file per topic under `knowledge/` (`knowledge.dir` of `svod.yaml`), and reaches the agent without being asked for.
+
+**A note** is `knowledge/<topic>.md`, subdirectories allowed, with this frontmatter:
+
+| field | meaning |
+|---|---|
+| `title` | name of the note; without it, the first heading, else the file name |
+| `tags` | list of tags (a comma separated string is read too); compared without letter case |
+| `source` | id of the work the note came from, for example `work/research/x`, or empty |
+| `date` | ISO date of the note; the index and the hook lines put the newest first |
+| `status` | `current` (also when absent) or `superseded`; a superseded note stays in the index and is never given to the agent |
+
+Notes come from research automatically (the profile template writes them) and by hand through the commands.
+
+**Commands** (`svod knowledge <action>`; tags are separated by commas):
+
+- `index` rewrites the table of every note (title linked to the file, tags, source, date, status; newest first) in `knowledge/INDEX.md` between `<!-- knowledge:index:begin -->` and `<!-- knowledge:index:end -->`. Text outside the markers is kept; a file without them gets them at its end, a missing file is created. Prints `render.written` or `render.current`.
+- `add <file> --tags a,b [--title <t>] [--source <id>]` copies a markdown file into `knowledge/<slug of the title>.md`. The fields of its own frontmatter win and the given tags are added to its tags; missing fields are filled in: the title from `--title`, else the first heading, else the file name, `date` today, `status: current`. A file whose frontmatter already holds every field and the tags is copied byte for byte. An existing note is not overwritten (`knowledge.exists`, exit 1).
+- `note "<text>" --tags a,b --title "<t>" [--source <id>]` writes `knowledge/<slug of the title>.md`: the frontmatter, the title as a heading and the text.
+- `list [--tags a,b]` prints every note as `knowledge.item`, only those sharing a tag with `--tags`; `knowledge.none` when there is none.
+
+`add` and `note` rewrite the index after writing the note. Nothing is committed.
+
+**Given to the agent.** The [hooks](#hooks) add a block headed `hook.knowledge_head` with one line per current note sharing a tag with the work at hand: `- <title> (<path>): <first non-empty line of the body that is not a heading>`, newest first, at most `knowledge.limit_lines` lines. The tags of a work are the `tags` of its frontmatter (`subject.attrs.frontmatter`, given by the `container` and `frontmatter_doc` providers). `session-start` takes the tags of every existing, not archived subject of the pipelines with an `active` block, after the summary (so only while `session_summary` is on); `prompt` takes those of the subjects the prompt names, found as for the positions (keys and exact names). A work without tags adds nothing. `profile_config.agent_context.knowledge: false` turns the block off, and the prompt is then not searched for it.
+
+```yaml
+knowledge:
+  dir: knowledge
+  limit_lines: 20
+profile_config:
+  agent_context:
+    knowledge: true
+```
 
 ## Vendored copy
 

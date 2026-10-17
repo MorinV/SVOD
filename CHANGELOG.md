@@ -8,6 +8,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ### Added
 
+- Knowledge: notes in `knowledge/<topic>.md` (`title`, `tags`, `source`, `date`, `status`), `svod knowledge index|add|note|list` with the index in `knowledge/INDEX.md` between markers, and the hooks add the current notes sharing a tag with the work at hand (`knowledge` in `svod.yaml`, `profile_config.agent_context.knowledge`).
 - `svod approve <query> --confirm` records an approval that a person confirms with y at a terminal when there is no fresh mark, for agents without a prompt hook; all YAML is read by one loader that refuses repeated keys, and the approval fields are read and written only through `svod.approval.read_fields` and `write_fields`.
 
 ### Changed

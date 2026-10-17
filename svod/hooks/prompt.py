@@ -14,6 +14,7 @@ from ..checkouts import subject_context
 from ..gates import ApprovalGate
 from ..keys import (HOOK_APPROVAL_JOINERS, HOOK_APPROVAL_MARKED, HOOK_APPROVAL_MARKED_UNNAMED,
                     HOOK_POSITION_HEAD, HOOK_POSITION_TAIL)
+from ..knowledge import knowledge_context
 from ..position import position
 from ..render import render_position, step_skills
 from ..resolve import resolve
@@ -220,4 +221,6 @@ def prompt_hook(event: Event, fallback: str | Path | None,
                           keys if marked and keys is not None else ())
         if found:
             blocks += [locale.text(HOOK_POSITION_HEAD), *found, locale.text(HOOK_POSITION_TAIL)]
+    blocks += knowledge_context(runtime, ctx, lambda: queries(ctx, runtime.pipelines,
+                                                              LINE_SEPARATOR.join(answers)))
     return context_output(EVENT_PROMPT, BLOCK_SEPARATOR.join(blocks)) if blocks else None
