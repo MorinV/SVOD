@@ -1289,7 +1289,7 @@ A store may keep its own copy of the engine, so the whole team runs one version 
 | `.svod/lib/svod/` | the engine package, locale files included |
 | `.svod/skills/<name>/` | the skills of the engine (`svod/skills/` of the Svod repository): `svod-pipeline`, `svod-efficient-execution` |
 | `.svod/VERSION` | YAML: `version` (the engine version), `source` (git URL or local path it was fetched from), `ref` (the tag or branch taken) |
-| `.svod/skills/<name>/` | the skills of the release (`svod/templates/local/skills/` of the Svod repository) |
+| `.svod/skills/<name>/` | the skills of the release (`svod/skills/` of the Svod repository) |
 | `.svod/VERSION` | YAML: `version` (the engine version), `source` (git URL or local path it was fetched from), `ref` (the tag or branch taken); when known, `template` (the template the store was made from: `local`, `task` or `standard`) and `template_version` (the engine whose template the profile was last merged with) |
 | `.svod/MANIFEST` | one line per file under `lib/` and `skills/`: its sha256, two spaces, its POSIX path relative to `.svod/`; sorted by path |
 | `.svod/.gitignore` | keeps byte-code (`__pycache__/`) out of the repository |

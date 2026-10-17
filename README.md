@@ -50,23 +50,6 @@ svod status work/tasks/<name>             # where the task stands and what is ne
 
 The store is a dispatcher: records live in `work/projects`, `work/features`, `work/tasks` (a hotfix is a task with `kind: hotfix`) and `work/research`; the code stays in the services. A task goes card → questions → contract → approval → worktrees → checks (`svod do checks`) → delivery → `status: done`; each step names its skill (`svod-task`, `svod-feature`, `svod-project`, `svod-research`, `svod-questions`). Details: the `README.md` of the new store and [docs/reference.md](docs/reference.md#setup).
 
-### Local template: compact local work
-
-```bash
-svod new demo-store --template local
-cd demo-store
-git init
-svod init --login your-login
-svod validate
-svod render local
-```
-
-The local template takes each task through contract → approval → checks → deliver. A task is `tasks/<name>/` with a card, `contract.md` and `testing/plan.yaml`; the plan names a clean Git checkout of the source and the command that checks it. [docs/local-workflow.md](docs/local-workflow.md) defines the terms and walks through the first task.
-
-Ask for the position of one task with `svod status tasks/<name>` (`--format json` for tools). In this template the session-start and prompt hooks print nothing; approval marking and the edit guards still work. `svod local checks tasks/<name>` runs the command once on committed source, and `svod local deliver tasks/<name>` records completion. Completion stays valid after the source checkout is removed and breaks when a recorded file is edited; merge, push and deployment remain separate steps.
-
-The store ships `AGENTS.md` and two skills: `svod-efficient-execution` for running a task, `svod-pipeline` for changing the process.
-
 **Svod develops itself with Svod.** The instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd) is a standard-template store next to a clone of this repository: the work on the engine is recorded there as features, tasks and research, with their questions, contracts, approvals and evidence log. The layout and what the first runs found: [docs/dogfooding.md](docs/dogfooding.md).
 
 ## OpenSpec/Git example

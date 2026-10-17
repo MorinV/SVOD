@@ -231,14 +231,6 @@ def reached(ctx: Context, pipeline: Pipeline, earlier: list[Step], subject: Subj
     return True
 
 
-def output_tail(output: IO[bytes]) -> str:
-    """Last TAIL_LINES lines of the output, at most TAIL_CHARS characters from its end."""
-    size = output.seek(0, os.SEEK_END)
-    output.seek(max(0, size - TAIL_READ_BYTES))
-    text = output.read().decode(ENCODING, "replace")
-    lines = text.rstrip().splitlines()[-TAIL_LINES:]
-    return "\n".join(lines)[-TAIL_CHARS:]
-
 
 def run_command(argv: list[str], cwd: Path, env: dict[str, str],
                 timeout: float) -> tuple[command_cache.Record | None, str | None]:

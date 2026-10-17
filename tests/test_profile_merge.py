@@ -213,7 +213,7 @@ class IdentifyTest(unittest.TestCase):
         """Each packaged template is found in a store made from it; a changed profile is not."""
         home = Path(svod.__file__).resolve().parent / "templates"
         with tempfile.TemporaryDirectory() as temp:
-            for name in ("local", "task", "standard"):
+            for name in ("task", "standard"):
                 with self.subTest(template=name):
                     store = scaffold(Path(temp) / name, name)
                     self.assertEqual(pm.identify(store, [home]), (name, home / name))

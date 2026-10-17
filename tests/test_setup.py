@@ -146,7 +146,8 @@ class SetupCommandTest(SetupTestCase):
         self.assertEqual(config["services"], {SERVICE: f"../{SERVICE}"})
         stamp = yaml.safe_load((self.root / ".svod" / "VERSION").read_text(encoding=ENCODING))
         self.assertEqual(stamp, {"version": svod.__version__, "source": str(self.source),
-                                 "ref": TAG})
+                                 "ref": TAG, "template": "standard",
+                                 "template_version": svod.__version__})
         local = yaml.safe_load((self.root / ".svod-local.yaml").read_text(encoding=ENCODING))
         self.assertEqual(local, {"login": LOGIN, "email": EMAIL})
         self.assertEqual(self.git("rev-list", "--count", "HEAD"), "1")

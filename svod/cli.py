@@ -43,7 +43,6 @@ CMD_UPDATE = "update"
 CMD_MIGRATE = "migrate"
 CMD_NEW = "new"
 CMD_SETUP = "setup"
-CMD_LOCAL = "local"
 CMD_DO = "do"
 CMD_KNOWLEDGE = "knowledge"
 CMD_RETRO = "retro"
@@ -106,11 +105,7 @@ def build_parser() -> StatusParser:
     new.add_argument("--template", type=template_name, default=DEFAULT_TEMPLATE,
                      metavar="{" + ",".join(TEMPLATES) + "}",
                      help=f"packaged template, {DEFAULT_TEMPLATE} by default")
-    new.add_argument("--template", choices=("local", "task", "standard"), default="local")
     add_setup_parser(commands)
-    local = commands.add_parser(CMD_LOCAL, help="run the compact local workflow")
-    local.add_argument("action", choices=("prepare", "checks", "verify", "deliver"))
-    local.add_argument("query", help="exact task path, name or supported key")
     do = commands.add_parser(CMD_DO, help="run an action script of the profile for a subject")
     do.add_argument("name", nargs="?", metavar="action",
                     help="action name: <profile>/actions/<name>.sh")
