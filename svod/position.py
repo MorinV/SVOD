@@ -5,7 +5,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from .config import FIELD_AUTONOMY
 from .gates import ArchivedGate, Status
+from .loader import subject_steps
 from .pipeline import (SEVERITY_WARN, VIOLATION_SEPARATOR, OpenStep, Outcome, Pipeline, Step,
                        applies, evaluate, first_blocking, open_step, run_entries, step_applies)
 
@@ -14,6 +16,7 @@ if TYPE_CHECKING:
     from .subject import Subject
 
 FACT_STEP = "step"
+ATTR_CONFIG = "config"
 
 
 @dataclass
@@ -108,15 +111,23 @@ def do_not_touch_facts(states: list[StepState], start: int) -> dict[str, Any] | 
     return {**(gate.result.facts if gate else {}), FACT_STEP: step.step.id}
 
 
+def steps_of(ctx: Context | None, pipeline: Pipeline, subject: Subject) -> list[Step]:
+    """Steps of the pipeline as the autonomy level of the subject (its kind, else the
+    pipeline) runs them; see svod.loader.subject_steps. No context: the loaded steps."""
+    autonomy = getattr(getattr(ctx, ATTR_CONFIG, None), FIELD_AUTONOMY, None) or {}
+    return subject_steps(autonomy, pipeline, subject)
+
+
 def freeze(ctx: Context, pipeline: Pipeline, subject: Subject) -> OpenStep | None:
     """What keeps the code frozen: the first applicable blocks_code step that has not passed.
 
     Returns an OpenStep (step, text key, facts, and gate and reason for an UNKNOWN gate) or
     None. A step without gates is open with its own text; an UNKNOWN gate is open. Unlike
-    the status line, a passed blocks_code step never freezes, whatever precedes it. Pass
-    the context of the subject's own checkout.
+    the status line, a passed blocks_code step never freezes, whatever precedes it. The
+    steps are those of the autonomy level of the subject. Pass the context of the subject's
+    own checkout.
     """
-    for step in pipeline.steps:
+    for step in steps_of(ctx, pipeline, subject):
         if step.blocks_code and step_applies(step, subject):
             found = open_step(ctx, step, subject)
             if found is not None:
@@ -128,7 +139,8 @@ def position(ctx: Context, pipeline: Pipeline, subject: Subject) -> Position:
     """Position of the subject; the single computation behind status and active.
 
     A subject the provider did not find gets neither order violations nor the code freeze.
-    Every step passed while done did not: the pending text of done, when declared.
+    Every step passed while done did not: the pending text of done, when declared. The steps
+    are those of the autonomy level of the subject (steps_of).
     """
     pos = Position(pipeline=pipeline, subject=subject)
     done = None
@@ -148,7 +160,7 @@ def position(ctx: Context, pipeline: Pipeline, subject: Subject) -> Position:
 
     pos.steps = [StepState(s, [evaluate(ctx, g, subject) for g in s.gates
                               if applies(g, subject)])
-                 for s in pipeline.steps if step_applies(s, subject)]
+                 for s in steps_of(ctx, pipeline, subject) if step_applies(s, subject)]
     if subject.exists:
         pos.marks = [(s.step.id, [o for o in s.outcomes if o.ref.label]) for s in pos.steps]
         pos.marks = [(step_id, marks) for step_id, marks in pos.marks if marks]

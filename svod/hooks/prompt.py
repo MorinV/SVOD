@@ -43,6 +43,13 @@ NORMAL_FORM: Final = "NFC"
 NAME_RE = r"(?<![\w-]){name}(?![\w-])"
 PHRASE_RE = r"\s*{phrase}(?!\w)"
 GO_RE = r"(?<!\w){phrase}(?!\w)"
+# Words that, earlier on the line of a go-ahead phrase, turn it into a refusal.
+GO_NEGATIONS = ("не", "не надо", "don't", "don’t", "do not", "no")
+NEGATION_RE = re.compile(
+    r"(?<!\w)(?:{})(?!\w)".format("|".join(re.escape(w) for w in GO_NEGATIONS)))
+# Nothing but punctuation and spaces: no further word.
+NO_WORD_RE = re.compile(r"[\W_]*")
+LINE_BREAK = "\n"
 APPROVAL_END_RE = re.compile(r"[\s.!]*$")
 TAIL_SEPARATOR_RE = re.compile(r"[\s,;:&+/–—-]+")
 ID_SEPARATOR = "/"
@@ -115,11 +122,33 @@ def human_answers(prompt: str) -> list[str]:
     return [reply[REPLY_ANSWER] for reply in replies]
 
 
+def go_at(text: str, start: int, end: int) -> bool:
+    """Whether the phrase found at text[start:end] says go ahead by where it stands.
+
+    It does when the text opens with it, when it stands alone on its line or when only
+    punctuation follows it to the end of the text; a negation earlier on its line cancels it.
+    """
+    line_start = text.rfind(LINE_BREAK, 0, start) + 1
+    line_end = text.find(LINE_BREAK, end)
+    before = text[line_start:start]
+    after_line = text[end:] if line_end < 0 else text[end:line_end]
+    placed = (not text[:start].strip()
+              or not before.strip() and NO_WORD_RE.fullmatch(after_line) is not None
+              or NO_WORD_RE.fullmatch(text[end:]) is not None)
+    return placed and NEGATION_RE.search(before) is None
+
+
 def says_go(text: str, phrases: Iterable[str]) -> bool:
-    """Whether the text holds one of the phrases as whole words, letter case and form aside."""
-    found = folded(text)
-    return any(re.search(GO_RE.format(phrase=re.escape(folded(phrase).strip())), found)
-               for phrase in phrases if phrase.strip())
+    """Whether the text says go ahead with one of the phrases, letter case and form aside.
+
+    The phrase counts as whole words at the start of the text, alone on a line, or followed
+    by nothing but punctuation; not after a negation (GO_NEGATIONS) on the same line.
+    """
+    found = folded(text).strip()
+    return any(go_at(found, match.start(), match.end())
+               for phrase in phrases if phrase.strip()
+               for match in re.finditer(GO_RE.format(phrase=re.escape(folded(phrase).strip())),
+                                        found))
 
 
 def mark_human(root: Path, answers: list[str], config: Config | None,

@@ -8,8 +8,10 @@ from support import EXIT_OK, TempStore, core_text, make_profile
 
 from svod import keys
 from svod.config import AUTONOMY_LEVELS
+from svod.context import Context
 from svod.errors import LoadError
-from svod.loader import load_runtime
+from svod.loader import load_runtime, subject_level
+from svod.position import freeze, position
 
 PIPELINE_FILE = "toy.yaml"
 PIPELINE = """
@@ -97,6 +99,68 @@ class AutonomyLoadTest(unittest.TestCase):
                 with self.assertRaises(LoadError) as ctx:
                     self.load(autonomy)
                 self.assertIn(message, str(ctx.exception))
+
+
+KIND_PIPELINE_FILE = "task.yaml"
+KIND_PIPELINE = PIPELINE.replace("pipeline: toy", "pipeline: task").replace(
+    "params: { roots: [boxes] }", "params: { roots: [work], head_type: card }")
+CARD = "---\ntype: card\nkind: {kind}\n---\n# Card\n"
+HOTFIX = "work/fix"
+TASK = "work/feature"
+
+
+class AutonomyKindTest(unittest.TestCase):
+    """The level of the kind of work of a subject wins over that of its pipeline."""
+
+    def load(self, autonomy):
+        """Context and task pipeline of a store with a hotfix and a task card."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        profile = make_profile(Path(tmp.name) / "profile", {KIND_PIPELINE_FILE: KIND_PIPELINE},
+                               LOCALE)
+        sb = TempStore(profile=profile, autonomy=autonomy)
+        self.addCleanup(sb.cleanup)
+        sb.write(f"{HOTFIX}/card.md", CARD.format(kind="hotfix"))
+        sb.write(f"{TASK}/card.md", CARD.format(kind="task"))
+        runtime = load_runtime(sb.store)
+        ctx = Context(runtime.config, runtime.locale, pipelines=runtime.by_name())
+        pipeline = runtime.pipeline("task")
+        subjects = {s.id: s for s in pipeline.subject.impl.enumerate(ctx)}
+        return ctx, pipeline, subjects
+
+    def required(self, ctx, pipeline, subject):
+        """(required steps, blocks_code steps, current step, frozen step) of the subject."""
+        pos = position(ctx, pipeline, subject)
+        frozen = freeze(ctx, pipeline, subject)
+        return ([s.step.id for s in pos.steps if s.step.required],
+                [s.step.id for s in pos.steps if s.step.blocks_code],
+                pos.current.step.id if pos.current else None,
+                frozen.step.id if frozen else None)
+
+    def test_hotfix_level_wins(self):
+        """A hotfix under {task: supervised, hotfix: autonomous} has no required approval
+        step and no code freeze; a task keeps the contract approval and its freeze."""
+        ctx, pipeline, subjects = self.load("{task: supervised, hotfix: autonomous}")
+        self.assertEqual(([], [], None, None), self.required(ctx, pipeline, subjects[HOTFIX]))
+        self.assertEqual((["plan"], ["plan"], "plan", "plan"),
+                         self.required(ctx, pipeline, subjects[TASK]))
+        self.assertEqual("autonomous", subject_level(ctx.config.autonomy, pipeline,
+                                                     subjects[HOTFIX]))
+        self.assertEqual("supervised", subject_level(ctx.config.autonomy, pipeline,
+                                                     subjects[TASK]))
+
+    def test_stricter_kind(self):
+        """A stricter level of the kind restores the declared steps the pipeline relaxed."""
+        ctx, pipeline, subjects = self.load("{task: autonomous, hotfix: guided}")
+        self.assertEqual((["plan", "accept"], ["plan"], "plan", "plan"),
+                         self.required(ctx, pipeline, subjects[HOTFIX]))
+        self.assertEqual(([], [], None, None), self.required(ctx, pipeline, subjects[TASK]))
+
+    def test_kind_without_level(self):
+        """A kind of work autonomy does not name follows the level of the pipeline."""
+        ctx, pipeline, subjects = self.load("{task: supervised}")
+        self.assertEqual((["plan"], ["plan"], "plan", "plan"),
+                         self.required(ctx, pipeline, subjects[HOTFIX]))
 
 
 class AutonomyStatusTest(unittest.TestCase):

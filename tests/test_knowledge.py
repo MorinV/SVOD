@@ -4,11 +4,16 @@ import os
 import unittest
 from unittest import mock
 
-from support import ENCODING, EXIT_FINDINGS, EXIT_OK, StoreTestCase, TempStore, doc
+from support import (ENCODING, EXIT_FINDINGS, EXIT_OK, REPO_DIR, StoreTestCase, TempStore,
+                     core_text, doc)
 
-from svod import hooks, knowledge
+from svod import hooks, keys, knowledge
 from svod.config import load_config
 from svod.errors import LoadError
+from svod.yamlio import dump_yaml, read_yaml
+
+LOCAL_CONFIG = REPO_DIR / "svod" / "templates" / "local" / "svod.yaml"
+PROFILE_CONFIG = "profile_config"
 
 DIRECTORY = "knowledge"
 DATE_OLD = "2026-01-10"
@@ -212,6 +217,22 @@ class KnowledgeHookTest(unittest.TestCase):
         self.assertIn("Vacuum (knowledge/vacuum.md)", text)
         self.assertNotIn("Css", text)
         self.assertIsNone(self.context(hooks.EVENT_PROMPT, "hello there"))
+
+    def test_session_start_without_the_summary(self):
+        """With the agent context of the local template (summary off, knowledge on by default)
+        session start gives the notes alone; with the summary on they follow it."""
+        head = core_text(keys.HOOK_KNOWLEDGE_HEAD)
+        text = self.context(hooks.EVENT_SESSION_START)
+        self.assertGreater(text.index(head), 0)
+        local = read_yaml(LOCAL_CONFIG)[PROFILE_CONFIG]
+        data = read_yaml(self.sb.store / "svod.yaml")
+        data[PROFILE_CONFIG] = local
+        (self.sb.store / "svod.yaml").write_text(dump_yaml(data), encoding=ENCODING)
+        self.assertIs(False, local["agent_context"]["session_summary"])
+        self.assertNotIn("knowledge", local["agent_context"])
+        text = self.context(hooks.EVENT_SESSION_START)
+        self.assertTrue(text.startswith(head), text)
+        self.assertIn("- Vacuum (knowledge/vacuum.md): Tune autovacuum.", text)
 
     def test_switched_off(self):
         """agent_context.knowledge: false adds nothing; true is the default behaviour."""

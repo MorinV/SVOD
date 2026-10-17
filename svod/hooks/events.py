@@ -18,18 +18,24 @@ SETTING_SUMMARY = "session_summary"
 
 
 def session_start(event, fallback):
-    """The active summary of the store, or a line about the engine that did not load."""
+    """The active summary of the store, then the knowledge notes of the open work; or a line
+    about the engine that did not load.
+
+    The summary (with the update notice) follows session_summary, the notes
+    agent_context.knowledge: either comes without the other.
+    """
     root = store_root(event, fallback)
     if root is None:
         return None
     runtime, reason = load(root)
     if runtime is None:
         return context_output(EVENT_SESSION_START, broken_text(root, reason))
-    if not agent_context_setting(runtime, SETTING_SUMMARY):
-        return None
-    lines = summarize(context_of(runtime), runtime.pipelines, False)
-    lines += knowledge_context(runtime, context_of(runtime), gap=bool(lines))
-    lines = with_notice(lines, update_notice(runtime.config, runtime.locale))
+    ctx = context_of(runtime)
+    summary = agent_context_setting(runtime, SETTING_SUMMARY)
+    lines = summarize(ctx, runtime.pipelines, False) if summary else []
+    lines += knowledge_context(runtime, ctx, gap=bool(lines))
+    if summary:
+        lines = with_notice(lines, update_notice(runtime.config, runtime.locale))
     return hook_payload(runtime.locale, lines) if lines else None
 
 

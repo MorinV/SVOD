@@ -1,6 +1,7 @@
 """Loads a store: config, registries, pipelines and locale."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -13,17 +14,22 @@ from .gates import ApprovalGate, build_registries
 from .keys import CORE_KEYS
 from .locale import load_locale
 from .pipeline import Pipeline, Step, bind_pipeline, parse_pipeline
+from .subject import ATTR_FRONTMATTER
 from .yamlio import read_yaml
 
 if TYPE_CHECKING:
     from .gates import Gate
     from .locale import Locale
     from .providers import Provider
+    from .subject import Subject
 
 PIPELINES_DIR = "pipelines"
 PIPELINE_GLOB = "*.yaml"
 WORKTREES_METHOD = "worktrees"
 PURPOSE_RESULT = "result"
+# Attribute of a loaded pipeline holding its steps as declared, before apply_autonomy.
+DECLARED_STEPS = "declared_steps"
+FIELD_KIND = "kind"
 
 
 @dataclass
@@ -126,18 +132,55 @@ def relaxed(step: Step, level: str) -> Step:
 def apply_autonomy(pipelines: list[Pipeline], autonomy: dict[str, str]) -> list[str]:
     """Relax the approval steps of each pipeline by its autonomy level; return the errors.
 
-    The loaded steps are replaced, the declaration files are not touched. A name that is
-    neither a loaded pipeline nor a kind of work is an error. A kind (hotfix) has no effect
-    here: the steps are shared by every subject of the pipeline.
+    The loaded steps are replaced, the declaration files are not touched; the declared steps
+    stay on the pipeline for subjects whose kind of work has a level of its own (see
+    subject_steps). A name that is neither a loaded pipeline nor a kind of work is an error.
     """
     names = {p.name for p in pipelines}
     errors = [f"{FIELD_AUTONOMY}: unknown pipeline: {name}" for name in autonomy
               if name not in names and name not in AUTONOMY_KINDS]
     for pipeline in pipelines:
+        setattr(pipeline, DECLARED_STEPS, list(pipeline.steps))
         level = autonomy.get(pipeline.name)
         if level:
             pipeline.steps = [relaxed(step, level) for step in pipeline.steps]
     return errors
+
+
+def declared_steps(pipeline: Pipeline) -> list[Step]:
+    """Steps of the pipeline as declared; the loaded ones when apply_autonomy did not run."""
+    found: list[Step] = getattr(pipeline, DECLARED_STEPS, pipeline.steps)
+    return found
+
+
+def subject_kind(subject: Subject) -> str | None:
+    """Kind of work of the subject that autonomy may name (frontmatter kind), or None."""
+    frontmatter = subject.attrs.get(ATTR_FRONTMATTER) or {}
+    kind = frontmatter.get(FIELD_KIND) if isinstance(frontmatter, dict) else None
+    return kind if isinstance(kind, str) and kind in AUTONOMY_KINDS else None
+
+
+def subject_level(autonomy: Mapping[str, str], pipeline: Pipeline,
+                  subject: Subject) -> str | None:
+    """Autonomy level of the subject: that of its kind of work when set, else of its pipeline."""
+    kind = subject_kind(subject)
+    if kind is not None and kind in autonomy:
+        return autonomy[kind]
+    return autonomy.get(pipeline.name)
+
+
+def subject_steps(autonomy: Mapping[str, str], pipeline: Pipeline,
+                  subject: Subject) -> list[Step]:
+    """Steps of the pipeline as the autonomy level of the subject runs them.
+
+    A subject whose kind of work has a level gets the declared steps relaxed by that level,
+    stricter or looser than the pipeline's; any other subject the loaded steps, relaxed by
+    the level of the pipeline.
+    """
+    kind = subject_kind(subject)
+    if kind is None or kind not in autonomy:
+        return pipeline.steps
+    return [relaxed(step, autonomy[kind]) for step in declared_steps(pipeline)]
 
 
 def load_runtime(root: Path) -> Runtime:

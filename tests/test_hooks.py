@@ -751,6 +751,38 @@ class HumanMarkTest(HookTestCase):
                           at=now - dt.timedelta(minutes=STALE_MINUTES))
         self.assertIsNone(read_human_mark(self.sb.store))
 
+    def test_go_ahead_by_place(self):
+        """A phrase says go ahead at the start, alone on a line or before closing punctuation
+        only; a negation earlier on its line cancels it, a phrase mid-sentence is no go."""
+        phrases = ("go ahead", "давай", "выполняй")
+        cases = (
+            ("the whole reply", "давай", True),
+            ("start of the reply", "  Давай, пушь в main", True),
+            ("start, other phrase", "Go ahead and push it", True),
+            ("alone on a line", "Посмотрел дифф, всё хорошо.\nДавай\nПотом закрой задачу", True),
+            ("alone on a line with punctuation", "Diff is fine.\n  go ahead!  \nthen close it",
+             True),
+            ("end of the reply", "Посмотрел, всё хорошо, давай.", True),
+            ("end of the reply, english", "Looks good to me, go ahead!!", True),
+            ("middle of a long reply", "Хорошо, давай посмотрим сначала дифф и потом решим", False),
+            ("middle, english", "Before you go ahead with the push, show me the diff", False),
+            ("negated at the end", "Нет, не давай.", False),
+            ("negated with не надо", "Не надо, давай", False),
+            ("negated alone on its line", "не\nдавай", True),
+            ("negated, don't", "Please don't go ahead", False),
+            ("negated, don't curly", "Please don\u2019t go ahead.", False),
+            ("negated, do not", "Do not go ahead!", False),
+            ("negated, no", "No, go ahead", False),
+            ("negation on another line", "Не трогай тесты.\nДавай", True),
+            ("negation on another line, end", "Do not touch the tests.\nOk, go ahead", True),
+            ("negated end, phrase later alone", "не давай\nвыполняй", True),
+            ("inside a word", "давайте подумаем", False),
+            ("no phrase", "покажи дифф", False),
+        )
+        for name, text, go in cases:
+            with self.subTest(case=name):
+                self.assertEqual(go, hooks.says_go(text, phrases))
+
     def test_answer_of_a_question_reply(self):
         """A reply to a question of the agent is marked by its answers only."""
         payload = [{"question": "push?", "options": ["go ahead"], "answer": "no"}]
@@ -882,6 +914,10 @@ class ExternalEffectsTest(PreToolTest):
         allowed = (("git push", "git push origin main", False),)
         self.check(refused)
         self.say("not yet, show me the diff first")
+        self.check(refused)
+        self.say("Нет, не давай")
+        self.check(refused)
+        self.say("Хорошо, давай сначала покажешь дифф, а потом решим")
         self.check(refused)
         self.say("Давай")
         self.check(allowed)

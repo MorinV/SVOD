@@ -19,6 +19,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ### Changed
 
+- `autonomy` applies the level of the kind of work (`hotfix`) of a subject before that of its pipeline, in `position()` and `freeze()`; a go-ahead phrase of `external_effects.phrases` counts only at the start of a reply, alone on a line or before closing punctuation, and not after a negation on its line; `session-start` adds the knowledge notes also when `session_summary` is off.
 - The check for a missing PyYAML in `svod` and in the hooks is gone: the engine cannot be imported without it, so the branch never ran. `ruff check svod tests` and `mypy svod` are clean.
 - The `merged` gate of the task example leaves out sibling repositories without a remote default branch instead of printing `could not check` for each; `vendor`, `frontmatter` and `local_workflow` read YAML through `svod.yamlio` (repeated keys refused there too, `LoadError` in `local_workflow.ERRORS`); the hook answer no longer carries an unreachable branch for a missing PyYAML, and the reference no longer promises one.
 - Removed the unused `gates.build_registry`, `ApprovalGate.effective_bind` and `document.stale_blocks` with the tests that were their only callers.

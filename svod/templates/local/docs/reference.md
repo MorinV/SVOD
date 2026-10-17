@@ -67,7 +67,7 @@ profile_config:
 
 ### Autonomy
 
-`autonomy` maps a pipeline name to a level; the level decides which approval steps (steps with an `approval` gate) the pipeline waits for. A name that is not a loaded pipeline, or a level not in the list, is a load error.
+`autonomy` maps a pipeline name, or a kind of work, to a level; the level decides which approval steps (steps with an `approval` gate) a subject waits for. A name that is neither a loaded pipeline nor a kind of work (`hotfix`), or a level not in the list, is a load error.
 
 | level | approval steps |
 |---|---|
@@ -75,9 +75,9 @@ profile_config:
 | `supervised` | a step with an approval gate of `purpose: result` becomes optional |
 | `autonomous` | every approval step becomes optional |
 
-The steps are relaxed as loaded (`svod.loader.apply_autonomy`), the pipeline file is not touched: a relaxed step is `optional`, neither `required` nor `blocks_code`, so it never becomes the position, takes no part in violations and freezes no code (the `pre-tool` rule of frozen code included). Its gates still show marks, the approval fields stay guarded, `approve` still records an approval. `status` prints `status.autonomy` under the header of a subject whose pipeline has a level.
+The level of a subject is that of its kind of work, `autonomy[kind]` for the `kind` of its frontmatter (`subject.attrs.frontmatter`), when that kind is `hotfix` and has a level; else that of its pipeline, `autonomy[<pipeline>]` (`svod.loader.subject_level`). A relaxed step is `optional`, neither `required` nor `blocks_code`, so it never becomes the position, takes no part in violations and freezes no code (the `pre-tool` rule of frozen code and `svod local` included). Its gates still show marks, the approval fields stay guarded, `approve` still records an approval. The pipeline file is not touched.
 
-`hotfix` is also accepted as a name: the level of the work kind `kind: hotfix` (frontmatter of a subject). The steps of a pipeline are shared by all its subjects, so for now that key is only validated and kept in `ctx.config.autonomy`; the level applied is the one of the pipeline.
+The steps are relaxed by the level of the pipeline as loaded (`svod.loader.apply_autonomy`); the declared steps are kept beside them. For a subject whose kind has a level, `position()` and `freeze()` take the declared steps relaxed by that level instead (`svod.loader.subject_steps`, through `svod.position.steps_of`), whether it is looser or stricter than the pipeline's: with `{task: supervised, hotfix: autonomous}` a hotfix of the `task` pipeline has no required approval step and no code freeze, while a task keeps its contract approval. `status` prints `status.autonomy` with the level of the pipeline under the header of a subject whose pipeline has one.
 
 ### External effects
 
@@ -88,6 +88,8 @@ The `pre-tool` [hook](#hooks) refuses a shell command with an effect outside thi
 | `deny` | no | list of regular expressions / `[]` | more commands to hold, besides the standard list |
 | `allow` | no | list of regular expressions / `[]` | commands never held, the standard list included |
 | `phrases` | no | list of strings / `[go ahead, давай, выполняй]` | phrases of a reply that lift the refusal |
+
+A phrase counts in a reply (letter case and Unicode form ignored, as whole words) only where it stands as an answer: the reply, stripped, starts with it; or it stands alone on a line; or nothing but punctuation follows it to the end of the reply. A negation earlier on its line (`не`, `не надо`, `don't`, `do not`, `no`; `svod.hooks.prompt.GO_NEGATIONS`) cancels it. So `Давай, пушь`, `ок, давай.` and `Looks good.\ngo ahead\nthen close it` say go ahead; `Нет, не давай`, `Do not go ahead`, `No, go ahead` and `Хорошо, давай сначала посмотрим дифф` do not.
 
 Every pattern is searched (`re.search`) in each simple command of the line: its words joined by single spaces, from the program on (leading `VAR=value`, `env`, `sudo`, `nohup`, `command`, `exec`, `time`, `nice` dropped). An invalid pattern or an unknown key is a load error.
 
@@ -102,7 +104,7 @@ An approval is two acts: a person writes a phrase in the chat, then the agent re
 
 The mark is `svod-approval.json` in the git common directory of the store (so every worktree of the store shares it, and it is never committed): `{"at": "<ISO time with offset>", "keys": [<keys named in the prompt>]}`. The prompt hook writes it from a real human answer. `approve` requires a fresh mark for the subject, ready preceding nonoptional stages and bound files not modified after the answer. It consumes only this subject's named keys, preserving other keys and the original timestamp; an unnamed mark is single-use. Do not call the internal mark writer to manufacture human consent. `approve --step <id>` selects a specific applicable approval stage; otherwise the first unsatisfied applicable approval is selected.
 
-**The human mark.** The prompt hook also leaves `svod-human.json` next to the approval mark, on every reply of a person (never on a message of another agent): `{"at": "<ISO time with offset>", "sha": "<sha256 hex of the reply, stripped>", "go": <bool>}`. For a reply to a question of the agent the text is its answers joined by newlines. `go` is true when the reply holds, as whole words (letter case ignored), one of `external_effects.phrases`. The mark is fresh for `window_minutes`; each reply replaces it, and a redelivered event older than the window leaves none. `svod.approval` reads it: `write_human_mark(root, text)`, `read_human_mark(root)`, `fresh_human_mark(root, minutes)`. It tells that the last reply came from a person, and when; `svod answer` and the [external-effects rule](#external-effects) rely on it.
+**The human mark.** The prompt hook also leaves `svod-human.json` next to the approval mark, on every reply of a person (never on a message of another agent): `{"at": "<ISO time with offset>", "sha": "<sha256 hex of the reply, stripped>", "go": <bool>}`. For a reply to a question of the agent the text is its answers joined by newlines. `go` is true when the reply holds one of `external_effects.phrases` where it says go ahead (see [External effects](#external-effects)). The mark is fresh for `window_minutes`; each reply replaces it, and a redelivered event older than the window leaves none. `svod.approval` reads it: `write_human_mark(root, text)`, `read_human_mark(root)`, `fresh_human_mark(root, minutes)`. It tells that the last reply came from a person, and when; `svod answer` and the [external-effects rule](#external-effects) rely on it.
 
 Agents without a prompt hook (Cursor, Aider, a plain terminal) have no mark to leave. For them `approve <query> --confirm` asks the person at the terminal instead: with no fresh mark and stdin a terminal, it prints on stderr what is approved (`approve.confirm_plan`: the keys of the subject, the step, the approval file; `approve.confirm_files`: the bound files and the version to record) and asks `approve.confirm_question`; only `y` or `yes` (letter case ignored) records the approval, with the approver from the local config or git as usual, and any other answer or end of input refuses with `approve.not_confirmed` and writes nothing. The person answers in the terminal, not the agent: input from a pipe or a file is not a terminal, so it refuses with `approve.no_mark` as without `--confirm`. A fresh mark, when there is one, is used as without the flag. Like the hooks, this keeps a careless agent from approving its own plan, not a determined one that can fake a terminal.
 
@@ -825,11 +827,11 @@ gate:
 
 **The store of the session** is the one holding `CLAUDE_PROJECT_DIR`, else the event `cwd`; else the store at `--root`, a fallback for sessions in a work directory outside the store. No store: silence.
 
-Optional `profile_config.agent_context` booleans `session_summary`, `prompt_positions` and `approval_notice` default on for compatibility. Setting them to false suppresses those context outputs, not native approval marking, agent-message filtering or pre-tool protection. The local template turns them off and uses explicit per-task status; `active` remains available on request. These controls do not guarantee token savings or enforce a sandbox. `knowledge` (default on) adds the [knowledge](#knowledge) notes matching the work: on `session-start` after the summary, on `prompt` after the positions.
+Optional `profile_config.agent_context` booleans `session_summary`, `prompt_positions` and `approval_notice` default on for compatibility. Setting them to false suppresses those context outputs, not native approval marking, agent-message filtering or pre-tool protection. The local template turns them off and uses explicit per-task status; `active` remains available on request. These controls do not guarantee token savings or enforce a sandbox. `knowledge` (default on) adds the [knowledge](#knowledge) notes matching the work, whatever `session_summary` says: on `session-start` after the summary when it is on, alone when it is off (the local template), on `prompt` after the positions.
 
 | event | agent event | does |
 |---|---|---|
-| `session-start` | `SessionStart` | the `active` summary, as `active --hook`, preceded by the [update notice](#update-notice) |
+| `session-start` | `SessionStart` | the `active` summary, as `active --hook`, preceded by the [update notice](#update-notice); then the knowledge notes |
 | `prompt` | `UserPromptSubmit` | human mark, approval mark and positions, see below; silent on messages of other agents |
 | `pre-tool` | `PreToolUse` | refuses the tool call by the rules below |
 
@@ -879,7 +881,7 @@ Notes come from research automatically (the profile template writes them) and by
 
 `add` and `note` rewrite the index after writing the note. Nothing is committed.
 
-**Given to the agent.** The [hooks](#hooks) add a block headed `hook.knowledge_head` with one line per current note sharing a tag with the work at hand: `- <title> (<path>): <first non-empty line of the body that is not a heading>`, newest first, at most `knowledge.limit_lines` lines. The tags of a work are the `tags` of its frontmatter (`subject.attrs.frontmatter`, given by the `container` and `frontmatter_doc` providers). `session-start` takes the tags of every existing, not archived subject of the pipelines with an `active` block, after the summary (so only while `session_summary` is on); `prompt` takes those of the subjects the prompt names, found as for the positions (keys and exact names). A work without tags adds nothing. `profile_config.agent_context.knowledge: false` turns the block off, and the prompt is then not searched for it.
+**Given to the agent.** The [hooks](#hooks) add a block headed `hook.knowledge_head` with one line per current note sharing a tag with the work at hand: `- <title> (<path>): <first non-empty line of the body that is not a heading>`, newest first, at most `knowledge.limit_lines` lines. The tags of a work are the `tags` of its frontmatter (`subject.attrs.frontmatter`, given by the `container` and `frontmatter_doc` providers). `session-start` takes the tags of every existing, not archived subject of the pipelines with an `active` block, after the summary, and also when `session_summary` is off; `prompt` takes those of the subjects the prompt names, found as for the positions (keys and exact names). A work without tags adds nothing. `profile_config.agent_context.knowledge: false` turns the block off, and the prompt is then not searched for it.
 
 ```yaml
 knowledge:

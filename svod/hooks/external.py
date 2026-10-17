@@ -154,7 +154,8 @@ def external_reason(root: Path | None, event: Event, command: str,
 
     Without a store the rule is off. A store whose svod.yaml does not load gets the standard
     list and the default phrases. The refusal is lifted by a fresh human mark that says go
-    ahead (a reply of a person holding one of external_effects.phrases). run replaces run_git.
+    ahead (a reply of a person with one of external_effects.phrases where a phrase counts, see
+    svod.hooks.prompt.says_go). run replaces run_git.
     """
     if root is None:
         return None
