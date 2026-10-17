@@ -713,6 +713,23 @@ Core keys (all required in every core locale file):
 | `knowledge.no_file` | `{path}` (the file given to `knowledge add`) |
 | `knowledge.item` | `{title}`, `{path}`, `{tags}`, `{date}`, `{status}` |
 | `knowledge.none` | — |
+| `retro.item` | `{number}`, `{rule}`, `{subject}` (what the decision is about), `{text}` |
+| `retro.facts` | `{facts}` (`name=value` pairs) |
+| `retro.proposed` | `{file}`, `{kind}`, `{text}` |
+| `retro.none`, `retro.usage`, `retro.hint` | — |
+| `retro.no_number` | `{number}`, `{count}` |
+| `retro.recorded` | `{decision}`, `{number}`, `{rule}`, `{path}` |
+| `retro.rule_failed` | `{reason}` |
+| `retro.rule.dirty_checks` | `{count}`, `{runs}` |
+| `retro.rule.approval_drift`, `retro.rule.approval_drift_questions` | `{step}`, `{count}` |
+| `retro.rule.hook_denials` | `{hook_rule}`, `{count}`, `{step}` |
+| `retro.rule.hotfix_cause` | `{work}`, `{count}`, `{hotfixes}` |
+| `retro.rule.instant_steps` | `{pipeline}`, `{step}`, `{count}`, `{seconds}` |
+| `retro.rule.long_step` | `{pipeline}`, `{step}`, `{count}`, `{works}`, `{share}` |
+| `retro.change.approval_drift`, `retro.change.approval_drift_questions` | `{step}`, `{count}` |
+| `retro.change.hook_denials` | `{hook_rule}`, `{count}`, `{step}` |
+| `retro.change.hotfix_cause` | `{work}`, `{count}`, `{hotfixes}` |
+| `retro.change.long_step` | `{pipeline}`, `{step}`, `{count}`, `{works}`, `{share}` |
 
 ## Render
 
@@ -815,6 +832,7 @@ gate:
 | `install` | `--from`, `--to` | puts a copy of the engine into `.svod/` of the store, see [Vendored copy](#vendored-copy); refuses when `.svod/` exists | 0 done, 1 refused or the store does not validate after it, 2 nothing fetched (the store is unchanged) |
 | `update` | `--from`, `--to` | replaces the copy in `.svod/`, migrates the store, validates it with the new engine, prints the changelog between the versions and the migration notes; refuses without `.svod/` | as `install` |
 | `knowledge <action>` | `--tags`, `--title`, `--source` | `index`, `add <file>`, `note "<text>"`, `list`: see [Knowledge](#knowledge) | 0 done, 1 the note exists, 2 no such file or the config does not load |
+| `retro <query>` | `--all`, `--accept <n>`, `--reject <n>`, `--note <text>` | prints the proposals of the [retrospective](#retrospective) for the works the query resolves to, or with `--all` for every open work: number, rule, facts, proposed change; `--accept` or `--reject` records the decision on proposal `n` in `evidence/decisions.yaml` (with `--note`), after which it is not shown again; `--accept` prints the diff to apply by hand, no file is changed | 0 listed or recorded; 2 wrong arguments, not found, ambiguous, no such number, or profile rules or decisions that do not load |
 | `migrate` | `--since <version>` | applies the [migrations](#migrations) of the versions after `<version>` up to the running engine and prints what they changed; `update` runs it in the new copy | 0 done, 1 a migration failed, 2 not a version |
 
 `init`, `install`, `update` and `migrate` read `svod.yaml` at most for the locale, `knowledge` reads only `svod.yaml`, so they work while the store does not load. Every other command except `validate` and `hook` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. PyYAML is a dependency of the package: without it the engine does not import, so neither the CLI nor `hook` answers.
@@ -922,6 +940,85 @@ evidence:
 ```
 
 **API.** `svod.evidence_log`: `record(root, pipeline, subject_id, event, step=None, **facts)` appends one event and returns whether a line was written (an unknown event code is a `ValueError`); `read(root, pipeline, subject_id)` returns the events in order, leaving out a torn line; `summary(root, pipeline, subject_id)` returns `{"events": {<code>: <count>}, "seconds": <sum of the seconds facts>}`. With `pipeline` or `subject_id` None they use the store log.
+
+## Retrospective
+
+At the end of a work `svod retro <query>` reads the [evidence log](#evidence) and the relations between works and proposes changes of the profile, each with the facts behind it. No model is asked and nothing is applied: the agent shows the list to the person, the person decides, and `svod retro <query> --accept <n>` or `--reject <n>` records the decision, after which the proposal is not shown again.
+
+**Works.** The query resolves as for `status`: every existing subject it names (none, or an ambiguous name, exits with 2). `--all` takes every existing, not archived subject of every pipeline. Every rule runs for every work; a proposal with the same rule, code and subject is listed once.
+
+**Core rules** (`svod.retro.rules.RULES`; the thresholds are constants of that module):
+
+| rule | the decision is about | proposes when | proposal | change |
+|---|---|---|---|---|
+| `dirty_checks` | the work | at least `DIRTY_MIN` = 2 `checks_run` with `passed: false` on a dirty tree: a `reason` fact containing `dirty`, or, without a reason, a command that exited with 0 (the source check refused the result) | keep what the checks write out of git, or run them with `PYTHONDONTWRITEBYTECODE=1` | `.gitignore`, line `__pycache__/` |
+| `approval_drift` | the work | at least `DRIFT_MIN` = 2 `approval_drift` on one step; the variant `approval_drift_questions` when a questions step (a `questions_answered` gate or the role `questions`) was current or passed after the first `approval_recorded` or `approval_drift` of that step | split the contract; ask the questions before writing it | the skill of the step, a note |
+| `hook_denials` | the work | at least `DENIALS_MIN` = 3 `hook_denied` of one `rule` in the log of the work; the step is the one current at most of them | the skill of the step does not make the rule clear | the skill of the step, a note |
+| `hotfix_cause` | the work named as the cause | at least `HOTFIX_MIN` = 2 subjects with `kind: hotfix` whose `cause` names one existing work; found from that work or from any of its hotfixes | the decision there was weak: a research, or a knowledge note | `<knowledge dir>/<name of the work>.md`, a note |
+| `instant_steps` | the pipeline | a step that is not optional (as declared or by [autonomy](#autonomy)) passed in each of the last `INSTANT_WORKS` = 3 works whose log saw it current or passed, current for less than `INSTANT_SECONDS` = 60 s each time, or never | make the step optional | the pipeline file at `steps: <id>`, line `optional: true` |
+| `long_step` | the pipeline | in at least `LONG_WORKS` = 3 works one step was current for more than `LONG_SHARE` = 50% of the time of the work | split the step or give it an [action](#actions) | the pipeline file at `steps: <id>`, a note |
+
+The time of a step runs from the `position_changed` onto it to the next one; the step current at the end counts up to the last line of the log. The step of an event without its own is the one current at it. The works of a pipeline are all the logs in `evidence/<pipeline>/`, finished and removed works included, ordered by their last line. The skill of a step is the first skill bound to its role in the [bindings file](#bindings-file), at its `skill_path`; without bindings, or for no step, the pipeline file.
+
+**Relations.** `svod.retro.engine.build_graph(ctx)` builds, once per run, the graph of every existing subject of `ctx.pipelines` by the frontmatter fields `parent`, `cause` and `leads_to` (a reference read as `ref_exists` reads it): `graph.nodes` (id to `(pipeline, subject)`), `graph.target(id, field)` (the id the field of a work names, or empty) and `graph.pointing(field, id)` (every work whose field names the id).
+
+**Output.** Each proposal is `retro.item` (number, rule, what the decision is about, text), `retro.facts` and, with a change, `retro.proposed`; `retro.none` when there is nothing. `--accept <n>` prints `retro.recorded`, then `retro.hint` and a diff to apply by hand (`--- a/<file>`, `+++ b/<file>`, `@@ <anchor> @@` when known, `+<line>`); in this version no file is changed. `--reject <n>` prints `retro.recorded` only. `--note "<text>"` goes with either and is kept in the decision. A rule that raises is left out with `retro.rule_failed` on stderr; the others still run.
+
+**decisions.yaml.** `evidence/decisions.yaml` is a YAML list, one item per decision, appended in order:
+
+| field | meaning |
+|---|---|
+| `rule` | name of the rule |
+| `code` | what tells proposals of the rule apart: `dirty_tree`, a step id, a hook rule, `weak_decision` |
+| `subject` | the work, the pipeline (`instant_steps`, `long_step`) or the cause (`hotfix_cause`) the decision is about |
+| `decision` | `accepted` or `rejected` |
+| `at` | ISO time with offset |
+| `note` | the `--note` text, or null |
+
+A proposal with the `rule`, `code` and `subject` of a decision, whatever it was, is not shown again; delete the item to see it again. With `evidence.commit: false` the directory is kept out of git as for the log. A file that is not a list of mappings exits with 2 and `error.load` and is never overwritten.
+
+**Rules of the profile.** `<profile>/retro/<module>.py` declares `RULES = {name: cls}` and is loaded as the [gate modules](#writing-a-custom-gate) are: the key equals `cls.name`; a name taken by a core rule or another module, a value that is not a `Rule` subclass, a missing `RULES` or an import failure exits with 2 and `error.load`; files starting with `_` are skipped.
+
+`Rule` (in `svod.retro.rules`):
+
+| member | meaning |
+|---|---|
+| `name` | registry name |
+| `scope` | `subject` (default) or `pipeline`: what a proposal is about when it does not say |
+| `evaluate(self, ctx, subject, log, graph)` | returns a list of `Proposal`; only reads |
+| `propose(self, code, facts, change=None, subject=None, text_key=None)` | a `Proposal` of the rule, text key `retro.rule.<name>` unless given |
+
+`Proposal(rule, code, facts, text_key, change=None, subject=None)`: `facts` are shown and fill the texts; `subject` is what the decision is about (filled by `scope` when None); `change` is `{"file": <path relative to the root>, "kind": "note" or "line", "text": <locale key or text>, "anchor": <place in the file, optional>}`, made by `change(file, text, kind="note", anchor=None)`. `text_key` and the change `text` are locale keys filled with the facts, or shown as written when the locale has no such key. `log` holds the work: `entries` (its events), `pipeline`, `subject_id`, `of(pipeline, subject_id)` (another log) and `works()` (every non-empty log of the pipeline, oldest first). Helpers of `svod.retro.rules`: `of_event(entries, event)`, `durations(entries)`, `passed_steps(entries)`, `current_steps(entries)`, `step_at(entries, index)`, `skill_file(ctx, pipeline, step_id)`, `pipeline_file(ctx, pipeline)`.
+
+```python
+from svod.retro.rules import Rule, change, of_event
+
+
+class ManyActionsRule(Rule):
+    """A work that ran more than five actions: say which file to look at."""
+
+    name = "many_actions"
+
+    def evaluate(self, ctx, subject, log, graph):
+        """One proposal when the log holds more than five action_run lines."""
+        count = len(of_event(log.entries, "action_run"))
+        if count <= 5:
+            return []
+        return [self.propose("actions", {"count": count},
+                             change("profile/actions/README.md", "retro.change.many_actions"))]
+
+
+RULES = {ManyActionsRule.name: ManyActionsRule}
+```
+
+```yaml
+# <profile>/locale/en.yaml
+retro:
+  rule:
+    many_actions: "{count} actions ran in one work: look for a step to merge"
+  change:
+    many_actions: "Merge the actions that always run together."
+```
 
 ## Vendored copy
 

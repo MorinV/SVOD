@@ -133,6 +133,24 @@ KNOWLEDGE_EXISTS = "knowledge.exists"
 KNOWLEDGE_NO_FILE = "knowledge.no_file"
 KNOWLEDGE_ITEM = "knowledge.item"
 KNOWLEDGE_NONE = "knowledge.none"
+RETRO_ITEM = "retro.item"
+RETRO_FACTS = "retro.facts"
+RETRO_PROPOSED = "retro.proposed"
+RETRO_NONE = "retro.none"
+RETRO_USAGE = "retro.usage"
+RETRO_NO_NUMBER = "retro.no_number"
+RETRO_RECORDED = "retro.recorded"
+RETRO_HINT = "retro.hint"
+RETRO_RULE_FAILED = "retro.rule_failed"
+RETRO_RULE_PREFIX = "retro.rule."
+RETRO_CHANGE_PREFIX = "retro.change."
+# Texts of the core retrospective rules (svod.retro.rules) and of the changes they propose.
+RETRO_TEXT_KEYS = tuple(RETRO_RULE_PREFIX + name for name in (
+    "dirty_checks", "approval_drift", "approval_drift_questions", "hook_denials",
+    "hotfix_cause", "instant_steps", "long_step",
+)) + tuple(RETRO_CHANGE_PREFIX + name for name in (
+    "approval_drift", "approval_drift_questions", "hook_denials", "hotfix_cause", "long_step",
+))
 HOOK_DENY_HUMAN = "hook.deny_human"
 HOOK_DENY_QUESTIONS = "hook.deny_questions"
 HOOK_DENY_EXTERNAL = "hook.deny_external"
@@ -301,5 +319,15 @@ CORE_KEYS = (
     HOOK_DENY_HUMAN,
     HOOK_DENY_QUESTIONS,
     HOOK_DENY_EXTERNAL,
+    RETRO_ITEM,
+    RETRO_FACTS,
+    RETRO_PROPOSED,
+    RETRO_NONE,
+    RETRO_USAGE,
+    RETRO_NO_NUMBER,
+    RETRO_RECORDED,
+    RETRO_HINT,
+    RETRO_RULE_FAILED,
+    *RETRO_TEXT_KEYS,
     *DESCRIBE_KEYS,
 )

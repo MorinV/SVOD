@@ -39,6 +39,7 @@ CMD_NEW = "new"
 CMD_LOCAL = "local"
 CMD_DO = "do"
 CMD_KNOWLEDGE = "knowledge"
+CMD_RETRO = "retro"
 KNOWLEDGE_INDEX = "index"
 KNOWLEDGE_ADD = "add"
 KNOWLEDGE_NOTE = "note"
@@ -124,7 +125,21 @@ def build_parser() -> StatusParser:
                                   help="apply the store migrations of the versions after a version")
     migrate.add_argument("--since", required=True, help="version the store was used with")
     add_knowledge_parser(commands)
+    add_retro_parser(commands)
     return parser
+
+
+def add_retro_parser(commands: argparse._SubParsersAction) -> None:
+    """The retro command: list the proposals, or decide one of them."""
+    retro = commands.add_parser(CMD_RETRO,
+                                help="propose profile changes from the evidence log")
+    retro.add_argument("query", nargs="?", help="tracker key or subject name, as for status")
+    retro.add_argument("--all", action="store_true", help="every open work of the store")
+    decision = retro.add_mutually_exclusive_group()
+    decision.add_argument("--accept", type=int, metavar="n",
+                          help="accept proposal n of the list; prints the change to apply")
+    decision.add_argument("--reject", type=int, metavar="n", help="reject proposal n of the list")
+    retro.add_argument("--note", help="note kept with the decision")
 
 
 def add_knowledge_parser(commands: argparse._SubParsersAction) -> None:
@@ -237,6 +252,63 @@ def do_action(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace)
         print(locale.text(keys.DO_TIMEOUT, name=args.name, seconds=ACTION_TIMEOUT),
               file=sys.stderr)
     return run.code
+
+
+def retro(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace) -> int:
+    """Print the proposals of the retrospective, or record a decision on one of them.
+
+    Returns 0 for a list or a recorded decision; 2 for wrong arguments, a query matching no
+    subject or several, a number outside the list and profile rules or decisions that do not load.
+    """
+    from svod import keys
+    from svod.document import relative_or_absolute
+    from svod.errors import LoadError
+    from svod.resolve import resolve
+    from svod.retro import decisions, engine
+
+    locale = ctx.locale
+    number = args.accept if args.accept is not None else args.reject
+    if bool(args.query) == bool(args.all) or (args.note and number is None):
+        print(locale.text(keys.RETRO_USAGE), file=sys.stderr)
+        return EXIT_USAGE
+    if args.all:
+        works = engine.open_works(ctx, pipelines)
+    else:
+        found = resolve(ctx, pipelines, args.query)
+        works = [(p, s) for p, s in found.matches if s.exists]
+        if not works:
+            print(locale.text(keys.STATUS_NOT_FOUND, query=args.query), file=sys.stderr)
+            return EXIT_USAGE
+        if found.ambiguous:
+            print_errors(locale.text(keys.STATUS_AMBIGUOUS),
+                         [locale.text(keys.STATUS_CANDIDATE, id=s.id) for _, s in works])
+            return EXIT_USAGE
+    try:
+        rules = engine.load_rules(ctx.config.profile)
+        taken = decisions.read_decisions(ctx.root)
+    except LoadError as exc:
+        print_errors(locale.text(keys.ERROR_LOAD), exc.errors)
+        return EXIT_USAGE
+    proposals, failures = engine.review(ctx, works, rules)
+    for failure in failures:
+        print(locale.text(keys.RETRO_RULE_FAILED, reason=failure), file=sys.stderr)
+    shown = engine.pending(proposals, decisions.decided(taken))
+    if number is None:
+        print("\n".join(engine.render(locale, shown) or [locale.text(keys.RETRO_NONE)]))
+        return EXIT_OK
+    if not 1 <= number <= len(shown):
+        print(locale.text(keys.RETRO_NO_NUMBER, number=number, count=len(shown)),
+              file=sys.stderr)
+        return EXIT_USAGE
+    proposal = shown[number - 1]
+    decision = decisions.ACCEPTED if args.accept is not None else decisions.REJECTED
+    path = decisions.record_decision(ctx.root, proposal, decision, args.note)
+    print(locale.text(keys.RETRO_RECORDED, decision=decision, number=number, rule=proposal.rule,
+                      path=relative_or_absolute(ctx.root, path)))
+    lines = engine.hint(locale, proposal) if decision == decisions.ACCEPTED else []
+    if lines:
+        print("\n".join([locale.text(keys.RETRO_HINT), *lines]))
+    return EXIT_OK
 
 
 def ask(prompt: str) -> str:
@@ -443,6 +515,8 @@ def run(args: argparse.Namespace) -> int:
         return render(ctx, runtime.pipelines, args)
     if args.command == CMD_DO:
         return do_action(ctx, runtime.pipelines, args)
+    if args.command == CMD_RETRO:
+        return retro(ctx, runtime.pipelines, args)
     if args.command == CMD_APPROVE:
         from svod.approve import approve
         return emit(approve(ctx, runtime.pipelines, args.query, step=args.step,
