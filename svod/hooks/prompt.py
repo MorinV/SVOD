@@ -43,10 +43,6 @@ NORMAL_FORM: Final = "NFC"
 NAME_RE = r"(?<![\w-]){name}(?![\w-])"
 PHRASE_RE = r"\s*{phrase}(?!\w)"
 GO_RE = r"(?<!\w){phrase}(?!\w)"
-# Words that, earlier on the line of a go-ahead phrase, turn it into a refusal.
-GO_NEGATIONS = ("не", "не надо", "don't", "don’t", "do not", "no")
-NEGATION_RE = re.compile(
-    r"(?<!\w)(?:{})(?!\w)".format("|".join(re.escape(w) for w in GO_NEGATIONS)))
 # Nothing but punctuation and spaces: no further word.
 NO_WORD_RE = re.compile(r"[\W_]*")
 LINE_BREAK = "\n"
@@ -125,24 +121,22 @@ def human_answers(prompt: str) -> list[str]:
 def go_at(text: str, start: int, end: int) -> bool:
     """Whether the phrase found at text[start:end] says go ahead by where it stands.
 
-    It does when the text opens with it, when it stands alone on its line or when only
-    punctuation follows it to the end of the text; a negation earlier on its line cancels it.
+    It does only when it stands on a line of its own: nothing but spaces before it on the
+    line and nothing but punctuation after it. A phrase inside a sentence, however placed, is
+    no answer, so a negation on the line ("не давай", "давай не будем") never counts as one.
     """
     line_start = text.rfind(LINE_BREAK, 0, start) + 1
     line_end = text.find(LINE_BREAK, end)
     before = text[line_start:start]
     after_line = text[end:] if line_end < 0 else text[end:line_end]
-    placed = (not text[:start].strip()
-              or not before.strip() and NO_WORD_RE.fullmatch(after_line) is not None
-              or NO_WORD_RE.fullmatch(text[end:]) is not None)
-    return placed and NEGATION_RE.search(before) is None
+    return not before.strip() and NO_WORD_RE.fullmatch(after_line) is not None
 
 
 def says_go(text: str, phrases: Iterable[str]) -> bool:
     """Whether the text says go ahead with one of the phrases, letter case and form aside.
 
-    The phrase counts as whole words at the start of the text, alone on a line, or followed
-    by nothing but punctuation; not after a negation (GO_NEGATIONS) on the same line.
+    The phrase counts as whole words on a line of its own, punctuation after it allowed; a
+    reply that mentions it inside a sentence does not say go.
     """
     found = folded(text).strip()
     return any(go_at(found, match.start(), match.end())

@@ -89,7 +89,7 @@ The `pre-tool` [hook](#hooks) refuses a shell command with an effect outside thi
 | `allow` | no | list of regular expressions / `[]` | commands never held, the standard list included |
 | `phrases` | no | list of strings / `[go ahead, давай, выполняй]` | phrases of a reply that lift the refusal |
 
-A phrase counts in a reply (letter case and Unicode form ignored, as whole words) only where it stands as an answer: the reply, stripped, starts with it; or it stands alone on a line; or nothing but punctuation follows it to the end of the reply. A negation earlier on its line (`не`, `не надо`, `don't`, `do not`, `no`; `svod.hooks.prompt.GO_NEGATIONS`) cancels it. So `Давай, пушь`, `ок, давай.` and `Looks good.\ngo ahead\nthen close it` say go ahead; `Нет, не давай`, `Do not go ahead`, `No, go ahead` and `Хорошо, давай сначала посмотрим дифф` do not.
+A phrase counts in a reply (letter case and Unicode form ignored, as whole words) only on a line of its own: nothing but spaces before it on the line, nothing but punctuation after it. A phrase inside a sentence is no answer, however it is placed, so no list of negations is needed: `Давай, пушь`, `ок, давай.`, `Нет, не давай`, `давай не будем` and `Хорошо, давай сначала посмотрим дифф` do not say go ahead; `давай`, `Go ahead!` and `Looks good.\ngo ahead\nthen close it` do.
 
 Every pattern is searched (`re.search`) in each simple command of the line: its words joined by single spaces, from the program on (leading `VAR=value`, `env`, `sudo`, `nohup`, `command`, `exec`, `time`, `nice` dropped). An invalid pattern or an unknown key is a load error.
 
