@@ -1,5 +1,4 @@
 """Native-declaration local contract, observed result and durable completion gates."""
-from fnmatch import fnmatchcase
 from pathlib import Path
 import subprocess
 
@@ -22,8 +21,10 @@ def policy(ctx, subject, *, recorded=False):
     from .workflow_policy import contract_approval
     ref = contract_approval(ctx, subject)
     bind = evidence.plan_patterns(ctx, subject, recorded=recorded)
-    if any(not any(fnmatchcase(name, pattern) for pattern in bind)
-           for name in (evidence.PLAN, value['contract'])):
+    from .approval import bound_files
+    covered = {path.relative_to(subject.path).as_posix()
+               for path in bound_files(subject.path, bind)}
+    if not {evidence.PLAN, value['contract']}.issubset(covered):
         raise ValueError('approval must bind compact plan and contract')
     # These compact inputs must be bound in full, not through line filters.
     if ref is not None and (ref.params.get('ignore') or ref.params.get('strip')):

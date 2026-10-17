@@ -81,6 +81,7 @@ def checks(root, key):
     """Run once, retain actual output and pre/post Git observations, report failure honestly."""
     from .workflow_policy import required_prerequisites, subject_pipeline, step_applies
     from .position import applies, evaluate, first_blocking
+    from .gates import ApprovalGate
     ctx, subject, policy = state(root, key)
     pipeline, resolved = subject_pipeline(ctx, subject)
     for step in pipeline.steps:
@@ -93,7 +94,8 @@ def checks(root, key):
     if policy['command'] is not None and os.name != 'posix':
         raise ValueError('local command cleanup requires POSIX')
     required_prerequisites(ctx, subject,
-                           exclude=lambda ref: workflow.is_local_phase(ref, {'result', 'complete'}))
+                           exclude=lambda ref: workflow.is_local_phase(ref, {'result', 'complete'})
+                           or (isinstance(ref.impl, ApprovalGate) and ref.purpose == 'result'))
     consent = workflow.initial_approval(ctx, subject)
     contract_sha = digest(subject.path, evidence.plan_patterns(ctx, subject))
     approval_sha = evidence.sha(consent) if consent is not None else None

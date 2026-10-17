@@ -191,6 +191,26 @@ class LocalWorkflowTest(unittest.TestCase):
         self.assertFalse((self.task / 'testing/process/receipt.json').exists())
         self.assertFalse((self.task / 'approval.yaml').exists())
 
+    def test_binding_coverage_uses_actual_glob_expansion(self):
+        self.declaration['steps'][1]['gates'][0]['params']['bind'] = ['*.md', 'test*']
+        self.save_declaration()
+        with self.assertRaisesRegex(ValueError, 'bind compact'):
+            local.prepare(self.root, 'demo-task')
+        self.assertFalse((self.task / 'testing/process/command.log').exists())
+
+    def test_result_approval_follows_execution_and_blocks_delivery(self):
+        self.declaration['steps'].append({'id': 'accept_result', 'required': True,
+            'text': 'local.approve', 'gates': [{'gate': 'approval', 'purpose': 'result',
+                'params': {'file': 'result-approval.yaml', 'marker': 'accepted',
+                    'bind': ['testing/process/receipt.json', 'testing/process/command.log']}}]})
+        self.save_declaration()
+        self.consent()
+        self.assertTrue(local.checks(self.root, 'demo-task')['passed'])
+        with self.assertRaisesRegex(ValueError, 'accept_result'):
+            local.deliver(self.root, 'demo-task')
+        self.consent()
+        self.assertTrue(local.deliver(self.root, 'demo-task')['passed'])
+
     def test_failure_is_retained_but_cannot_complete(self):
         self.plan['command'] = [sys.executable, '-c', 'print("actual failure"); raise SystemExit(7)']
         self.save_plan()
