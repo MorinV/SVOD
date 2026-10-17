@@ -5,7 +5,7 @@ key: EXAMPLE-1
 services: []
 parent:
 tags: [example]
-status: open
+status: archived
 ---
 
 # EXAMPLE-1: replace with a one-line task title
@@ -19,7 +19,8 @@ bash profile/actions/start-task.sh work/tasks/<name> write a bare card. Frontmat
   parent    work/features/<name> or work/projects/<name> this task belongs to, or empty
   cause     hotfix only: the incident or record that made it necessary
   tags      free labels
-  status    open until merged, then done
+  status    open until merged, then done; archived keeps a record out of svod active.
+            This example is archived, so a new store has no open work: set open in a copy.
 -->
 
 ## Description

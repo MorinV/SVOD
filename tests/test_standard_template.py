@@ -40,8 +40,8 @@ CLOSE_STEP = "after the merge set status: done in card.md"
 DONE_TEXT = "done: status is done in card.md"
 CAUSE_STEP = "a hotfix names its cause in card.md"
 KNOWLEDGE_STEP = "write the answer to knowledge/<topic>.md"
-ACTIVE_ITEM = f"  - {EXAMPLE} - name the services"
-ACTIVE_HEADING = "Tasks:"
+ARCHIVED = "status: archived"
+OPEN = "status: open"
 
 
 def placeholders(template):
@@ -110,8 +110,8 @@ class StandardStore:
 
 
 class StandardTemplateTest(unittest.TestCase):
-    def test_new_store_validates_and_shows_the_example(self):
-        """svod new --template standard validates, stops the example at its card, lists it."""
+    def test_new_store_validates_and_keeps_the_example_out_of_active(self):
+        """A new standard store validates; the archived example has a status, not an active line."""
         with TemporaryDirectory() as temp:
             sb = StandardStore(temp)
             created = run_cli(["new", str(sb.base / "other"), "--template", "standard"],
@@ -127,8 +127,7 @@ class StandardTemplateTest(unittest.TestCase):
             self.assertNotIn("Order violations", status.stdout)
             active = sb.cli("active")
             self.assertEqual(active.returncode, EXIT_OK, active.stderr)
-            self.assertIn(ACTIVE_HEADING, active.stdout)
-            self.assertIn(ACTIVE_ITEM, active.stdout)
+            self.assertNotIn(EXAMPLE, active.stdout)
             for name in PIPELINES:
                 render = sb.cli("render", name)
                 self.assertEqual(render.returncode, EXIT_OK, render.stderr)
@@ -138,6 +137,7 @@ class StandardTemplateTest(unittest.TestCase):
         with TemporaryDirectory() as temp:
             sb = StandardStore(temp)
             self.assertEqual(sb.cli("init", "--login", "tester").returncode, EXIT_OK)
+            sb.edit(f"{EXAMPLE}/card.md", ARCHIVED, OPEN)
             sb.edit(f"{EXAMPLE}/card.md", "services: []", f"services: [{SERVICE}]")
             status = sb.cli("status", EXAMPLE).stdout
             self.assertIn(APPROVE_STEP, status)
@@ -181,7 +181,7 @@ class StandardTemplateTest(unittest.TestCase):
 
             refused = sb.action("cleanup.sh", EXAMPLE)
             self.assertNotEqual(refused.returncode, EXIT_OK)
-            sb.edit(f"{EXAMPLE}/card.md", "status: open", "status: done")
+            sb.edit(f"{EXAMPLE}/card.md", OPEN, "status: done")
             status = sb.cli("status", EXAMPLE).stdout
             self.assertIn(DONE_TEXT, status)
             self.assertNotIn(EXAMPLE, sb.cli("active").stdout)
@@ -197,6 +197,7 @@ class StandardTemplateTest(unittest.TestCase):
             card = (sb.store / EXAMPLE / "card.md").read_text(encoding=ENCODING)
             card = card.replace("kind: task", "kind: hotfix").replace("services: []",
                                                                       "services: [app]")
+            card = card.replace(ARCHIVED, OPEN)
             sb.write(f"{HOTFIX}/card.md", card)
             sb.write(f"{HOTFIX}/questions.md", "none\n")
             status = sb.cli("status", HOTFIX).stdout

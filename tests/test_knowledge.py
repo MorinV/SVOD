@@ -53,6 +53,20 @@ class KnowledgeFilesTest(StoreTestCase):
         self.assertEqual("Tune autovacuum.", found[0].lead)
         self.assertEqual("work/research/pg", found[0].source)
 
+    def test_readme_and_files_without_note_fields_are_not_notes(self):
+        """README.md and a file naming neither title nor tags stay out of the index and matching."""
+        self.write_notes()
+        self.sb.write(f"{DIRECTORY}/README.md", "---\ntitle: About\ntags: [db]\n---\n# About\n")
+        self.sb.write(f"{DIRECTORY}/plain.md", "# Plain\n\nNo frontmatter.\n")
+        self.sb.write(f"{DIRECTORY}/dated.md", "---\ndate: 2026-05-01\n---\n# Dated\n")
+        self.sb.write(f"{DIRECTORY}/tagged.md", "---\ntags: [db]\n---\n# Tagged\n\nKept.\n")
+        found = [e.title for e in knowledge.entries(self.sb.store)]
+        self.assertEqual(["Vacuum", "Old vacuum", "Retries", "Tagged"], found)
+        index = knowledge.index_text(self.sb.store)
+        for name in ("About", "Plain", "Dated"):
+            self.assertNotIn(name, index)
+        self.assertNotIn("About", "\n".join(knowledge.matching(self.sb.store, ["db"], 20)))
+
     def test_index_is_written_between_markers_and_rebuilt(self):
         """Generated table between the markers; text outside kept; a second run changes nothing."""
         self.write_notes()
