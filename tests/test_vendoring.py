@@ -64,7 +64,8 @@ NOW = dt.datetime(2026, 10, 5, 12, 0, tzinfo=dt.timezone.utc)
 SKILL = "svod-pipeline"
 CLAUDE_SETUP = REPO_DIR / "integrations" / "setup-claude.sh"
 PYPROJECT = REPO_DIR / "pyproject.toml"
-PYPROJECT_VERSION_RE = re.compile(r'^version = "([^"]+)"$', re.MULTILINE)
+PYPROJECT_VERSION_RE = re.compile(r'^version\s*=\s*(.+?)\s*$', re.MULTILINE)
+PYPROJECT_VERSION_ATTR = '{ attr = "svod.__version__" }'
 
 
 def source_files(target):
@@ -174,9 +175,41 @@ class VersionsTest(unittest.TestCase):
                 self.assertEqual(versions.latest_tag(output), expected)
 
     def test_package_version_matches_pyproject(self):
-        """__version__ is the version of pyproject.toml."""
-        found = PYPROJECT_VERSION_RE.search(PYPROJECT.read_text(encoding=ENCODING))
-        self.assertEqual(svod.__version__, found.group(1))
+        """The version is declared once, in svod/__init__.py, and the package metadata carries it.
+
+        pyproject.toml has no version of its own: its only version line takes it from
+        svod.__version__ (checked always). The metadata importlib.metadata.version("svod")
+        returns is then compared with svod.__version__, but only when that metadata was built
+        from this tree: an editable install whose direct_url.json names this directory, or an
+        install whose svod/__init__.py is the one imported here. Metadata of an install from
+        another checkout says nothing about this tree, so the comparison is skipped with the
+        place it came from rather than passed or failed on someone else's version. CI installs
+        this checkout with pip install -e ., so there it always runs. An editable install of
+        this tree made before a version bump keeps the old metadata until it is reinstalled;
+        that fails, because the installed version really is stale.
+        """
+        import importlib.metadata as metadata
+        from urllib.parse import urlparse
+        from urllib.request import url2pathname
+
+        declared = PYPROJECT_VERSION_RE.findall(PYPROJECT.read_text(encoding=ENCODING))
+        self.assertEqual(declared, [PYPROJECT_VERSION_ATTR])
+        try:
+            dist = metadata.distribution("svod")
+        except metadata.PackageNotFoundError:
+            self.skipTest("svod is not installed: no package metadata to compare with")
+        direct = json.loads(dist.read_text("direct_url.json") or "{}")
+        url = urlparse(direct.get("url", ""))
+        editable_root = (Path(url2pathname(url.path)).resolve()
+                         if url.scheme == "file" and direct.get("dir_info", {}).get("editable")
+                         else None)
+        located = Path(dist.locate_file("svod/__init__.py")).resolve()
+        if editable_root != REPO_DIR.resolve() and located != Path(svod.__file__).resolve():
+            origin = editable_root or located.parent
+            self.skipTest(f"installed svod {metadata.version('svod')} comes from {origin}, "
+                          f"not from {REPO_DIR}; pip install -e . here to compare")
+        self.assertEqual(metadata.version("svod"), svod.__version__,
+                         "package metadata is stale: pip install -e . again")
 
 
 CHANGELOG = f"""# Changelog

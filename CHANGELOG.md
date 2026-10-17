@@ -6,27 +6,33 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-17
+
+### Added
+
+- Tests run in GitHub Actions on Python 3.10 and 3.13.
+- A test keeps the docs of the local template equal to `docs/`, so the copies cannot drift.
+- The reference documents `GitResult`, the type `ctx.cache.git` returns to a custom gate.
+
 ### Changed
 
-- The installed `svod` does not run a copy of the engine that differs from its MANIFEST: it runs itself and says so.
-- `examples/` and the root `skills/` are gone: the templates under `svod/templates/` are the one copy, `svod new --template task|local` creates a store from them, the vendored copy and the setup scripts take the skills from there.
-- README and the reference say what the hooks are: guard rails against a careless agent, not a security boundary against a determined one.
-- Tests run in GitHub Actions on Python 3.10 and 3.13.
 - The pre-tool hook checks shell commands against the code freeze and the read-only main checkout through the paths they name, not only file edits: a redirection, an interpreter, an in-place edit or `git checkout` into a frozen work directory is refused like an edit; commands known to only read pass. The approval mark file is refused to every write.
 - A store that does not load no longer lets every write through: writes outside the store are refused until it loads, writes inside it stay allowed so it can be repaired.
-- `svod local checks` runs the command with `PYTHONDONTWRITEBYTECODE=1`, so the recommended test command leaves the checkout clean.
-- The local template's next-step texts name the command to run, show the gate's detail (for example `source workspace is dirty`) and tell a changed contract from a missing approval.
-- The setup scripts say that without a store argument the hooks guard only sessions started inside a store.
+- The installed `svod` does not run a copy of the engine that differs from its MANIFEST: it runs itself and says so.
 - A gate that raises no longer fails `status` or a hook: the outcome is UNKNOWN with the reason `gate <name> raised <error>`, the step stays unpassed and the status says why.
 - `status` marks every step: a step without a labelled gate is shown as one mark by its `title` or `id`, so a profile without labels still shows where the work stands.
 - A step text ending with a period is no longer followed by a second one in the next-step line.
 - `svod active` says when no pipeline declares `active` instead of printing nothing.
-- The reference documents `GitResult`, the type `ctx.cache.git` returns to a custom gate.
-- The examples, the skills and the docs are checked against the packaged templates by a test, so the copies cannot drift.
+- `svod local checks` runs the command with `PYTHONDONTWRITEBYTECODE=1`, so the recommended test command leaves the checkout clean.
+- The local template's next-step texts name the command to run, show the gate's detail (for example `source workspace is dirty`) and tell a changed contract from a missing approval.
+- `examples/` and the root `skills/` are gone: the templates under `svod/templates/` are the one copy, `svod new --template task|local` creates a store from them, the vendored copy and the setup scripts take the skills from `svod/templates/local/skills/`.
+- The setup scripts say that without a store argument the hooks guard only sessions started inside a store.
+- README and the reference say what the hooks are: guard rails against a careless agent, not a security boundary against a determined one.
+- The package version is declared once, in `svod/__init__.py`; `pyproject.toml` reads it from there.
 
 ### Migration
 
-none
+Run the setup scripts again (`integrations/setup-claude.sh`, `integrations/setup-codex.sh`, with the store as the argument as before): the skills of a Svod clone moved from `skills/` to `svod/templates/local/skills/`, and the links `~/.claude/skills/svod-*` (and those of Codex) made by 0.3.0 from a clone point at the removed directory. Links to the copy of a store (`.svod/skills/`) keep working. Nothing else: no store file, profile or approval changes.
 
 ## [0.3.0] - 2026-10-17
 
