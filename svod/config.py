@@ -24,6 +24,8 @@ FIELD_UPDATE_CHECK = "update_check"
 APPROVAL_PHRASES = "phrases"
 APPROVAL_WINDOW = "window_minutes"
 APPROVAL_FIELDS = frozenset({APPROVAL_PHRASES, APPROVAL_WINDOW})
+AGENT_CONTEXT = "agent_context"
+AGENT_CONTEXT_FIELDS = frozenset({"session_summary", "prompt_positions", "approval_notice"})
 DEFAULT_WINDOW_MINUTES = 10
 REQUIRED_FIELDS = (FIELD_LOCALE, FIELD_PROFILE)
 STRING_FIELDS = (FIELD_LOCALE, FIELD_PROFILE, FIELD_DEFAULT_BRANCH, FIELD_WORKSPACES,
@@ -84,6 +86,20 @@ def approval_errors(path, data):
     return errors
 
 
+def agent_context_errors(path, profile_config):
+    """Errors of profile_config.agent_context: a mapping of known keys with boolean values."""
+    if not isinstance(profile_config, dict) or AGENT_CONTEXT not in profile_config:
+        return []
+    where = f"{path}: {FIELD_PROFILE_CONFIG}.{AGENT_CONTEXT}"
+    data = profile_config[AGENT_CONTEXT]
+    if not isinstance(data, dict):
+        return [f"{where} must be a mapping"]
+    errors = [f"{where}: unknown key: {key}" for key in sorted(set(data) - AGENT_CONTEXT_FIELDS)]
+    errors += [f"{where}.{key} must be a boolean" for key in sorted(set(data) & AGENT_CONTEXT_FIELDS)
+               if not isinstance(data[key], bool)]
+    return errors
+
+
 def read_local(path):
     """Validated local config mapping, empty when the file is absent."""
     if not path.is_file():
@@ -127,6 +143,7 @@ def load_config(root, local=True):
         errors += approval_errors(path, data[FIELD_APPROVAL])
     if not isinstance(data.get(FIELD_PROFILE_CONFIG, {}), dict):
         errors.append(f"{path}: {FIELD_PROFILE_CONFIG} must be a mapping")
+    errors += agent_context_errors(path, data.get(FIELD_PROFILE_CONFIG))
     for key in LIST_FIELDS:
         value = data.get(key, [])
         if not isinstance(value, list) or not all(isinstance(x, str) for x in value):

@@ -66,11 +66,15 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.profile_config, {})
 
     def test_profile_config_is_passed_through(self):
-        """profile_config reaches the profile as written; the core reads none of its keys."""
+        """profile_config reaches the profile as written; the core checks only agent_context."""
         cases = (
             ("empty", "", {}),
             ("nested", "profile_config:\n  landing: { mode: pr, target: main }\n",
              {"landing": {"mode": "pr", "target": "main"}}),
+            ("agent context", "profile_config:\n  agent_context:\n    session_summary: false\n"
+             "    prompt_positions: true\n    approval_notice: false\n",
+             {"agent_context": {"session_summary": False, "prompt_positions": True,
+                                "approval_notice": False}}),
         )
         for name, extra, expected in cases:
             with self.subTest(name=name):
@@ -91,6 +95,17 @@ class ConfigTest(unittest.TestCase):
             ("bad order", f"locale: en\nprofile: {profile}\nactive_order: task\n", "active_order"),
             ("bad profile config", f"locale: en\nprofile: {profile}\nprofile_config: [a]\n",
              "profile_config must be a mapping"),
+            ("typo in agent context",
+             f"locale: en\nprofile: {profile}\nprofile_config:\n  agent_context:\n"
+             "    session_sumary: false\n",
+             "profile_config.agent_context: unknown key: session_sumary"),
+            ("non-bool agent context",
+             f"locale: en\nprofile: {profile}\nprofile_config:\n  agent_context:\n"
+             "    prompt_positions: 'no'\n",
+             "profile_config.agent_context.prompt_positions must be a boolean"),
+            ("agent context not a mapping",
+             f"locale: en\nprofile: {profile}\nprofile_config:\n  agent_context: off\n",
+             "profile_config.agent_context must be a mapping"),
         )
         for name, text, message in cases:
             with self.subTest(name=name):

@@ -15,6 +15,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 - The pre-tool hook checks shell commands against the code freeze and the read-only main checkout through the paths they name, not only file edits: a redirection, an interpreter, an in-place edit or `git checkout` into a frozen work directory is refused like an edit; commands known to only read pass. The approval mark file is refused to every write.
 - A store that does not load no longer lets every write through: writes outside the store are refused until it loads, writes inside it stay allowed so it can be repaired.
 - `svod local checks` runs the command with `PYTHONDONTWRITEBYTECODE=1`, so the recommended test command leaves the checkout clean.
+- The local template lists its tasks in `svod active` and ships `tasks/example/` (card, contract, plan with commented placeholders); a typo or non-bool value in `profile_config.agent_context` is a load error naming the key; the reference says where `field` gets the frontmatter for each provider.
 - The local template's next-step texts name the command to run, show the gate's detail (for example `source workspace is dirty`) and tell a changed contract from a missing approval.
 - The setup scripts say that without a store argument the hooks guard only sessions started inside a store.
 - A gate that raises no longer fails `status` or a hook: the outcome is UNKNOWN with the reason `gate <name> raised <error>`, the step stays unpassed and the status says why.
