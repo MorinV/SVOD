@@ -23,7 +23,6 @@ steps:
     role: questions
     text: work.step.questions
     gates:
-      - { gate: artifact, params: { path: questions.md }, label: work.mark.questions }
       - { gate: questions_answered, params: { file: questions.md }, label: work.mark.answered }
   - id: researches
     title: project.title.researches

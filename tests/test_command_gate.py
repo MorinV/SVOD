@@ -252,7 +252,11 @@ class CommandGateTest(StoreTestCase):
             impl=gate)])}
         subject = Subject(id="one", path=self.sb.store,
                           attrs={"frontmatter": {"services": [SERVICE]}})
-        with mock.patch.dict(os.environ, {"SVOD_ACTION": "checks", "SVOD_ID": "outer"}):
+        # The test may itself run under svod do (the store's checks action): start from an
+        # environment without SVOD_ variables, as a session of the agent would.
+        outer = {name: value for name, value in os.environ.items() if not name.startswith("SVOD_")}
+        with mock.patch.dict(os.environ, {**outer, "SVOD_ACTION": "checks", "SVOD_ID": "outer"},
+                             clear=True):
             found = gate.evaluate(Context(config, pipelines=pipelines), subject)
             alone = gate.evaluate(Context(config), subject)
         self.assertEqual(found.facts["detail"], f"one|p|{SERVICE}|make test|")

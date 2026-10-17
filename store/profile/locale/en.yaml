@@ -25,7 +25,9 @@ work:
     checks_pass: "checks pass"
     result: "result approved"
   step:
-    questions: "write what you do not know into questions.md as ## Q: headings (or the single line none), ask the person in the chat and wait; record each answer with svod answer <record> --q <n> <text>"
+    questions: "add each thing you do not know with svod ask <record> \"<question>\" (or svod ask <record> --none when there is nothing to ask), ask the person in the chat and wait; record each answer with svod answer <record> --q <n> <text>"
+    questions_missing: "ask your questions with svod ask <record> \"<question>\", or svod ask <record> --none when there is nothing to ask"
+    questions_unanswered: "{count} questions without an answer: ask them in the chat, wait, and record each answer with svod answer <record> --q <n> <text>"
   active:
     item: "- {id} - {step}"
 task:

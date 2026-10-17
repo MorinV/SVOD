@@ -2,3 +2,9 @@
 {"at": "2026-10-17T13:19:12+00:00", "event": "step_passed", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": "questions", "facts": {}}
 {"at": "2026-10-17T13:19:12+00:00", "event": "step_passed", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": "contract", "facts": {}}
 {"at": "2026-10-17T13:19:12+00:00", "event": "position_changed", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": "approve", "facts": {"from": "questions", "to": "approve"}}
+{"at": "2026-10-17T13:45:19+00:00", "event": "approval_recorded", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": "approve", "facts": {"by": "morinv"}}
+{"at": "2026-10-17T13:45:21+00:00", "event": "step_passed", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": "approve", "facts": {}}
+{"at": "2026-10-17T13:45:21+00:00", "event": "position_changed", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": "implement", "facts": {"from": "approve", "to": "implement"}}
+{"at": "2026-10-17T13:45:34+00:00", "event": "action_run", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": "implement", "facts": {"action": "start-task", "code": 0, "seconds": 0.114}}
+{"at": "2026-10-17T13:46:04+00:00", "event": "action_run", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": "implement", "facts": {"action": "start-task", "code": 0, "seconds": 0.115}}
+{"at": "2026-10-17T13:47:36+00:00", "event": "action_run", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": null, "facts": {"action": "checks", "code": 1, "seconds": 83.634}}
