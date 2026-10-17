@@ -50,6 +50,10 @@ APPROVE_STEP_NO_GATE = "approve.step_no_gate"
 APPROVE_NOT_READY = "approve.not_ready"
 APPROVE_CHANGED_AFTER_MARK = "approve.changed_after_mark"
 APPROVE_NO_APPROVER = "approve.no_approver"
+APPROVE_CONFIRM_PLAN = "approve.confirm_plan"
+APPROVE_CONFIRM_FILES = "approve.confirm_files"
+APPROVE_CONFIRM_QUESTION = "approve.confirm_question"
+APPROVE_NOT_CONFIRMED = "approve.not_confirmed"
 
 UPDATE_EXISTS = "update.exists"
 UPDATE_MISSING = "update.missing"
@@ -185,6 +189,10 @@ CORE_KEYS = (
     APPROVE_NOT_READY,
     APPROVE_CHANGED_AFTER_MARK,
     APPROVE_NO_APPROVER,
+    APPROVE_CONFIRM_PLAN,
+    APPROVE_CONFIRM_FILES,
+    APPROVE_CONFIRM_QUESTION,
+    APPROVE_NOT_CONFIRMED,
     UPDATE_EXISTS,
     UPDATE_MISSING,
     UPDATE_FETCH_FAILED,

@@ -1,4 +1,9 @@
-"""Plan approval: digest of the bound files, the mark a person leaves, the approval fields."""
+"""Plan approval: digest of the bound files, the mark a person leaves, the approval fields.
+
+This module is the one place that knows the approval fields: <marker> holds the date,
+<marker>_by the approver, <marker>_sha the digest of the bound files. Read them with
+read_fields and write them with write_fields.
+"""
 import datetime as dt
 import hashlib
 import json
@@ -6,7 +11,7 @@ import re
 from pathlib import Path
 
 from .git import common_dir_file
-from .yamlio import ENCODING
+from .yamlio import ENCODING, read_yaml
 
 MARK_FILE = "svod-approval.json"
 MARK_AT = "at"
@@ -28,11 +33,45 @@ EMPTY_PARENS_RE = re.compile(r"\s*\(\s*\)")
 WHITESPACE_RUN_RE = re.compile(r"\s+")
 LEADING_SEPARATORS = " \t,;.:\u2013\u2014"
 TRAILING_SEPARATORS = " \t,;:\u2013\u2014"
+NO_TEXT = ""
 
 
 def field_names(marker):
     """(date, approver, digest) field names derived from the marker field."""
     return marker, f"{marker}{SUFFIX_BY}", f"{marker}{SUFFIX_SHA}"
+
+
+def text_of(value):
+    """Stripped text of a field value; empty for a missing one."""
+    return NO_TEXT if value is None else str(value).strip()
+
+
+def read_fields(path, marker):
+    """(date, approver, digest) recorded under the marker in a YAML file, as stripped text.
+
+    Each is empty when the file is absent, is not a mapping or lacks the field, as in an
+    approval recorded before the approver and the digest were. LoadError when the file is
+    not valid YAML.
+    """
+    path = Path(path)
+    if not path.is_file():
+        return tuple(NO_TEXT for _ in field_names(marker))
+    data = read_yaml(path)
+    data = data if isinstance(data, dict) else {}
+    return tuple(text_of(data.get(name)) for name in field_names(marker))
+
+
+def write_fields(path, marker, date, by, sha=None):
+    """Record the approval under the marker: date, approver and, when given, the digest.
+
+    Other lines of the file are kept as written; the fields are replaced in place or
+    appended. Without a digest (an approval with no bound files) no digest field is written.
+    """
+    date_field, by_field, sha_field = field_names(marker)
+    values = {date_field: date, by_field: by}
+    if sha:
+        values[sha_field] = sha
+    set_fields(path, values)
 
 
 def bound_files(base, patterns):

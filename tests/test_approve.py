@@ -1,5 +1,6 @@
 """The approval mark, the approve command, line-wise field writing and texts by reason."""
 import datetime as dt
+import io
 import json
 import shutil
 import unittest
@@ -10,8 +11,8 @@ import yaml
 from support import (ENCODING, EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, ME, TEST_PROFILE,
                      StoreTestCase, TempStore)
 
-from svod.approval import (MARK_AT, MARK_KEYS, digest, is_fresh, mark_path, read_mark,
-                             set_fields, write_mark)
+from svod.approval import (MARK_AT, MARK_KEYS, digest, is_fresh, mark_path, read_fields,
+                             read_mark, set_fields, write_fields, write_mark)
 from svod.approve import approval_ref, approve, candidates, pending_prerequisites
 from svod.config import load_config
 from svod.context import Context
@@ -82,6 +83,22 @@ def second_approval_profile(root):
     return second
 
 
+def two_changes(sb, gate):
+    """Commit two changes into a store whose approval step declares the gate; the first's path."""
+    config = sb.store / "svod.yaml"
+    text = config.read_text(encoding=ENCODING)
+    sb.write("svod.yaml", text.replace(str(TEST_PROFILE), str(bound_profile(sb.root, gate))))
+    sb.init_git(remote=False)
+    sb.write(META, KEEP)
+    sb.write(f"{CHANGE}/design.md", "# design\n")
+    sb.write(f"{CHANGE}/specs/cap/spec.md", "# spec\n")
+    sb.write(META2, "ticket: tk-2\n")
+    sb.write(f"{CHANGE2}/design.md", "# second design\n")
+    sb.write(f"{CHANGE2}/specs/cap/spec.md", "# second spec\n")
+    sb.commit(message="change")
+    return sb.store / CHANGE
+
+
 class ApproveTest(StoreTestCase):
     """svod approve writes the fields only after a fresh mark that names the subject."""
 
@@ -90,19 +107,7 @@ class ApproveTest(StoreTestCase):
     def setUp(self):
         """Store with a bound approval step and one change in git."""
         super().setUp()
-        config = self.sb.store / "svod.yaml"
-        text = config.read_text(encoding=ENCODING)
-        self.sb.write("svod.yaml", text.replace(
-            str(TEST_PROFILE), str(bound_profile(self.sb.root, self.GATE))))
-        self.sb.init_git(remote=False)
-        self.sb.write(META, KEEP)
-        self.sb.write(f"{CHANGE}/design.md", "# design\n")
-        self.sb.write(f"{CHANGE}/specs/cap/spec.md", "# spec\n")
-        self.sb.write(META2, "ticket: tk-2\n")
-        self.sb.write(f"{CHANGE2}/design.md", "# second design\n")
-        self.sb.write(f"{CHANGE2}/specs/cap/spec.md", "# second spec\n")
-        self.sb.commit(message="change")
-        self.change = self.sb.store / CHANGE
+        self.change = two_changes(self.sb, self.GATE)
 
     def meta(self):
         """Parsed metadata of the change."""
@@ -214,6 +219,93 @@ class ApproveTest(StoreTestCase):
         out = self.sb.cli("approve", "tk-1")
         self.assertEqual(out.returncode, EXIT_FINDINGS)
         self.assertIn("Who approves is unknown", out.stderr)
+
+
+class ConfirmTest(StoreTestCase):
+    """svod approve --confirm asks the person at a terminal when no fresh mark exists."""
+
+    def setUp(self):
+        """Store with a bound approval step and one change in git, no mark."""
+        super().setUp()
+        self.change = two_changes(self.sb, BOUND_GATE)
+
+    def meta(self):
+        """Parsed metadata of the change."""
+        return yaml.safe_load((self.sb.store / META).read_text(encoding=ENCODING))
+
+    def confirm(self, answer, tty=True, confirm=True):
+        """Run approve in this process with stdin a terminal or not and the answer typed.
+
+        Returns the report, what was printed on stderr and the input mock.
+        """
+        runtime = load_runtime(self.sb.store)
+        ctx = Context(runtime.config, runtime.locale, pipelines=runtime.by_name())
+        stdin = mock.Mock()
+        stdin.isatty.return_value = tty
+        typed = (mock.Mock(side_effect=answer) if isinstance(answer, BaseException)
+                 else mock.Mock(return_value=answer))
+        err = io.StringIO()
+        with mock.patch("sys.stdin", stdin), mock.patch("builtins.input", typed), \
+                mock.patch("sys.stderr", err):
+            report = approve(ctx, runtime.pipelines, "tk-1", confirm=confirm)
+        return report, err.getvalue(), typed
+
+    def test_yes_at_a_terminal_records_the_approval(self):
+        """y or yes at a terminal writes the three fields after showing the bound files."""
+        for answer in ("y", " YES "):
+            with self.subTest(answer=answer):
+                set_fields(self.sb.store / META, {"approved": "", "approved_by": "",
+                                                  "approved_sha": ""})
+                report, err, typed = self.confirm(answer)
+                self.assertTrue(report.ok, report.err)
+                typed.assert_called_once()
+                self.assertIn("Approve tk-1? [y/N]", err)
+                self.assertIn(f"{CHANGE}/design.md", err)
+                self.assertIn(f"{CHANGE}/specs/cap/spec.md", err)
+                meta = self.meta()
+                self.assertEqual(str(meta["approved"]), dt.date.today().isoformat())
+                self.assertEqual(meta["approved_by"], ME[0])
+                self.assertEqual(meta["approved_sha"], digest(self.change, BIND))
+        self.assertIn("+ approved", self.sb.cli("status", "tk-1").stdout)
+
+    def test_other_answer_or_end_of_input_records_nothing(self):
+        """n, an empty answer or end of input refuse without writing."""
+        for answer in ("n", "", "yes please", EOFError()):
+            with self.subTest(answer=answer):
+                report, err, typed = self.confirm(answer)
+                self.assertFalse(report.ok)
+                self.assertTrue(report.refused)
+                self.assertIn("not confirmed at the terminal", report.err[0])
+                typed.assert_called_once()
+                self.assertNotIn("approved", self.meta())
+
+    def test_without_terminal_or_flag_the_old_refusal_stands(self):
+        """No terminal, or no --confirm, refuses as before without asking."""
+        for tty, confirm in ((False, True), (True, False)):
+            with self.subTest(tty=tty, confirm=confirm):
+                report, err, typed = self.confirm("y", tty=tty, confirm=confirm)
+                self.assertFalse(report.ok)
+                self.assertIn("No fresh approval", report.err[0])
+                typed.assert_not_called()
+                self.assertEqual(err, "")
+                self.assertNotIn("approved", self.meta())
+
+    def test_piped_answer_is_not_a_confirmation(self):
+        """y piped into the command line is not a terminal: refused, nothing written."""
+        out = self.sb.cli("approve", "tk-1", "--confirm", stdin="y\n")
+        self.assertEqual(out.returncode, EXIT_FINDINGS)
+        self.assertIn("No fresh approval", out.stderr)
+        self.assertNotIn("Approve tk-1?", out.stderr)
+        self.assertNotIn("approved", self.meta())
+
+    def test_fresh_mark_is_used_without_asking(self):
+        """With a fresh mark --confirm asks nothing and consumes the mark as before."""
+        write_mark(self.sb.store, ("tk-1",))
+        report, err, typed = self.confirm("n")
+        self.assertTrue(report.ok, report.err)
+        typed.assert_not_called()
+        self.assertIsNone(read_mark(self.sb.store))
+        self.assertEqual(self.meta()["approved_by"], ME[0])
 
 
 class SecondApprovalTest(StoreTestCase):
@@ -570,6 +662,32 @@ class SetFieldsTest(unittest.TestCase):
         set_fields(path, {"b": "x@example.com", "c": "has: colon", "d": "0123"})
         self.assertEqual(path.read_text(encoding=ENCODING),
                          'a: 1\n# note\nb: x@example.com\nc: "has: colon"\nd: "0123"\n')
+
+
+class FieldsTest(unittest.TestCase):
+    """read_fields and write_fields are the one reader and writer of the approval fields."""
+
+    def test_read_and_write(self):
+        """Fields round-trip; legacy records, absent files and other shapes read as empty."""
+        sb = TempStore()
+        self.addCleanup(sb.cleanup)
+        path = sb.store / "meta.yaml"
+        self.assertEqual(read_fields(path, "approved"), ("", "", ""))
+        sb.write("meta.yaml", "ticket: tk-1\napproved: 2026-01-01\n")
+        self.assertEqual(read_fields(path, "approved"), ("2026-01-01", "", ""))
+        write_fields(path, "approved", "2026-02-02", "me@example.com", "abc")
+        self.assertEqual(read_fields(path, "approved"), ("2026-02-02", "me@example.com", "abc"))
+        self.assertTrue(path.read_text(encoding=ENCODING).startswith("ticket: tk-1\n"))
+        write_fields(path, "plan", "2026-03-03", "me@example.com")
+        self.assertEqual(read_fields(path, "plan"), ("2026-03-03", "me@example.com", ""))
+        self.assertNotIn("plan_sha", path.read_text(encoding=ENCODING))
+        sb.write("meta.yaml", "- a\n")
+        self.assertEqual(read_fields(path, "approved"), ("", "", ""))
+        for text in ("approved: [\n", "approved: x\napproved: y\n"):
+            with self.subTest(text=text):
+                sb.write("meta.yaml", text)
+                with self.assertRaises(LoadError):
+                    read_fields(path, "approved")
 
 
 class ApprovalConfigTest(unittest.TestCase):

@@ -55,6 +55,10 @@ approve:
   not_ready: "Cannot approve step {step} for {query}: these preceding stages or step gates have not passed: {pending}"
   changed_after_mark: "Cannot approve step {step} for {query}: its bound files changed after the person's chat response; show the current version and ask for a new approval"
   no_approver: "Who approves is unknown: create the local config with svod init"
+  confirm_plan: "To approve: {subject}, step {step}, {marker} in {file}"
+  confirm_files: "Bound files, version {sha}:"
+  confirm_question: "Approve {subject}? [y/N] "
+  not_confirmed: "The approval of {subject} is not confirmed at the terminal: nothing is recorded"
 update:
   exists: "The store already has its copy of the engine (.svod): run svod update"
   missing: "The store has no copy of the engine (.svod): run svod install"

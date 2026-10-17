@@ -325,6 +325,13 @@ class LocalWorkflowTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'duplicate'):
             local.verify(self.root, 'demo-task')
 
+    def test_duplicate_plan_fields_are_rejected(self):
+        """A plan naming one field twice is refused by the shared YAML loader."""
+        self.write('tasks/demo-task/testing/plan.yaml',
+                   yaml.safe_dump(self.plan) + 'kind: process\n')
+        with self.assertRaisesRegex(ValueError, 'duplicate key: kind'):
+            local.prepare(self.root, 'demo-task')
+
     def test_declared_entry_and_result_side_conditions_are_not_skipped(self):
         self.declaration['entry'] = [{'gate': 'artifact', 'params': {'path': 'permit'},
                                       'severity': 'block', 'text': 'local.contract'}]

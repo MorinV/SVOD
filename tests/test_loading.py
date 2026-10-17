@@ -13,6 +13,7 @@ from svod.errors import LoadError, LocaleError
 from svod.loader import load_runtime
 from svod.locale import Locale, load_locale
 from svod.pipeline import parse_pipeline
+from svod.yamlio import parse_yaml, read_yaml
 
 MINIMAL_PIPELINE = """
     pipeline: toy
@@ -93,6 +94,8 @@ class ConfigTest(unittest.TestCase):
             ("missing profile dir", "locale: en\nprofile: nowhere\n", "profile directory not found"),
             ("not a mapping", "- a\n- b\n", "expected a mapping"),
             ("bad yaml", "locale: [\n", "invalid YAML"),
+            ("duplicate key", f"locale: en\nlocale: ru\nprofile: {profile}\n",
+             "duplicate key: locale"),
             ("empty string", f"locale: ''\nprofile: {profile}\n", "locale must be a non-empty"),
             ("bad order", f"locale: en\nprofile: {profile}\nactive_order: task\n", "active_order"),
             ("bad profile config", f"locale: en\nprofile: {profile}\nprofile_config: [a]\n",
@@ -115,6 +118,34 @@ class ConfigTest(unittest.TestCase):
                 with self.assertRaises(LoadError) as ctx:
                     load_config(self.sb.store)
                 self.assertIn(message, str(ctx.exception))
+
+
+class YamlTest(unittest.TestCase):
+    """One loader for every YAML file: safe, repeated keys refused, merge keys kept."""
+
+    def test_parse(self):
+        """A repeated key is a LoadError at any depth; a key may override a merged one."""
+        cases = (("a: 1\na: 2\n", "duplicate key: a"),
+                 ("top:\n  b: 1\n  b: 2\n", "duplicate key: b"),
+                 ("x: !!python/object:os.system {}\n", "invalid YAML"))
+        for text, message in cases:
+            with self.subTest(text=text):
+                with self.assertRaises(LoadError) as ctx:
+                    parse_yaml(text, "f.yaml")
+                self.assertIn(message, str(ctx.exception))
+                self.assertIn("f.yaml", str(ctx.exception))
+        merged = parse_yaml("base: &b { a: 1, c: 3 }\nuse:\n  <<: *b\n  a: 2\n", "f.yaml")
+        self.assertEqual(merged["use"], {"a": 2, "c": 3})
+
+    def test_read_absent_and_not_utf8(self):
+        """An absent file and a file that is not UTF-8 are LoadErrors naming the path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.yaml"
+            with self.assertRaisesRegex(LoadError, "file not found"):
+                read_yaml(path)
+            path.write_bytes(b"a: \xff\n")
+            with self.assertRaisesRegex(LoadError, "not utf-8"):
+                read_yaml(path)
 
 
 class PipelineSchemaTest(unittest.TestCase):

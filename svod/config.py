@@ -2,11 +2,9 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
-
 from .errors import LoadError
 from .paths import CONFIG_FILE, find_root
-from .yamlio import ENCODING, read_yaml
+from .yamlio import ENCODING, dump_yaml, read_yaml
 
 FIELD_LOCALE = "locale"
 FIELD_PROFILE = "profile"
@@ -182,5 +180,4 @@ def load_config(root, local=True):
 def write_local(path, values):
     """Write the local config with the non-empty values, in the given order."""
     data = {key: value for key, value in values.items() if value}
-    Path(path).write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
-                          encoding=ENCODING)
+    Path(path).write_text(dump_yaml(data), encoding=ENCODING)
