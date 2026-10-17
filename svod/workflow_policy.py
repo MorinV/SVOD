@@ -1,13 +1,13 @@
-"""Declaration-based workflow selection, independent of profile stage names."""
+"""Declaration-based workflow selection, independent of profile stage names.
+
+Built on pipeline declarations only: it imports neither position nor approve.
+"""
+from dataclasses import replace
 import json
 
 from .errors import ParamError
 from .gates import ApprovalGate
-
-
-def step_applies(step, subject):
-    """Absent predicates apply; declared predicates use subject attribute truthiness."""
-    return not step.when or bool(subject.attrs.get(step.when))
+from .pipeline import applies, first_blocking, open_step, run_entries, step_applies
 
 
 def approval_refs(pipeline, purpose=None):
@@ -24,6 +24,15 @@ def approval_refs(pipeline, purpose=None):
                 seen.add(identity)
                 refs.append(ref)
     return refs
+
+
+def applicable_approvals(pipeline, subject=None, step=None):
+    """Ordered unique approvals from applicable stages and gate uses."""
+    stages = [item for item in pipeline.steps
+              if (step is None or item.id == step)
+              and (subject is None or step_applies(item, subject))]
+    return [ref for ref in approval_refs(replace(pipeline, steps=stages))
+            if subject is None or applies(ref, subject)]
 
 
 def approval_ref(pipeline, purpose):
@@ -64,7 +73,7 @@ def contract_approval(ctx, subject):
         if not step_applies(step, resolved):
             continue
         for ref in step.gates:
-            if ref.when and not resolved.attrs.get(ref.when):
+            if not applies(ref, resolved):
                 continue
             if not isinstance(ref.impl, ApprovalGate):
                 artifacts.update(ref.params[key] for key in ('path', 'glob')
@@ -107,23 +116,18 @@ def required_prerequisites(ctx, subject, *, exclude):
     that stage, pipeline entries and required step entries remain prerequisites.
     Use native outcomes and severity, including UNKNOWN refusal and skipped uses.
     """
-    from .position import applies, evaluate, first_blocking
-
     pipeline, resolved = subject_pipeline(ctx, subject)
-    pending = []
-    entries = [evaluate(ctx, ref, resolved) for ref in pipeline.entry
-               if applies(ref, resolved) and not exclude(ref)]
-    if first_blocking(entries):
-        pending.append('entry')
+
+    def blocked(refs):
+        """Whether a non-excluded applicable block-severity entry did not pass."""
+        return first_blocking(run_entries(ctx, [ref for ref in refs if not exclude(ref)],
+                                          resolved))
+
+    pending = ['entry'] if blocked(pipeline.entry) else []
     for step in pipeline.steps:
         if not step.required or step.optional or not step_applies(step, resolved):
             continue
-        entries = [evaluate(ctx, ref, resolved) for ref in step.entry
-                   if applies(ref, resolved) and not exclude(ref)]
-        refs = [ref for ref in step.gates if applies(ref, resolved) and not exclude(ref)]
-        outcomes = [evaluate(ctx, ref, resolved) for ref in refs]
-        if (first_blocking(entries) or not step.gates
-                or any(not outcome.passed for outcome in outcomes)):
+        if blocked(step.entry) or open_step(ctx, step, resolved, exclude) is not None:
             pending.append(step.id)
     if pending:
         raise ValueError('required prerequisites pending: ' + ', '.join(pending))
@@ -141,8 +145,6 @@ def same_approval(impl, ref):
 
 def result_approval(ctx, subject):
     """Select applicable result consent, structurally bootstrapping untagged policy."""
-    from .approve import applicable_approvals
-
     pipeline, resolved = subject_pipeline(ctx, subject)
     refs = applicable_approvals(pipeline, resolved)
     tagged = [ref for ref in refs if ref.purpose == 'result']

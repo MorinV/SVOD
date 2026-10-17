@@ -1,10 +1,10 @@
-"""Pipeline declarations: schema validation and binding to registries."""
+"""Pipeline declarations: schema validation, binding to registries, evaluation of gate uses."""
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .errors import ParamError
-from .gates import KeyGate
+from .gates import KeyGate, Status, unknown
 
 FIELD_PIPELINE = "pipeline"
 FIELD_SUBJECT = "subject"
@@ -68,6 +68,7 @@ HEADING_GROUPS = (GROUP_MINE_ACTIVE, GROUP_MINE_IDLE, GROUP_THEIRS, GROUP_THEIRS
 VIOLATION_SEPARATOR = "."
 VIOLATION_PARTS = 2
 STEP_ID_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
+GATE_RAISED = "gate {gate} raised {error}"
 
 
 @dataclass
@@ -473,3 +474,103 @@ def bind_pipeline(pipeline, gates, providers):
         except ParamError as exc:
             errors.append(f"{prefix}: {FIELD_SUBJECT}: {exc}")
     return errors
+
+
+@dataclass
+class Outcome:
+    """A gate use together with its result."""
+
+    ref: object
+    result: object
+
+    @property
+    def passed(self):
+        """Whether the gate passed."""
+        return self.result.passed
+
+
+@dataclass
+class OpenStep:
+    """A step that has not passed and the gate holding it; no gate for a step without gates."""
+
+    step: object
+    outcome: Outcome | None = None
+
+    @property
+    def text(self):
+        """Locale key of the open gate's text, else of the step text."""
+        ref = self.outcome.ref if self.outcome else None
+        return (ref.text if ref else None) or self.step.text
+
+    @property
+    def facts(self):
+        """Facts of the open gate; none for a step without gates."""
+        return self.outcome.result.facts if self.outcome else {}
+
+    @property
+    def gate(self):
+        """Name of the open gate, or None for a step without gates."""
+        return self.outcome.ref.gate if self.outcome else None
+
+    @property
+    def unknown(self):
+        """Whether the open gate could not be checked."""
+        return self.outcome is not None and self.outcome.result.status is Status.UNKNOWN
+
+    @property
+    def reason(self):
+        """Why the open gate could not be checked, or None when it simply failed."""
+        return self.outcome.result.reason if self.unknown else None
+
+
+def applies(ref, subject):
+    """Whether the gate use applies: its when attribute, if any, is truthy."""
+    return not ref.when or bool(subject.attrs.get(ref.when))
+
+
+def step_applies(step, subject):
+    """Absent predicates apply; declared predicates use subject attribute truthiness."""
+    return not step.when or bool(subject.attrs.get(step.when))
+
+
+def evaluate(ctx, ref, subject):
+    """Outcome of one gate use; a gate that raises is UNKNOWN with the error as its reason.
+
+    A status or a hook never fails because one gate did: a profile gate with a bug, or a
+    file system that cannot be read, leaves its step unpassed and names the error.
+    """
+    try:
+        result = ref.impl.evaluate(ctx, subject)
+    except OSError as exc:
+        result = unknown(str(exc))
+    except Exception as exc:
+        result = unknown(GATE_RAISED.format(gate=ref.gate, error=f"{type(exc).__name__}: {exc}"))
+    return Outcome(ref, result)
+
+
+def run_entries(ctx, refs, subject):
+    """Outcomes of the applicable entry gates."""
+    return [evaluate(ctx, ref, subject) for ref in refs if applies(ref, subject)]
+
+
+def first_blocking(outcomes):
+    """First block-severity entry that did not pass."""
+    return next((o for o in outcomes
+                 if o.ref.severity == SEVERITY_BLOCK and not o.passed), None)
+
+
+def open_step(ctx, step, subject, exclude=None):
+    """The step held by its first applicable gate that did not pass, or None when it passes.
+
+    A step without gates never passes. A gate group whose uses are all inapplicable (or
+    excluded by the caller) passes. Gates are evaluated in order and only up to the open one.
+    """
+    if not step.gates:
+        return OpenStep(step)
+    for ref in step.gates:
+        if not applies(ref, subject) or (exclude is not None and exclude(ref)):
+            continue
+        outcome = evaluate(ctx, ref, subject)
+        if not outcome.passed:
+            return OpenStep(step, outcome)
+    return None

@@ -1,25 +1,11 @@
 """Position of a subject in a pipeline: entry, done, current step, violations, marks."""
 from dataclasses import dataclass, field
 
-from .gates import ArchivedGate, Status, unknown
-from .pipeline import SEVERITY_BLOCK, SEVERITY_WARN, VIOLATION_SEPARATOR
-from .workflow_policy import step_applies
+from .gates import ArchivedGate, Status
+from .pipeline import (SEVERITY_WARN, VIOLATION_SEPARATOR, Outcome, applies, evaluate,
+                       first_blocking, open_step, run_entries, step_applies)
 
-GATE_RAISED = "gate {gate} raised {error}"
 FACT_STEP = "step"
-
-
-@dataclass
-class Outcome:
-    """A gate use together with its result."""
-
-    ref: object
-    result: object
-
-    @property
-    def passed(self):
-        """Whether the gate passed."""
-        return self.result.passed
 
 
 @dataclass
@@ -78,37 +64,6 @@ class Position:
     done_outcome: Outcome | None = None
 
 
-def evaluate(ctx, ref, subject):
-    """Outcome of one gate use; a gate that raises is UNKNOWN with the error as its reason.
-
-    A status or a hook never fails because one gate did: a profile gate with a bug, or a
-    file system that cannot be read, leaves its step unpassed and names the error.
-    """
-    try:
-        result = ref.impl.evaluate(ctx, subject)
-    except OSError as exc:
-        result = unknown(str(exc))
-    except Exception as exc:
-        result = unknown(GATE_RAISED.format(gate=ref.gate, error=f"{type(exc).__name__}: {exc}"))
-    return Outcome(ref, result)
-
-
-def applies(ref, subject):
-    """Whether the gate use applies: its when attribute, if any, is truthy."""
-    return not ref.when or bool(subject.attrs.get(ref.when))
-
-
-def run_entries(ctx, refs, subject):
-    """Outcomes of the applicable entry gates."""
-    return [evaluate(ctx, ref, subject) for ref in refs if applies(ref, subject)]
-
-
-def first_blocking(outcomes):
-    """First block-severity entry that did not pass."""
-    return next((o for o in outcomes
-                 if o.ref.severity == SEVERITY_BLOCK and not o.passed), None)
-
-
 def failed_warnings(outcomes):
     """Warn-severity entries that failed; an UNKNOWN one is reported as unknown instead."""
     return [o for o in outcomes
@@ -143,6 +98,22 @@ def do_not_touch_facts(states, start):
         return None
     gate = step.first_open
     return {**(gate.result.facts if gate else {}), FACT_STEP: step.step.id}
+
+
+def freeze(ctx, pipeline, subject):
+    """What keeps the code frozen: the first applicable blocks_code step that has not passed.
+
+    Returns an OpenStep (step, text key, facts, and gate and reason for an UNKNOWN gate) or
+    None. A step without gates is open with its own text; an UNKNOWN gate is open. Unlike
+    the status line, a passed blocks_code step never freezes, whatever precedes it. Pass
+    the context of the subject's own checkout.
+    """
+    for step in pipeline.steps:
+        if step.blocks_code and step_applies(step, subject):
+            found = open_step(ctx, step, subject)
+            if found is not None:
+                return found
+    return None
 
 
 def position(ctx, pipeline, subject):

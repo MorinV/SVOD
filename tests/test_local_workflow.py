@@ -346,6 +346,21 @@ class LocalWorkflowTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'result'):
             self.recorded_delivery()
 
+    def test_code_blocking_step_entry_and_gate_gate_readiness(self):
+        """checks refuses at the blocks_code step while its entry blocks or freeze() holds it."""
+        self.declaration['steps'][1]['entry'] = [{'gate': 'artifact', 'params': {'path': 'permit'},
+                                                  'severity': 'block', 'text': 'local.contract'}]
+        self.save_declaration()
+        with self.assertRaisesRegex(ValueError, 'readiness prerequisites pending at consent'):
+            local.checks(self.root, 'demo-task')
+        (self.task / 'permit').touch()
+        self.consent()
+        (self.task / 'permit').unlink()
+        with self.assertRaisesRegex(ValueError, 'readiness prerequisites pending at consent'):
+            local.checks(self.root, 'demo-task')
+        (self.task / 'permit').touch()
+        self.assertTrue(local.checks(self.root, 'demo-task')['passed'])
+
     def test_conditional_required_step_is_honored(self):
         self.declaration['steps'].append({'id': 'conditional', 'when': 'not_selected',
             'required': True, 'text': 'local.result', 'gates': [
