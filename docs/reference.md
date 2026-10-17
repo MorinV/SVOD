@@ -764,6 +764,12 @@ Core keys (all required in every core locale file):
 | `wizard.write_failed` | `{reason}` (the keys that would differ) |
 | `wizard.hooks_manual` | `{command}` |
 | `wizard.hooks_failed` | `{command}`, `{code}` |
+| `setup.no_source`, `setup.not_tty` | — |
+| `setup.prompt_source` | `{default}` |
+| `setup.git_failed` | `{reason}`, `{path}` |
+| `setup.committed` | `{sha}`, `{path}` |
+| `setup.stopped` | `{step}`, `{path}` |
+| `setup.done` | `{path}` |
 | `doctor.config_ok` | `{count}` |
 | `doctor.config_fail` | `{error}` |
 | `doctor.services_none`, `doctor.copy_none`, `doctor.evidence_off`, `doctor.knowledge_none` | — |
@@ -963,6 +969,8 @@ gate:
 | `ask <query>` | `<question>`, `--context`, `--none` | adds a question at the end of the subject's questions file, or writes `none` with `--none`; see [Questions before work](#questions-before-work); nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
 | `answer <query>` | `--q <n>`, `<text>` | writes the person's answer under question `n` of the subject's questions file with the approver, the date and the prompt digest of a fresh human mark; see [Questions before work](#questions-before-work); nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
 | `new <directory>` | `--template standard\|task` | creates an absent directory from installed templates without a pre-existing store; default standard, never merges or overwrites; `--template local`, retired in 0.6, is a load error (`error.load`, `new.template_retired`) naming `standard` | 0 created, 1 refused, 2 retired or unknown template |
+| `new <directory>` | `--template standard\|task\|local` | creates an absent directory from installed templates without a pre-existing store; default local, never merges or overwrites | 0 created, 1 refused |
+| `setup <directory>` | `--template standard\|task\|local`, `--from`, `--to`, `--locale en\|ru`, `--login`, `--email`, `--service <name>=<path>`, `--autonomy <pipeline>=<level>`, `--checks <service>=<command>`, `--hooks project\|global\|none` | makes an instance in one command: `new`, `git init` and a first commit, `install`, `init --wizard`, the hooks; see [Setup](#setup) | 0 done; the code of the step that failed (1 also for git and an existing directory); 2 refused before anything is made: no `--login` without a terminal, a bad `--service`, no source or no ref |
 | `do <action> <query> [-- args]` | `--list`, `--force`, `--timeout <seconds>` | runs the [action](#actions) script `<profile>/actions/<action>.sh` for the one existing subject the query resolves to, in the store root, with the output not captured; extra args after `--` go to the script; `--list` prints every action with its description; an action of a step the subject has not reached is refused with `do.not_current` unless `--force`; `--timeout` replaces the 600 s limit | the exit code of the script (124 after the timeout); 2 unknown action, missing arguments, not found, ambiguous, a step not reached without `--force`, a bad `--timeout` or the script did not start |
 | `hook <event>` | — | answers one agent hook event, `session-start`, `prompt` or `pre-tool`, read as JSON on stdin; see [Hooks](#hooks) | 0 always |
 | `init` | `--login`, `--email`, `--force` | writes the local config; without `--login` asks at a terminal, and fails without one; the email defaults to `git config user.email`; an existing file is kept unless `--force` | 0 written, 1 exists, 2 no login or no `local_config` |
@@ -994,6 +1002,18 @@ Every file under `<profile>/records/<pipeline>/` is copied, with these placehold
 | `{date}` | today, ISO |
 
 A value YAML would read differently is written as a quoted string. A record whose directory holds anything is refused with `record.exists` (exit 1) and nothing is written; an empty directory is filled. No skeleton files: `record.no_skeleton`. Nothing is committed. The standard template ships only `card.md` in `profile/records/{task,feature,project,research}/` (`type: card`, `kind`, `key`, `services`, `parent`, `tags`, `status: open`, the research card also `outcome:`; the title and the empty sections the step skill fills); an instance adds files of its own there. No `questions.md` and no step artifact is made, since an artifact gate would count a skeleton as written: a new task naming its services stands at its questions step, which asks for `questions.md` (or `svod ask --none`), and its contract step then asks for `contract.md`; a new feature, project or research stands at its first step, which asks for `brief.md`, `vision.md` or `question.md`.
+### Setup
+
+`svod setup <directory>` does what five commands do, each step calling the function of its command:
+
+1. `svod new <directory> --template <template>`, `standard` by default; `--locale` is written to `svod.yaml`;
+2. `git init -b main`;
+3. `svod install --from <source> --to <ref>`. The source is `--from`, else where the running `svod` was installed from, read from the `direct_url.json` of its distribution (PEP 610): the URL and the requested revision of `pip install git+<url>@<ref>`, the directory of `pip install [-e] <dir>`. An install from an index or an archive tells nothing: at a terminal the source is asked (`setup.prompt_source`, the Svod repository by default), without one it is refused with `setup.no_source`. The ref is `--to`, else the one installed, else the newest `vX.Y.Z` tag of the source;
+4. `svod init --wizard` with `--login`, `--email`, `--service`, `--autonomy`, `--checks`, see [the wizard](#the-wizard); a `--service` path is relative to the new directory;
+5. one commit of the whole directory but what its `.gitignore` keeps out (the local config), `setup.committed`; when git has no `user.name` or `user.email`, the login and email of the local config stand in;
+6. the hooks, `--hooks`, at a terminal asked last (`wizard.prompt_hooks`), registered as by the wizard after the commit, so `.claude/` with the paths of this machine stays out of it. The script is `integrations/setup-claude.sh` next to the package, else in the source directory, else in a clone of the ref; it runs with the directory of the running Python first on `PATH`, so the hooks run the Python that has this `svod` (a virtualenv or pipx install).
+
+It asks only at a terminal and only when `--login` or `--hooks` is missing; then the wizard asks every question the flags do not answer. Without a terminal a missing `--login` is refused with `setup.not_tty` and `--hooks` defaults to `none`. A missing login, a bad `--service`, no source and no ref are refused before the directory is made. A failed step stops with `setup.stopped`, which names it; the directory is kept, to finish the remaining steps by hand or to remove. It ends with `setup.done`. `setup` is run by the engine at hand, never handed over to a [copy](#vendored-copy) in `.svod/`.
 
 ### The wizard
 

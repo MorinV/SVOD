@@ -25,22 +25,47 @@ The engine knows nothing about your team. Everything specific — pipelines, ext
 
 ## Quickstart
 
-Requires Python 3.10+ and Git. The standard template makes a store next to your service repositories:
+Requires Python 3.10+ and Git. An instance of Svod is a store next to your project repositories:
 
 ```bash
 pip install git+https://github.com/MorinV/SVOD@v0.5.0
-svod new my-work --template standard
-cd my-work && git init && svod init --wizard
+svod setup ~/Projects/svod
 ```
 
-The wizard asks for your login and email, the service repositories next to the store (`app` at `../app`), the autonomy of each pipeline, the check command of each service and whether to register the Claude Code hooks for this store; every answer can also be given as a flag (`svod init --wizard --service app=../app --checks app="pytest -q" --hooks project`). It edits `svod.yaml` in place, keeping its comments. Then `svod doctor` checks that the store is ready: it loads, the services are git repositories, the hooks are registered with a Python that exists, the copy of the engine matches its MANIFEST, the evidence log can be written, the knowledge index is current and the local config is there.
+`svod setup` makes the standard-template store, a git repository with a first commit, the copy of the engine in `.svod/` (taken from where pip installed `svod`, here `v0.5.0`; `--from`, `--to` choose another) and the Claude Code hooks. At a terminal it asks your login and email, the services, the autonomy of each pipeline, their check commands and where to register the hooks; every answer can be a flag (`--login me --service app=../app --hooks project`).
 
-The store is a dispatcher: records live in `work/projects`, `work/features`, `work/tasks` (a hotfix is a task with `kind: hotfix`, without contract and approval) and `work/research`; the code stays in the services. A task goes card → questions → contract → approval → worktrees (`bash profile/actions/start-task.sh work/tasks/<name>`) → checks (`profile/actions/checks.sh`, the command of each service from `--checks`) → delivery → `status: done`. Each step names its skill: `svod-task`, `svod-feature`, `svod-project`, `svod-research`, `svod-questions`. Details: the `README.md` of the new store.
+Put the project repositories next to it and name them as services:
 
 ```bash
-svod status work/tasks/example            # stops at the card until it names its services
-svod active                               # projects, features, tasks, research
+git clone <your repository> ~/Projects/app
+cd ~/Projects/svod && svod init --service app=../app && svod doctor
 ```
+
+The first task: start Claude Code in `~/Projects/svod` and ask for the task. The agent writes `work/tasks/<name>/card.md` after `work/tasks/example/`, the questions and the contract; you approve in the chat ("Approved <name>"); then the worktree of each service is made by
+
+```bash
+svod do start-task work/tasks/<name>      # a worktree per service, listed in work.yaml
+svod status work/tasks/<name>             # where the task stands and what is next
+```
+
+The store is a dispatcher: records live in `work/projects`, `work/features`, `work/tasks` (a hotfix is a task with `kind: hotfix`) and `work/research`; the code stays in the services. A task goes card → questions → contract → approval → worktrees → checks (`svod do checks`) → delivery → `status: done`; each step names its skill (`svod-task`, `svod-feature`, `svod-project`, `svod-research`, `svod-questions`). Details: the `README.md` of the new store and [docs/reference.md](docs/reference.md#setup).
+
+### Local template: compact local work
+
+```bash
+svod new demo-store --template local
+cd demo-store
+git init
+svod init --login your-login
+svod validate
+svod render local
+```
+
+The local template takes each task through contract → approval → checks → deliver. A task is `tasks/<name>/` with a card, `contract.md` and `testing/plan.yaml`; the plan names a clean Git checkout of the source and the command that checks it. [docs/local-workflow.md](docs/local-workflow.md) defines the terms and walks through the first task.
+
+Ask for the position of one task with `svod status tasks/<name>` (`--format json` for tools). In this template the session-start and prompt hooks print nothing; approval marking and the edit guards still work. `svod local checks tasks/<name>` runs the command once on committed source, and `svod local deliver tasks/<name>` records completion. Completion stays valid after the source checkout is removed and breaks when a recorded file is edited; merge, push and deployment remain separate steps.
+
+The store ships `AGENTS.md` and two skills: `svod-efficient-execution` for running a task, `svod-pipeline` for changing the process.
 
 **Svod develops itself with Svod.** The instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd) is a standard-template store next to a clone of this repository: the work on the engine is recorded there as features, tasks and research, with their questions, contracts, approvals and evidence log. The layout and what the first runs found: [docs/dogfooding.md](docs/dogfooding.md).
 

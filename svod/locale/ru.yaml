@@ -128,6 +128,14 @@ wizard:
   hooks_failed: "{command} завершился с кодом {code}"
   aborted: "Ввод закончился: ничего не записано"
   next: "Дальше: svod doctor"
+setup:
+  no_source: "Не понять, откуда установлен этот svod: указать --from <git URL или клон Svod>"
+  prompt_source: "Какой Svod установить, git URL или клон [{default}]: "
+  not_tty: "svod setup спрашивает в терминале; без него указать --login <логин> и при нужде --email <почта>, --service <имя>=<путь>, --autonomy <пайплайн>=<уровень>, --checks <сервис>=\"<команда>\", --hooks project|global|none, --from <источник>, --to <ref>"
+  git_failed: "{reason} в {path}"
+  committed: "Первый коммит {sha} в {path}"
+  stopped: "svod setup остановился на шаге {step}; {path} сохранён: доделать этот шаг и остальные там или удалить каталог и запустить svod setup снова"
+  done: "Инстанс готов: {path}. Дальше: склонировать рядом репозитории проектов, добавить их через svod init --service <имя>=../<имя>, затем svod doctor"
 doctor:
   config_ok: "svod.yaml и профиль загружаются: пайплайнов {count}"
   config_fail: "стор не загружается: {error}"

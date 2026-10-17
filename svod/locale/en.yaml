@@ -128,6 +128,14 @@ wizard:
   hooks_failed: "{command} exited with {code}"
   aborted: "End of input: nothing written"
   next: "Next: svod doctor"
+setup:
+  no_source: "Cannot tell where this svod was installed from: give --from <git URL or clone of Svod>"
+  prompt_source: "Svod to install, a git URL or a clone [{default}]: "
+  not_tty: "svod setup asks at a terminal; without one give --login <login> and, as needed, --email <email>, --service <name>=<path>, --autonomy <pipeline>=<level>, --checks <service>=\"<command>\", --hooks project|global|none, --from <source>, --to <ref>"
+  git_failed: "{reason} in {path}"
+  committed: "First commit {sha} in {path}"
+  stopped: "svod setup stopped at {step}; {path} is kept: finish that step and the rest there, or remove it and run svod setup again"
+  done: "Instance ready: {path}. Next: clone the project repositories next to it, add them with svod init --service <name>=../<name>, then svod doctor"
 doctor:
   config_ok: "svod.yaml and the profile load: {count} pipelines"
   config_fail: "the store does not load: {error}"

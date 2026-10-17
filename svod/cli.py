@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, NoReturn
 
 from svod import __version__
 from svod.hooks import EVENTS, run as run_hook
-from svod.launcher import launch
+from svod.launcher import Launch, launch, split_argv
 from svod.locale import error_locale
 from svod.scaffold import DEFAULT_TEMPLATE, RETIRED, TEMPLATES
 
@@ -42,6 +42,8 @@ CMD_INSTALL = "install"
 CMD_UPDATE = "update"
 CMD_MIGRATE = "migrate"
 CMD_NEW = "new"
+CMD_SETUP = "setup"
+CMD_LOCAL = "local"
 CMD_DO = "do"
 CMD_KNOWLEDGE = "knowledge"
 CMD_RETRO = "retro"
@@ -104,6 +106,11 @@ def build_parser() -> StatusParser:
     new.add_argument("--template", type=template_name, default=DEFAULT_TEMPLATE,
                      metavar="{" + ",".join(TEMPLATES) + "}",
                      help=f"packaged template, {DEFAULT_TEMPLATE} by default")
+    new.add_argument("--template", choices=("local", "task", "standard"), default="local")
+    add_setup_parser(commands)
+    local = commands.add_parser(CMD_LOCAL, help="run the compact local workflow")
+    local.add_argument("action", choices=("prepare", "checks", "verify", "deliver"))
+    local.add_argument("query", help="exact task path, name or supported key")
     do = commands.add_parser(CMD_DO, help="run an action script of the profile for a subject")
     do.add_argument("name", nargs="?", metavar="action",
                     help="action name: <profile>/actions/<name>.sh")
@@ -209,11 +216,29 @@ def add_retro_parser(commands: argparse._SubParsersAction) -> None:
                        help="print what each rule saw and the threshold it compared with")
 
 
-def add_wizard_arguments(init: argparse.ArgumentParser) -> None:
+def add_setup_parser(commands: argparse._SubParsersAction) -> None:
+    """The setup command: new, git init, install, init --wizard and hooks in one."""
+    from svod.scaffold import TEMPLATES
+    setup = commands.add_parser(CMD_SETUP, help="make an instance: new, git init and a first "
+                                "commit, install, init --wizard, hooks")
+    setup.add_argument("directory", help="new destination directory; must not exist")
+    setup.add_argument("--template", choices=TEMPLATES, default="standard")
+    setup.add_argument("--from", dest="source",
+                       help="git URL or local clone of Svod; where this svod came from by default")
+    setup.add_argument("--to", dest="ref",
+                       help="tag or branch; the one installed, else the newest vX.Y.Z")
+    setup.add_argument("--locale", choices=("en", "ru"), help="locale written to svod.yaml")
+    setup.add_argument("--login", help="login of the person")
+    setup.add_argument("--email", help="email of the person, git user.email by default")
+    add_wizard_arguments(setup, wizard=False)
+
+
+def add_wizard_arguments(init: argparse.ArgumentParser, wizard: bool = True) -> None:
     """The flags of svod init --wizard; any of them runs the wizard without a terminal."""
     from svod.wizard import HOOKS_CHOICES
-    init.add_argument("--wizard", action="store_true",
-                      help="ask for the services, autonomy, checks and hooks too")
+    if wizard:
+        init.add_argument("--wizard", action="store_true",
+                          help="ask for the services, autonomy, checks and hooks too")
     init.add_argument("--service", dest="services", action="append", metavar="NAME=PATH",
                       help="a service repository next to the store; repeatable")
     init.add_argument("--autonomy", action="append", metavar="PIPELINE=LEVEL",
@@ -604,6 +629,9 @@ def run(args: argparse.Namespace) -> int:
         except (OSError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
             return EXIT_FINDINGS
+    if args.command == CMD_SETUP:
+        from svod.setup import setup
+        return setup(args)
     root: Path | None
     if args.root:
         root = Path(args.root).resolve()
@@ -720,7 +748,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     json_status = CMD_STATUS in argv and (
         "--format=json" in argv
         or any(a == "--format" and b == "json" for a, b in zip(argv, argv[1:], strict=False)))
-    launched = launch(argv)
+    launched = launch(argv) if split_argv(argv)[1] != CMD_SETUP else Launch()
     if launched.code is not None:
         return launched.code
     parser = build_parser()
