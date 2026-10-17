@@ -5,7 +5,7 @@ key:
 services: [svod]
 parent: work/features/0.5-release
 tags: [hooks, external-effects, engine]
-status: open
+status: done
 ---
 
 # A negated go-ahead must not lift the external-effects refusal

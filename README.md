@@ -28,12 +28,12 @@ The engine knows nothing about your team. Everything specific — pipelines, ext
 Requires Python 3.10+ and Git. The standard template makes a store next to your service repositories:
 
 ```bash
-pip install git+https://github.com/MorinV/SVOD@v0.4.0
+pip install git+https://github.com/MorinV/SVOD@v0.5.0
 svod new my-work --template standard
 cd my-work && git init && svod init --wizard
 ```
 
-The wizard asks for your login and email, the service repositories next to the store (`app` at `../app`), the autonomy of each pipeline, the check command of each service and whether to register the Claude Code hooks for this store; every answer can also be given as a flag (`svod init --wizard --service app=../app --checks app="pytest -q" --hooks project`). It edits `svod.yaml` in place, keeping its comments. Then `svod doctor` checks that the store is ready: it loads, the services are git repositories, the hooks are registered with a Python that exists, the copy of the engine matches its MANIFEST, the evidence log can be written, the knowledge index is current and the local config is there. `init --wizard` and `doctor` are newer than 0.4.0: until the next release is tagged, install without `@v0.4.0`.
+The wizard asks for your login and email, the service repositories next to the store (`app` at `../app`), the autonomy of each pipeline, the check command of each service and whether to register the Claude Code hooks for this store; every answer can also be given as a flag (`svod init --wizard --service app=../app --checks app="pytest -q" --hooks project`). It edits `svod.yaml` in place, keeping its comments. Then `svod doctor` checks that the store is ready: it loads, the services are git repositories, the hooks are registered with a Python that exists, the copy of the engine matches its MANIFEST, the evidence log can be written, the knowledge index is current and the local config is there.
 
 The store is a dispatcher: records live in `work/projects`, `work/features`, `work/tasks` (a hotfix is a task with `kind: hotfix`, without contract and approval) and `work/research`; the code stays in the services. A task goes card → questions → contract → approval → worktrees (`bash profile/actions/start-task.sh work/tasks/<name>`) → checks (`profile/actions/checks.sh`, the command of each service from `--checks`) → delivery → `status: done`. Each step names its skill: `svod-task`, `svod-feature`, `svod-project`, `svod-research`, `svod-questions`. Details: the `README.md` of the new store.
 
@@ -154,7 +154,7 @@ svod update           # later: replace the copy, migrate the store, show the cha
 
 ## Status
 
-Early. Version 0.4 hardens the hooks (shell commands, the approval mark, a store that does not load), makes the templates the one copy, and ships the local template with an example task. New features, the local template among them, are opt-in for an existing profile; expect the format to change before 1.0. Compatibility and migration notes: [CHANGELOG.md](CHANGELOG.md). The release is tagged `v0.4.0` once it is published; until then `svod install` needs `--to <ref>`.
+Early. Version 0.5 makes the store a dispatcher over several service repositories: the standard template with project, feature, task and research pipelines, questions before work, actions as scripts, a command gate, autonomy levels, an evidence log with a retrospective, and a knowledge base. Svod develops itself through its own store. Every new key of `svod.yaml` is optional for an existing store; expect the format to change before 1.0. Compatibility and migration notes: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

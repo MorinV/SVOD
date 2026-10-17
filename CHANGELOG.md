@@ -6,6 +6,8 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-17
+
 ### Added
 
 - Tree of works: `active.children` nests open children (by `parent`) under their parent in `svod active` at any depth, `svod status` lists a parent's children after the marks (`status.children`, `status.child`, `status.child_done`, `status.child_open`) and `--format json` gives each position `children`; shared enumeration in `svod.relations`.
@@ -32,6 +34,10 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 - `svod.hooks` is a package (`protocol`, `shell`, `store`, `prompt`, `guard`, `events`) with the same public names; the pre-tool code freeze uses `svod.position.freeze`, and `hook.approval_marked_unnamed` is a core locale key (`svod.keys`).
 - Code style: `ruff check` passes on the repository config outside three files under parallel edit, `mypy --ignore-missing-imports svod` passes, the core and hook modules carry type annotations, and the local workflow raises `LocalWorkflowError` and `PolicyError` (`svod.errors`, subclasses of both `SvodError` and `ValueError`) instead of bare `ValueError`.
 - Polish of the first dogfooding run: `knowledge/README.md` and files whose frontmatter has neither `title` nor `tags` are not knowledge notes; the setup scripts link the store's own `skills/*/SKILL.md` before `.svod/skills` and the clone's, print `-> engine: <file>` and take `--engine <clone>` to put a clone on `PYTHONPATH` of the hooks; the example task of the standard template is `status: archived`, so a new store has no open work; the reference has one paragraph on the human mark.
+
+### Migration
+
+A store made by 0.4 keeps working: every new key of `svod.yaml` (`services`, `autonomy`, `external_effects`, `evidence`, `knowledge`, `workspace_gate`) is optional. The standard template is new: `svod new <dir> --template standard`. A store made from the standard template before this release should copy the template's `profile/actions`, `profile/gates/work.py`, pipelines, locale and skills again and add `workspace_gate: work_tree` to its `svod.yaml`: the worktree naming, the questions step and the code freeze changed. Run the setup scripts again so the hooks and the skills of the store are registered.
 
 ## [0.4.0] - 2026-10-17
 

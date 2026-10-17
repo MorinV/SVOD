@@ -5,7 +5,7 @@ key:
 services: [svod]
 parent: work/features/0.5-release
 tags: [autonomy, engine, template-standard]
-status: open
+status: done
 ---
 
 # Autonomy level by the kind of work, not only by the pipeline

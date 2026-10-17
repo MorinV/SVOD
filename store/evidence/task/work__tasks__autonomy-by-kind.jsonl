@@ -8,3 +8,8 @@
 {"at": "2026-10-17T13:45:34+00:00", "event": "action_run", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": "implement", "facts": {"action": "start-task", "code": 0, "seconds": 0.114}}
 {"at": "2026-10-17T13:46:04+00:00", "event": "action_run", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": "implement", "facts": {"action": "start-task", "code": 0, "seconds": 0.115}}
 {"at": "2026-10-17T13:47:36+00:00", "event": "action_run", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": null, "facts": {"action": "checks", "code": 1, "seconds": 83.634}}
+{"at": "2026-10-17T13:53:01+00:00", "event": "action_run", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": null, "facts": {"action": "checks", "code": 0, "seconds": 92.071}}
+{"at": "2026-10-17T13:57:40+00:00", "event": "step_passed", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": "implement", "facts": {}}
+{"at": "2026-10-17T13:57:40+00:00", "event": "step_passed", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": "checks", "facts": {}}
+{"at": "2026-10-17T13:57:40+00:00", "event": "position_changed", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": null, "facts": {"from": "implement", "to": null}}
+{"at": "2026-10-17T13:57:54+00:00", "event": "action_run", "subject": "work/tasks/autonomy-by-kind", "pipeline": "task", "step": null, "facts": {"action": "cleanup", "code": 0, "seconds": 0.115}}

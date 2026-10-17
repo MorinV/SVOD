@@ -5,7 +5,7 @@ key:
 services: [svod]
 parent: work/features/0.5-release
 tags: [template-standard, command-gate, checks]
-status: open
+status: done
 ---
 
 # Turn on the command gate in the standard template when services are declared

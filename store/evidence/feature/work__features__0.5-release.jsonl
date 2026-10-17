@@ -1,1 +1,4 @@
 {"at": "2026-10-17T12:40:25+00:00", "event": "position_changed", "subject": "work/features/0.5-release", "pipeline": "feature", "step": "questions", "facts": {"from": null, "to": "questions"}}
+{"at": "2026-10-17T13:57:57+00:00", "event": "step_passed", "subject": "work/features/0.5-release", "pipeline": "feature", "step": "questions", "facts": {}}
+{"at": "2026-10-17T13:57:57+00:00", "event": "step_passed", "subject": "work/features/0.5-release", "pipeline": "feature", "step": "breakdown", "facts": {}}
+{"at": "2026-10-17T13:57:57+00:00", "event": "position_changed", "subject": "work/features/0.5-release", "pipeline": "feature", "step": "approve", "facts": {"from": "questions", "to": "approve"}}
