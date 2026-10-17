@@ -22,7 +22,7 @@ workspace: /absolute/path/to/clean/source
 command: [python3, -m, unittest, discover, -s, tests]
 ```
 
-The source checkout must contain a commit and be clean, including untracked files. Task records and logs must be outside it. An ordinary `git worktree add` provides isolation; Svod adds no source snapshot/import lifecycle. Set Git permissions according to the project; this template does not grant commit, merge, push or deploy consent. Do not copy unrelated dirty input automatically.
+The source checkout must contain a commit and be clean, including untracked files, before and after the command: Svod runs it with `PYTHONDONTWRITEBYTECODE=1`, so Python leaves no `__pycache__`; other build output belongs in `.gitignore`. Task records and logs must be outside it. An ordinary `git worktree add` provides isolation; Svod adds no source snapshot/import lifecycle. Set Git permissions according to the project; this template does not grant commit, merge, push or deploy consent. Do not copy unrelated dirty input automatically.
 
 `command: null` explicitly means no command selected, not successful testing. This can support non-code work when its contract and selected policy permit it; substantive acceptance still needs honest evidence.
 

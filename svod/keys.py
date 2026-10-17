@@ -106,6 +106,8 @@ HOOK_APPROVAL_JOINERS = "hook.approval_joiners"
 HOOK_DENY_APPROVAL = "hook.deny_approval"
 HOOK_DENY_PLAN = "hook.deny_plan"
 HOOK_DENY_MAIN = "hook.deny_main"
+HOOK_DENY_MARK = "hook.deny_mark"
+HOOK_DENY_BROKEN = "hook.deny_broken"
 DESCRIBE_PREFIX = "gate."
 DESCRIBE_EXISTS = "gate.exists"
 DESCRIBE_ARTIFACT_PATH = "gate.artifact_path"
@@ -236,5 +238,7 @@ CORE_KEYS = (
     HOOK_DENY_APPROVAL,
     HOOK_DENY_PLAN,
     HOOK_DENY_MAIN,
+    HOOK_DENY_MARK,
+    HOOK_DENY_BROKEN,
     *DESCRIBE_KEYS,
 )

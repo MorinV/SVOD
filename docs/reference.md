@@ -470,6 +470,8 @@ Core keys (all required in every core locale file):
 | `hook.deny_approval` | `{fields}`, `{file}` |
 | `hook.deny_plan` | `{keys}`, `{text}` |
 | `hook.deny_main` | `{main}` |
+| `hook.deny_mark` | `{file}` |
+| `hook.deny_broken` | `{reason}` |
 | `init.written`, `init.exists` | `{path}` |
 | `init.not_configured` | `{field}` |
 | `init.need_login`, `init.prompt_login` | — |
@@ -609,7 +611,7 @@ gate:
 
 ## Hooks
 
-`svod hook <event>` is registered as a command hook of Claude Code or Codex (`integrations/setup-claude.sh`, `integrations/setup-codex.sh`). Both agents send the same event JSON (`hook_event_name`, `cwd`, `prompt`, `tool_name`, `tool_input`); the answer is `hookSpecificOutput` with `hookEventName` and either `additionalContext` or `permissionDecision: deny` with `permissionDecisionReason`. Nothing to say prints nothing. The exit code is always 0. A store that does not load is reported as `hook.engine_broken` in `additionalContext` instead of silence (for `pre-tool`, only for file edits).
+`svod hook <event>` is registered as a command hook of Claude Code or Codex (`integrations/setup-claude.sh`, `integrations/setup-codex.sh`). Both agents send the same event JSON (`hook_event_name`, `cwd`, `prompt`, `tool_name`, `tool_input`); the answer is `hookSpecificOutput` with `hookEventName` and either `additionalContext` or `permissionDecision: deny` with `permissionDecisionReason`. Nothing to say prints nothing. The exit code is always 0. A store that does not load is reported as `hook.engine_broken` in `additionalContext` instead of silence (for `pre-tool`, only for file edits in the store); a write outside the store is then refused with `hook.deny_broken`, since nothing guards it until the store loads again.
 
 **The store of the session** is the one holding `CLAUDE_PROJECT_DIR`, else the event `cwd`; else the store at `--root`, a fallback for sessions in a work directory outside the store. No store: silence.
 
@@ -631,6 +633,7 @@ Optional `profile_config.agent_context` booleans `session_summary`, `prompt_posi
 1. **Approval fields.** A file whose path ends with the `file` of an `approval` step gate of any pipeline is a metadata file; its fields are `<marker>`, `<marker>_by` and `<marker>_sha`. Refused: `Write` that changes their lines, `Edit`/`MultiEdit` whose old or new text names one, an `apply_patch` section whose changed lines name one, and a `Bash` command naming the file and a field that writes into it (`>`/`>>` to it, `sed -i`, `perl -i`, `yq -i`, `tee` to it, `cp`/`mv` onto it, a `python -c` or heredoc script holding its path as a string literal). Text: `hook.deny_approval`. Only `svod approve` writes them.
 2. **Read-only main checkout.** With `main_checkout_read_only` in the `svod.yaml` of the store holding the path: a path in the first checkout of `git worktree list` of that store, not in a nested repository and not ignored by git. Text: `hook.deny_main`.
 3. **Frozen code.** With `workspace_gate`: the nearest directory above the path holding `.git` is a work directory when a key gate finds a key in its name and `worktrees(ctx, {key})` of the workspace gate returns it. Each existing, not archived subject of that key (in the store and its other checkouts) is checked: the first gate of a `blocks_code` step that does not pass refuses the edit, with `hook.deny_plan` carrying its step text. A key without a subject is not refused.
+4. **Shell commands.** `Bash` is checked against the same rules through the paths it names: every token of the command that exists or looks like a file (a suffix or a directory part) read as a path from its `cwd`; the `cwd` itself counts for the code freeze. A command made only of programs known not to write files (`cat`, `ls`, `grep`, `git status`/`log`/`diff`, `svod`, …) without a redirection is let through; an interpreter, an in-place edit, `git checkout`/`reset`/`stash`/… or an unknown program counts as a write. The approval mark file is refused to every write, by name (`hook.deny_mark`).
 
 Edits by `Bash` are not checked by rules 2 and 3.
 

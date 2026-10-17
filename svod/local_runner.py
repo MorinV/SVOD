@@ -14,6 +14,7 @@ from .loader import load_runtime
 from .resolve import exact_pairs, key_pairs
 
 COMMAND_TIMEOUT = 600
+NO_BYTECODE_ENV = 'PYTHONDONTWRITEBYTECODE'
 
 
 def state(root, key, *, recorded=False):
@@ -114,7 +115,8 @@ def checks(root, key):
             try:
                 child = subprocess.Popen(policy['command'], cwd=policy['workspace'],
                                          stdout=output, stderr=subprocess.STDOUT,
-                                         shell=False, start_new_session=True)
+                                         shell=False, start_new_session=True,
+                                         env={**os.environ, NO_BYTECODE_ENV: '1'})
                 try:
                     code = child.wait(timeout=COMMAND_TIMEOUT)
                 finally:

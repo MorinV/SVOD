@@ -77,6 +77,34 @@ COPY_TO = r"\b(?:cp|mv)\b"
 COPY_END = r"['\"]?\s*(?:$|[|;&])"
 QUOTED = r"['\"][^'\"\n]*{path}['\"]"
 PYTHON_SCRIPT = re.compile(r"\bpython[\d.]*\b" + SEGMENT + r"(?:\s-c\b|<<)", re.MULTILINE)
+SHELL_OPERATORS_NEWLINE = "\n"
+SHELL_OPERATORS = frozenset({"|", "||", "&&", ";", ";;", "&", "|&", "(", ")", "{", "}"})
+REDIRECT_CHAR = ">"
+ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+OPTION_PREFIX = "-"
+OPTION_VALUE = "="
+PATH_SEPARATOR = "/"
+MAX_TOKENS = 500
+COMMAND_PREFIXES = frozenset({"env", "command", "builtin", "time", "nice", "exec"})
+READ_ONLY_COMMANDS = frozenset({
+    "cat", "ls", "grep", "egrep", "fgrep", "rg", "ag", "head", "tail", "less", "more", "wc",
+    "find", "stat", "file", "diff", "cmp", "pwd", "which", "type", "whereis", "echo", "printf",
+    "true", "false", "test", "[", "[[", "cd", "pushd", "popd", "export", "set", "unset", "date",
+    "sleep", "tree", "du", "df", "sort", "uniq", "cut", "tr", "awk", "sed", "jq", "yq",
+    "basename", "dirname", "realpath", "readlink", "md5sum", "sha256sum", "shasum", "hexdump",
+    "xxd", "strings", "column", "nl", "tac", "rev", "comm", "join", "paste", "fold", "seq",
+    "uname", "hostname", "whoami", "id", "git", "svod",
+})
+GIT_COMMAND = "git"
+GIT_VALUE_OPTIONS = ("-C", "-c")
+GIT_WRITE_SUBCOMMANDS = frozenset({
+    "checkout", "switch", "reset", "stash", "merge", "rebase", "cherry-pick", "revert",
+    "apply", "am", "pull", "clean", "rm", "mv", "restore",
+})
+FIND_COMMAND = "find"
+FIND_WRITE_FLAGS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})
+IN_PLACE_COMMANDS = frozenset({"sed", "perl", "yq"})
+IN_PLACE_RE = re.compile(IN_PLACE)
 PYTHON_HEREDOC = re.compile(
     r"<<[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1[ \t]*\n(.*?)^\2\s*$",
     re.MULTILINE | re.DOTALL,
@@ -508,6 +536,105 @@ def bash_writes_approval(command, guarded):
     return False
 
 
+def shell_tokens(command):
+    """Tokens of a shell command line by line, operators as tokens of their own.
+
+    A line shlex cannot parse is split on blanks; a long command is cut at MAX_TOKENS.
+    """
+    tokens = []
+    for line in command.splitlines():
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        try:
+            tokens += list(lexer)
+        except ValueError:
+            tokens += line.split()
+        tokens.append(SHELL_OPERATORS_NEWLINE)
+    return tokens[:MAX_TOKENS]
+
+
+def command_segments(tokens):
+    """Simple commands of a token list, split at the shell operators."""
+    segments, current = [], []
+    for token in tokens:
+        if token in SHELL_OPERATORS or token == SHELL_OPERATORS_NEWLINE:
+            if current:
+                segments.append(current)
+            current = []
+        else:
+            current.append(token)
+    if current:
+        segments.append(current)
+    return segments
+
+
+def git_subcommand(words):
+    """Subcommand of a git command line, its options skipped; None without one."""
+    skip = False
+    for word in words:
+        if skip:
+            skip = False
+        elif word in GIT_VALUE_OPTIONS:
+            skip = True
+        elif not word.startswith(OPTION_PREFIX):
+            return word
+    return None
+
+
+def segment_reads_only(segment):
+    """Whether one simple command is known not to write files."""
+    words = [w for w in segment if not ASSIGNMENT_RE.match(w) and w not in COMMAND_PREFIXES]
+    if not words:
+        return True
+    name, rest = Path(words[0]).name, words[1:]
+    if name == GIT_COMMAND:
+        return git_subcommand(rest) not in GIT_WRITE_SUBCOMMANDS
+    if name == FIND_COMMAND:
+        return not any(w in FIND_WRITE_FLAGS for w in rest)
+    if name in IN_PLACE_COMMANDS:
+        return not IN_PLACE_RE.search(KEY_GAP + KEY_GAP.join(rest))
+    return name in READ_ONLY_COMMANDS
+
+
+def bash_reads_only(command):
+    """Whether every simple command of the line is known not to write files.
+
+    A redirection, an interpreter, an unknown program or an in-place edit counts as a write:
+    the guard refuses what it cannot tell apart from an edit.
+    """
+    tokens = shell_tokens(command)
+    if any(REDIRECT_CHAR in token for token in tokens):
+        return False
+    return all(segment_reads_only(segment) for segment in command_segments(tokens))
+
+
+def bash_paths(event, command):
+    """Tokens of the command read as paths from the event cwd that exist or look like a file.
+
+    A word such as `echo` or `x` names no file; `new.md`, `src/x` or an existing path does.
+    """
+    paths = []
+    for token in shell_tokens(command):
+        if token in SHELL_OPERATORS or token == SHELL_OPERATORS_NEWLINE or REDIRECT_CHAR in token:
+            continue
+        if ASSIGNMENT_RE.match(token) or (token.startswith(OPTION_PREFIX) and OPTION_VALUE in token):
+            token = token.split(OPTION_VALUE, 1)[1]
+        if not token or token.startswith(OPTION_PREFIX):
+            continue
+        try:
+            path = absolute(event, token)
+        except (OSError, ValueError, RuntimeError):
+            continue
+        if path.exists() or Path(token).suffix or PATH_SEPARATOR in token:
+            paths.append(path)
+    return paths
+
+
+def inside(root, path):
+    """Whether the path lies in the root directory."""
+    return root is not None and path.is_relative_to(root)
+
+
 def existing_dir(path):
     """Nearest existing directory holding the path, or the path itself."""
     for directory in (path, *path.parents):
@@ -553,17 +680,15 @@ def patch_targets(event, patch):
     return [(path, LINE_SEPARATOR.join(lines)) for path, lines in sections.items()]
 
 
-def main_reason(path):
-    """Refusal when the path is in the main checkout of a store that keeps it read-only.
+def main_checkout(directory):
+    """(store, main checkout) when the directory lies in a read-only main checkout, else None.
 
-    Paths git ignores, nested repositories and other worktrees are not refused.
+    Nested repositories and other worktrees of the store are not the main checkout.
     """
-    from .cli import error_locale
     from .config import find_root, load_config
     from .errors import LoadError
     from .git import run_git, worktree_list
-    from .keys import HOOK_DENY_MAIN
-    store = find_root(existing_dir(path))
+    store = find_root(directory)
     if store is None:
         return None
     try:
@@ -573,15 +698,40 @@ def main_reason(path):
     if not config.main_checkout_read_only:
         return None
     found, _ = worktree_list(store)
-    if not found or not path.is_relative_to(found[0].path):
+    if not found or not directory.is_relative_to(found[0].path):
         return None
     main = found[0].path
-    top = run_git(existing_dir(path), "rev-parse", "--show-toplevel")
+    top = run_git(directory, "rev-parse", "--show-toplevel")
     if not top.ok or Path(top.out).resolve() != main:
         return None
-    if run_git(main, "check-ignore", "-q", "--", str(path)).ok:
-        return None
+    return store, main
+
+
+def ignored_paths(main, paths):
+    """Those of the paths that git ignores in the main checkout, as given."""
+    from .git import run_git
+    if not paths:
+        return set()
+    result = run_git(main, "check-ignore", "--", *(str(p) for p in paths))
+    return set(result.out.splitlines()) if result.ok else set()
+
+
+def main_text(store, main):
+    """Refusal of an edit in the read-only main checkout."""
+    from .cli import error_locale
+    from .keys import HOOK_DENY_MAIN
     return error_locale(store).text(HOOK_DENY_MAIN, main=main)
+
+
+def main_reason(path):
+    """Refusal when the path is in the main checkout of a store that keeps it read-only.
+
+    Paths git ignores, nested repositories and other worktrees are not refused.
+    """
+    found = main_checkout(existing_dir(path))
+    if found is None or str(path) in ignored_paths(found[1], [path]):
+        return None
+    return main_text(*found)
 
 
 class Guard:
@@ -607,19 +757,51 @@ class Guard:
         return self.runtime.locale.text(HOOK_DENY_APPROVAL, fields=FIELDS_SEPARATOR.join(fields),
                                         file=name)
 
+    def mark_text(self):
+        """Refusal of a write of the approval mark, in the locale of the store when readable."""
+        from .approval import MARK_FILE
+        from .cli import error_locale
+        from .keys import HOOK_DENY_MARK
+        return error_locale(self.root).text(HOOK_DENY_MARK, file=MARK_FILE)
+
     def edit_reason(self, path, touches):
         """Refusal of an edit of the path; touches(fields) tells whether it changes them."""
+        from .approval import MARK_FILE
+        if path.name == MARK_FILE:
+            return self.mark_text()
         fields, name = self.fields_of(path)
         if fields and touches(fields):
             return self.approval_text(fields, name)
         return main_reason(path) or self.plan_reason(path)
 
-    def bash_reason(self, command):
-        """Refusal of a shell command writing approval fields."""
-        if not bash_writes_approval(command, self.guarded):
+    def bash_reason(self, event, command):
+        """Refusal of a shell command writing approval fields, the mark, frozen or read-only code."""
+        from .approval import MARK_FILE
+        if bash_writes_approval(command, self.guarded):
+            item = next(i for i in self.guarded if i.parts[-1] in command)
+            return self.approval_text(item.fields, Path(*item.parts).as_posix())
+        if bash_reads_only(command):
             return None
-        item = next(i for i in self.guarded if i.parts[-1] in command)
-        return self.approval_text(item.fields, Path(*item.parts).as_posix())
+        if MARK_FILE in command:
+            return self.mark_text()
+        cwd = event_cwd(event).resolve()
+        reason = self.plan_reason(cwd)
+        if reason:
+            return reason
+        by_dir = {}
+        for path in bash_paths(event, command):
+            by_dir.setdefault(existing_dir(path), []).append(path)
+        for directory, paths in by_dir.items():
+            found = main_checkout(directory)
+            if found is not None:
+                ignored = ignored_paths(found[1], paths)
+                if any(str(p) not in ignored for p in paths):
+                    return main_text(*found)
+            if directory != cwd:
+                reason = self.plan_reason(directory)
+                if reason:
+                    return reason
+        return None
 
     def dir_keys(self, name):
         """Keys the key gates find in, or read as a query from, a directory name."""
@@ -689,7 +871,7 @@ def edit_touches(tool, data, path):
 def tool_reason(guard, event, tool, data):
     """Refusal of the tool call, or None."""
     if tool == BASH_TOOL:
-        return guard.bash_reason(str(data.get(COMMAND_FIELD) or ""))
+        return guard.bash_reason(event, str(data.get(COMMAND_FIELD) or ""))
     if tool == PATCH_TOOL:
         for path, section in patch_targets(event, str(data.get(COMMAND_FIELD) or "")):
             reason = guard.edit_reason(path, lambda fields: any(f in section for f in fields))
@@ -703,6 +885,31 @@ def tool_reason(guard, event, tool, data):
     return guard.edit_reason(path, edit_touches(tool, data, path))
 
 
+def tool_paths(event, tool, data):
+    """Paths a tool call may write: the file of an edit, the files of a patch, those of a command."""
+    if tool == BASH_TOOL:
+        command = str(data.get(COMMAND_FIELD) or "")
+        return [] if bash_reads_only(command) else bash_paths(event, command)
+    if tool == PATCH_TOOL:
+        return [path for path, _ in patch_targets(event, str(data.get(COMMAND_FIELD) or ""))]
+    raw = next((data[f] for f in PATH_FIELDS if isinstance(data.get(f), str) and data[f]), None)
+    return [absolute(event, raw)] if raw is not None else []
+
+
+def broken_reason(guard, event, tool, data):
+    """Refusal of a write outside a store that does not load: nothing guards it until it does.
+
+    Writes inside the store stay allowed, so the store can be repaired; they get the context line.
+    """
+    from .cli import error_locale
+    from .keys import HOOK_DENY_BROKEN
+    paths = tool_paths(event, tool, data)
+    if all(inside(guard.root, path) for path in paths):
+        return None
+    reason = " ".join(str(guard.broken).split())
+    return error_locale(guard.root).text(HOOK_DENY_BROKEN, reason=reason)
+
+
 def pre_tool(event, fallback):
     """Refusal of a tool call that edits approval fields, frozen code or a read-only checkout."""
     tool = event.get(FIELD_TOOL)
@@ -713,8 +920,12 @@ def pre_tool(event, fallback):
     reason = tool_reason(guard, event, tool, data)
     if reason:
         return deny_output(reason)
-    if guard.broken and tool != BASH_TOOL:
-        return context_output(EVENT_PRE_TOOL, broken_text(guard.root, guard.broken))
+    if guard.broken:
+        reason = broken_reason(guard, event, tool, data)
+        if reason:
+            return deny_output(reason)
+        if tool != BASH_TOOL:
+            return context_output(EVENT_PRE_TOOL, broken_text(guard.root, guard.broken))
     return None
 
 

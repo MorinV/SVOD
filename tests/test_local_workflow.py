@@ -252,6 +252,18 @@ class LocalWorkflowTest(unittest.TestCase):
             local.checks(self.root, 'demo-task')
         self.assertFalse((self.task / 'testing/process/command.log').exists())
 
+    def test_python_command_leaves_no_bytecode_in_source(self):
+        """Importing a module of the source writes no __pycache__: the checkout stays clean."""
+        (self.source / 'helper.py').write_text('VALUE = 1\n', encoding='utf-8')
+        self.git(self.source, 'add', '-A')
+        self.git(self.source, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'helper')
+        self.plan['command'] = [sys.executable, '-c', 'import helper; print(helper.VALUE)']
+        self.save_plan()
+        self.consent()
+        result = local.checks(self.root, 'demo-task')
+        self.assertTrue(result['passed'], result)
+        self.assertFalse((self.source / '__pycache__').exists())
+
     def test_command_that_dirties_source_records_failed_post_observation(self):
         self.plan['command'] = [sys.executable, '-c',
                                 'from pathlib import Path; Path("dirty").write_text("changed")']

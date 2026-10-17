@@ -21,6 +21,9 @@ NO_MARK = None
 DENIED_PLAN = f"work directory of {te.KEY} is not allowed"
 DENIED_FIELDS = "plan_approved, plan_approved_by, plan_approved_sha"
 DENIED_MAIN = "is read-only"
+DENIED_MARK = "approval mark"
+DENIED_BROKEN = "writes outside the store are refused"
+MARK_PATH = ".git/svod-approval.json"
 ENGINE_BROKEN = "failed to load"
 POSITION = f"{te.CHANGE_NAME} ({te.KEY})"
 MARKED = "approval mark is recorded"
@@ -137,7 +140,27 @@ class PreToolTest(HookTestCase):
              patch(f"*** Update File: {sb.parent}/{te.SERVICE}/{te.CODE_FILE}\n"
                    f"*** Move to: {wt}/moved.go"), DENIED_PLAN),
             ("bash in work dir before approval", False, wt, bash("echo x > main.go"),
-             NO_OUTPUT),
+             DENIED_PLAN),
+            ("bash in-place edit in work dir before approval", False, wt,
+             bash("sed -i 's/a/b/' main.go"), DENIED_PLAN),
+            ("bash dd in work dir before approval", False, wt,
+             bash("printf x | dd of=main.go"), DENIED_PLAN),
+            ("bash python in work dir before approval", False, wt,
+             bash("python3 -c \"open('main.go', 'w').write('x')\""), DENIED_PLAN),
+            ("bash into work dir from the store before approval", False, store,
+             bash(f"cp /tmp/x.go {wt}/main.go"), DENIED_PLAN),
+            ("bash git checkout in work dir before approval", False, wt,
+             bash("git checkout -- main.go"), DENIED_PLAN),
+            ("bash reads in work dir before approval", False, wt,
+             bash("cat main.go | grep main && git status && git log -1"), NO_OUTPUT),
+            ("bash in work dir after approval", True, wt, bash("echo x > main.go"), NO_OUTPUT),
+            ("bash writes elsewhere before approval", False, store,
+             bash(f"echo x > {sb.root}/{ELSEWHERE}.txt"), NO_OUTPUT),
+            ("write of the approval mark", False, store, write(store / MARK_PATH, "{}"),
+             DENIED_MARK),
+            ("bash writes the approval mark", False, store,
+             bash(f"echo '{{}}' > {MARK_PATH}"), DENIED_MARK),
+            ("bash reads the approval mark", False, store, bash(f"cat {MARK_PATH}"), NO_OUTPUT),
             ("edit in work dir after approval", True, wt, edit(code), NO_OUTPUT),
             ("patch in work dir after approval", True, wt,
              patch(f"*** Update File: {te.CODE_FILE}\n@@\n-a\n+b"), NO_OUTPUT),
@@ -323,6 +346,20 @@ PY"""),
                     self.assertIsNone(reason)
                 else:
                     self.assertIn(expected, reason or "")
+        commands = (
+            ("bash writes a tracked file", f"echo x > {NOTES}", DENIED_MAIN),
+            ("bash tee into a tracked file", f"cat /tmp/x | tee {NOTES}", DENIED_MAIN),
+            ("bash reads a tracked file", f"cat {NOTES} && git diff", NO_OUTPUT),
+            ("bash writes the ignored local config", f"echo x > {LOCAL_CONFIG}", NO_OUTPUT),
+            ("bash writes in the worktree of the store", f"echo x > {side}/{NOTES}", NO_OUTPUT),
+        )
+        for name, command, expected in commands:
+            with self.subTest(case=name):
+                reason = self.run_case(store, bash(command))
+                if expected is None:
+                    self.assertIsNone(reason)
+                else:
+                    self.assertIn(expected, reason or "")
 
     def test_other_tools_and_missing_store(self):
         """Tools that do not edit, and sessions outside any store, are let through."""
@@ -489,24 +526,41 @@ class BrokenStoreTest(unittest.TestCase):
         te.set_config(self.sb, profile="missing")
 
     def test_engine_broken_line(self):
-        """session-start, prompt and an edit get the line; a shell command stays silent."""
+        """session-start, prompt and an edit in the store get the line; a read stays silent.
+
+        A write outside the store is refused: nothing guards it until the store loads again.
+        """
         cwd = str(self.sb.store)
+        outside = self.sb.root / ELSEWHERE / te.CODE_FILE
         cases = (
-            (hooks.EVENT_SESSION_START, {"cwd": cwd}, True),
-            (hooks.EVENT_PROMPT, {"cwd": cwd, "prompt": "hello"}, True),
-            (hooks.EVENT_PRE_TOOL, {"cwd": cwd, "tool_name": "Edit",
-                                    "tool_input": {"file_path": f"{cwd}/{NOTES}"}}, True),
-            (hooks.EVENT_PRE_TOOL, {"cwd": cwd, "tool_name": "Bash",
-                                    "tool_input": {"command": "ls"}}, False),
+            ("session start", hooks.EVENT_SESSION_START, {"cwd": cwd}, hooks.CONTEXT),
+            ("prompt", hooks.EVENT_PROMPT, {"cwd": cwd, "prompt": "hello"}, hooks.CONTEXT),
+            ("edit in the store", hooks.EVENT_PRE_TOOL,
+             {"cwd": cwd, "tool_name": "Edit", "tool_input": {"file_path": f"{cwd}/{NOTES}"}},
+             hooks.CONTEXT),
+            ("edit outside the store", hooks.EVENT_PRE_TOOL,
+             {"cwd": cwd, "tool_name": "Edit", "tool_input": {"file_path": str(outside)}},
+             hooks.DECISION_REASON),
+            ("read command", hooks.EVENT_PRE_TOOL,
+             {"cwd": cwd, "tool_name": "Bash", "tool_input": {"command": "ls"}}, None),
+            ("write command in the store", hooks.EVENT_PRE_TOOL,
+             {"cwd": cwd, "tool_name": "Bash", "tool_input": {"command": f"echo x > {NOTES}"}},
+             None),
+            ("write command outside the store", hooks.EVENT_PRE_TOOL,
+             {"cwd": cwd, "tool_name": "Bash", "tool_input": {"command": f"echo x > {outside}"}},
+             hooks.DECISION_REASON),
         )
-        for event_name, event, speaks in cases:
-            with self.subTest(event=event_name, tool=event.get("tool_name")):
+        for name, event_name, event, field in cases:
+            with self.subTest(case=name):
                 found = hooks.answer(event_name, event)
-                if speaks:
-                    context = json.loads(found)[hooks.OUTPUT][hooks.CONTEXT]
-                    self.assertIn(ENGINE_BROKEN, context)
-                else:
+                if field is None:
                     self.assertIsNone(found)
+                    continue
+                output = json.loads(found)[hooks.OUTPUT]
+                self.assertIn(ENGINE_BROKEN, output[field])
+                if field == hooks.DECISION_REASON:
+                    self.assertEqual(output[hooks.DECISION], hooks.DENY)
+                    self.assertIn(DENIED_BROKEN, output[field])
 
 
 class HookCliTest(HookTestCase):

@@ -116,6 +116,8 @@ hook:
   deny_approval: "The approval fields {fields} of {file} are written only by svod approve after a person approves the plan in the chat, not by editing the file nor by a shell command. Show the plan to the person; after their approval run svod approve <key> in the store."
   deny_plan: "Editing the work directory of {keys} is not allowed until its plan is approved: {text}. After the person approves the plan in the chat: svod approve {keys} in the store."
   deny_main: "The main checkout {main} is read-only: make a worktree of it (git worktree add) and edit there."
+  deny_mark: "The approval mark {file} is left by the prompt hook when a person approves in the chat; it is never written by hand or by a command. Show the plan to the person and wait for their answer."
+  deny_broken: "The pipeline engine failed to load: {reason}. Until the store loads (svod validate), writes outside the store are refused: repair the store first."
 gate:
   exists: "the subject exists"
   artifact_path: "{path} exists"

@@ -14,6 +14,7 @@ set -eu
 
 HOME_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 BASE="$(svod_command "${1:-}")"
+[ -n "${1:-}" ] || echo "Note: without a store argument the hooks guard only sessions started inside a store; to guard work directories next to a store, run again with its path." >&2
 
 register_hooks "$HOME_DIR/settings.json" "$BASE"
 link_skills "$HOME_DIR/skills" "${1:-}"
