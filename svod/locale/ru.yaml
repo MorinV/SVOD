@@ -143,3 +143,4 @@ gate:
   archived: "в архиве"
   git_pushed: "у стора нет коммитов впереди origin"
   git_pushed_repo: "у {repo} нет коммитов впереди origin"
+  command: "{argv} в {where} завершается с кодом 0"

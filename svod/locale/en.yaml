@@ -140,3 +140,4 @@ gate:
   archived: "archived"
   git_pushed: "the store has no commits ahead of origin"
   git_pushed_repo: "{repo} has no commits ahead of origin"
+  command: "{argv} exits with 0 in {where}"

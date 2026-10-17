@@ -84,6 +84,22 @@ def _stop_owned_group(process):
         raise
 
 
+def run_argv(argv, cwd, output, timeout, env=None):
+    """Exit code of argv run in cwd without a shell, stdout and stderr together into output.
+
+    The child leads its own POSIX session, and its group is stopped once it exits or on
+    timeout; subprocess.TimeoutExpired and the errors of starting it propagate. env is added
+    to the environment; bytecode is never written.
+    """
+    child = subprocess.Popen(argv, cwd=cwd, stdout=output, stderr=subprocess.STDOUT,
+                             shell=False, start_new_session=True,
+                             env={**os.environ, **(env or {}), NO_BYTECODE_ENV: "1"})
+    try:
+        return child.wait(timeout=timeout)
+    finally:
+        _stop_owned_group(child)
+
+
 def unready_step(ctx, pipeline, subject):
     """Id of the first applicable blocks_code step whose entry blocks or freeze() stops at.
 
@@ -129,14 +145,7 @@ def checks(root, key):
             output.write(b"No command selected.\n")
         else:
             try:
-                child = subprocess.Popen(policy["command"], cwd=policy["workspace"],
-                                         stdout=output, stderr=subprocess.STDOUT,
-                                         shell=False, start_new_session=True,
-                                         env={**os.environ, NO_BYTECODE_ENV: "1"})
-                try:
-                    code = child.wait(timeout=COMMAND_TIMEOUT)
-                finally:
-                    _stop_owned_group(child)
+                code = run_argv(policy["command"], policy["workspace"], output, COMMAND_TIMEOUT)
             except (OSError, subprocess.SubprocessError) as exc:
                 code = -1
                 output.write((type(exc).__name__ + ": " + str(exc) + "\n").encode())

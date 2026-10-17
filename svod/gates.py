@@ -469,3 +469,5 @@ def build_registries(
     gates, providers = load_profile(profile_dir)
     return {**CORE_GATES, **gates}, {**CORE_PROVIDERS, **providers}
 
+
+from . import command_gate  # noqa: E402,F401  registers the command gate in CORE_GATES

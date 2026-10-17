@@ -303,6 +303,26 @@ No params. PASS when the provider marked the subject archived. No facts.
 
 Runs `git rev-list --count <default_branch>..HEAD`. PASS when the count is 0, FAIL otherwise, UNKNOWN when git fails or times out (reason: the git error). Facts: `count` (absent when UNKNOWN).
 
+### `command`
+
+A check by a script instead of a question to the agent: a linter, the tests, a link check, a frontmatter schema.
+
+| param | req | type / default | meaning |
+|---|---|---|---|
+| `argv` | yes | non-empty list of strings | the command and its arguments, run without a shell |
+| `service` | no, not with `cwd` | string | name from `services` of `svod.yaml`: the command runs in the work directory of the subject in that repository (found by the gate named in `workspace_gate`, by the subject's keys), else in the service directory itself |
+| `cwd` | no, not with `service` | string / the store root | directory relative to the store root |
+| `timeout` | no | positive number / `120` | seconds before the command and its process group are stopped |
+| `watch` | no | non-empty list of paths or globs / none | files relative to the directory whose content also enters the cache key, for inputs git does not see (ignored or generated files); a directory counts with every file below it; no absolute path, no `..` |
+| `env` | no | mapping of strings / `{}` | added to the environment of the command |
+| `cache` | no | bool / `true` | `false` runs the command in every run of `svod`, never from the disk |
+
+The command runs as the local runner runs it: argv without a shell, stdout and stderr together, in a POSIX session of its own whose process group is stopped after it exits, with `PYTHONDONTWRITEBYTECODE=1`. PASS when it exits with 0, FAIL with any other code. UNKNOWN, never cached, when it does not finish within `timeout`, cannot start, its directory does not exist, `service` is not declared, or the system is not POSIX; the reason says which. Facts: `code` (the exit code), `detail` (the last 20 lines of the output, at most its last 2000 characters; the reason when UNKNOWN), `cached` (`true` when the result came from the disk), `duration` (seconds of the run that produced it); `code` and `duration` are empty when UNKNOWN. One run of `svod` evaluates one command in one directory once, however many steps and marks use it.
+
+**Cache.** `status` and the hooks show the result without running the command again while its source is unchanged. When the directory is in a git repository, the result is kept in `<git common dir>/svod-command-cache/<key>.json` (code, tail of the output, UTC start time, duration), shared by every worktree of the repository; the directory can be removed at any time. The key is sha256 over `argv`, `env`, the directory's path inside its repository, `HEAD`, `git status --porcelain --untracked-files=all`, the content of every file that differs from `HEAD` or is untracked and not ignored, and the content of the `watch` files. Files are hashed by content up to 1000 files and 8 MiB together, beyond that by size and modification time. A new commit, a changed, added or removed file, another argv or env each make a new key, and the command runs again. Outside git nothing is cached and `cached` is always `false`.
+
+The command must be idempotent and must not write into its source: a result is stored only when git sees the directory after the run as before it, so a command that writes there runs again on every `status`. Output for tools goes outside the repository or into ignored paths. A long command makes the first `status` after each change as slow as itself: give it a `timeout` that fits a hook.
+
 ## Subject providers
 
 A subject carries `id`, `path`, `exists`, `archived`, `keys` (tracker keys found by `key_gate`), `author` (email and name of the last commit touching the path, read from git on first use — a provider passes `author_of`, a reader such as `svod.providers.base.author_of(ctx, rel)`), `attrs` and `checkout` (the root of the other checkout it was read in, none for the root itself). Attributes usable in `when`: `container`, `frontmatter`.
@@ -508,6 +528,7 @@ Core keys (all required in every core locale file):
 | `gate.field_present`, `gate.field_absent`, `gate.field_date_not_past`, `gate.field_date_past` | `{name}` |
 | `gate.doc_type`, `gate.doc_type_container` | `{type}` |
 | `gate.git_pushed_repo` | `{repo}` |
+| `gate.command` | `{argv}` (the argv as a shell would quote it), `{where}` (`service`, `cwd` or `.`) |
 | `update.exists`, `update.missing`, `update.manual`, `update.manual_none`, `update.invalid`, `update.next` | — |
 | `update.fetch_failed` | `{source}`, `{reason}` |
 | `update.no_tags` | `{source}` |
