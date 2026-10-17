@@ -1,12 +1,9 @@
 # Working with Svod
 
-- Read the selected profile/pipelines/*.yaml as the process authority. Start and revisit meaningful transitions with `svod status tasks/<name>`; use `--format json` for bounded structured output. Use `active` only when a whole-store overview is useful.
-- Select or create task records before product work. The canonical card is `<KEY>-card.md` with description, implementation steps and acceptance. Keep a compact contract describing result, scope, checks, risks and authorized effects. Do not rename service artifacts or invent external tracker identities.
-- Use skills/svod-efficient-execution/SKILL.md for task execution and skills/svod-pipeline/SKILL.md for process changes. The latter follow this project's repository rules, not a second artificial lifecycle. Keep histories and decisions without importing old approvals.
-- The default local route is compact contract -> selected native human approval -> observed command result -> local completion. Do not write approval fields by hand or treat agent text as human approval. Changed bound inputs require a fresh decision under the selected policy.
-- testing/plan.yaml selects an explicit clean canonical Git root and argv or null. Keep task records/logs outside checked source. Null is no command selected, not passed tests. Use ordinary Git isolation; never reset/stash/clean another person's dirty tree or copy unknown dirty input.
-- Choose checks by changed risk. Review, CI, JUnit, E2E, external trackers and service adapters are optional unless this project's contract/policy selects them. Run a final command once through `svod local checks`; prepare/verify are diagnostics, not duplicate mandatory handoffs.
-- `svod local deliver` records local evidence only. Commit, merge, push, deploy, credentials, privileged/destructive actions and external writes need the project's explicit permission. Verify authorized external effects by exact-target readback.
-- Report actual result, checked version, limits and remaining blockers concisely. Written is not installed; local completion is not publication. Stop executors and retain necessary logs before authorized removal of a clean temporary worktree; do not force cleanup.
-- Maintain project/feature WBS and dependency diagrams when needed by the scope, with current status and unknown criticality explicit. Do not make dynamic planning tables approval-bound scope without a reason.
-- Delegate bounded independent results, keep logs in files and do not claim background progress without an active worker. Propose reusable improvements from observed friction through the project's decision process; do not invent savings percentages or add a retrospective gate.
+1. Run `svod status tasks/<name>` and do its next step. Terms: `docs/local-workflow.md`.
+2. Execute a task with `skills/svod-efficient-execution/SKILL.md`; change `profile/pipelines/*.yaml` with `skills/svod-pipeline/SKILL.md`.
+3. Keep a task in `tasks/<name>/`: `<KEY>-card.md`, `contract.md`, `testing/plan.yaml`.
+4. After the person writes "Approved" in the chat, run `svod approve tasks/<name> --step initial_approve`. Never edit `approval.yaml`.
+5. Run the plan's command once with `svod local checks tasks/<name>`, then `svod local deliver tasks/<name>`.
+6. Ask the person before merge, push, deploy, using credentials, writing outside the store and the plan's `workspace`, or removing a worktree; read the target back after such a write.
+7. Never reset, stash or clean a checkout you did not create.

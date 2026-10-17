@@ -37,11 +37,11 @@ svod validate
 svod render local
 ```
 
-The bundled local profile uses contract → selected human approval → real command checks → local completion. It includes project instructions and task templates; follow [docs/local-workflow.md](docs/local-workflow.md) to create your first task. Source runs in an ordinary clean Git checkout, separate from task records and logs. An installed wheel and a vendored engine both contain the runtime helpers and templates.
+The local template takes each task through contract → approval → checks → deliver. A task is `tasks/<name>/` with a card, `contract.md` and `testing/plan.yaml`; the plan names a clean Git checkout of the source and the command that checks it. [docs/local-workflow.md](docs/local-workflow.md) defines the terms and walks through the first task.
 
-Work on one selected task with `svod status tasks/<name>` (or `--format json`). Automatic whole-store context is disabled in the local template, but approval marking and edit guards are not disabled. Final checks run once on unchanged source; completion survives deletion of the disposable source checkout while still detecting damaged evidence. Local completion is not merge, push, installation or deployment.
+Ask for the position of one task with `svod status tasks/<name>` (`--format json` for tools). In this template the session-start and prompt hooks print nothing; approval marking and the edit guards still work. `svod local checks tasks/<name>` runs the command once on committed source, and `svod local deliver tasks/<name>` records completion. Completion stays valid after the source checkout is removed and breaks when a recorded file is edited; merge, push and deployment remain separate steps.
 
-The execution skill explains bounded reads, meaningful delegation and risk-proportionate verification. These are practical reductions in repeated work, not measured claims about token or time savings.
+The store ships `AGENTS.md` and two skills: `svod-efficient-execution` for running a task, `svod-pipeline` for changing the process.
 
 ## OpenSpec/Git example
 
@@ -133,7 +133,7 @@ svod update           # later: replace the copy, migrate the store, show the cha
 
 ## Status
 
-Early. Version 0.3 packages reusable local-workflow and context improvements from real project use. Existing profiles are not silently rewritten; expect the format to change before 1.0. See [CHANGELOG.md](CHANGELOG.md) for compatibility and migration boundaries. A source version is not a published release tag.
+Early. Version 0.3 adds the compact local workflow and per-store hook context settings, drawn from real project use. New features, the local template among them, are opt-in for an existing profile; expect the format to change before 1.0. Compatibility and migration notes: [CHANGELOG.md](CHANGELOG.md). Version 0.3.0 in `pyproject.toml` has no release tag yet.
 
 ## License
 
