@@ -25,6 +25,10 @@ COVERED = (LIB_DIR, SKILLS_DIR)
 FIELD_VERSION = "version"
 FIELD_SOURCE = "source"
 FIELD_REF = "ref"
+FIELD_TEMPLATE = "template"
+FIELD_TEMPLATE_VERSION = "template_version"
+FIELDS = (FIELD_VERSION, FIELD_SOURCE, FIELD_REF, FIELD_TEMPLATE, FIELD_TEMPLATE_VERSION)
+TEMPLATES_DIR = "templates"
 ENCODING = "utf-8"
 MANIFEST_SEPARATOR = "  "
 CHUNK = 1 << 16
@@ -38,11 +42,17 @@ NO_MANIFEST = "vendored copy has no {manifest}: run svod update to restore"
 
 @dataclass(frozen=True)
 class Stamp:
-    """What VERSION records: the engine version, where it came from and the ref taken."""
+    """What VERSION records: the engine version, where it came from and the ref taken.
+
+    template names the template the store was made from; template_version is the engine whose
+    template the profile was last merged with. Both are None when unknown.
+    """
 
     version: str | None
     source: str | None
     ref: str | None
+    template: str | None = None
+    template_version: str | None = None
 
 
 def has_copy(root):
@@ -57,14 +67,22 @@ def read_stamp(root):
     except (OSError, LoadError):
         data = None
     data = data if isinstance(data, dict) else {}
-    values = [data.get(f) for f in (FIELD_VERSION, FIELD_SOURCE, FIELD_REF)]
+    values = [data.get(f) for f in FIELDS]
     return Stamp(*[str(v) if v is not None else None for v in values])
 
 
 def write_stamp(directory, stamp):
-    """Write VERSION into a copy directory."""
+    """Write VERSION into a copy directory; the template fields only when known."""
     data = {FIELD_VERSION: stamp.version, FIELD_SOURCE: stamp.source, FIELD_REF: stamp.ref}
+    if stamp.template is not None:
+        data[FIELD_TEMPLATE] = stamp.template
+        data[FIELD_TEMPLATE_VERSION] = stamp.template_version
     (Path(directory) / VERSION_FILE).write_text(dump_yaml(data), encoding=ENCODING)
+
+
+def copy_template(root, name):
+    """Directory of a template in the copy of the store: lib/svod/templates/<name>."""
+    return package_dir(root) / TEMPLATES_DIR / name
 
 
 def ignored(path):

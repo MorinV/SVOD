@@ -782,6 +782,9 @@ Core keys (all required in every core locale file):
 | `doctor.version_ok` | `{current}`, `{latest}` |
 | `doctor.version_newer` | `{current}`, `{latest}`, `{command}` |
 | `doctor.version_unchecked` | `{current}`, `{reason}` |
+| `doctor.template_unknown` | — |
+| `doctor.template_ok` | `{template}`, `{version}` |
+| `doctor.template_older` | `{template}`, `{profile}`, `{version}`, `{path}` |
 | `doctor.evidence_ok` | `{dir}` |
 | `doctor.evidence_fail` | `{dir}`, `{reason}` |
 | `doctor.knowledge_ok` | `{path}`, `{count}` |
@@ -828,6 +831,13 @@ Core keys (all required in every core locale file):
 | `update.installed`, `update.updated` | `{old}`, `{new}`, `{ref}`, `{path}` |
 | `update.changelog` | `{old}`, `{new}` |
 | `update.available` | `{latest}`, `{current}` |
+| `update.profile_off`, `update.profile_resolve` | — |
+| `update.profile_unknown` | `{command}` |
+| `update.profile_lags` | `{template}`, `{profile}`, `{old}`, `{path}` |
+| `update.profile_no_template` | `{template}` |
+| `update.profile_failed` | `{reason}` |
+| `update.profile_merged` | `{template}`, `{new}`, `{count}` |
+| `update.profile_updated`, `update.profile_added`, `update.profile_removed`, `update.profile_merged_file`, `update.profile_conflict`, `update.profile_kept` | `{path}` |
 | `migrate.version` | `{version}` |
 | `migrate.none` | `{old}`, `{new}` |
 | `migrate.failed` | `{version}`, `{reason}` |
@@ -960,6 +970,7 @@ gate:
 |---|---|---|---|
 | `validate` | — | loads config, pipelines, gates, providers, locale, descriptions and bindings, and checks the [copy of the engine](#vendored-copy) against its `MANIFEST`; prints every error | 0 valid, 1 errors |
 | `status <query>` | `--format text\|json`, `--fresh` | position of every subject the query resolves to; `--fresh` runs the [`command`](#command) gates of every step, not only of the current one; JSON v1 projects captured native outcomes without re-evaluating gates, with bounded allowlisted facts and advisory `next_action`; no free-form logs, approval identity or exception text | 0 found, 2 not found, ambiguous, or only such missing subjects |
+| `validate` | — | loads config, pipelines, gates, providers, locale, descriptions and bindings, and checks the [copy of the engine](#vendored-copy) against its `MANIFEST`; prints every error, first every file left with a [conflict marker](#profile-from-the-template) | 0 valid, 1 errors |
 | `status <query>` | `--format text\|json` | position of every subject the query resolves to; JSON v1 projects captured native outcomes without re-evaluating gates, with bounded allowlisted facts and advisory `next_action`; no free-form logs, approval identity or exception text | 0 found, 2 not found, ambiguous, or only such missing subjects |
 | `next <query>` | `--format text\|json` | the position `status` shows, one line per subject it resolves to: `<id>: <next step> (skill <name>)`, or `<id>: run svod do <action> <id> (skill <name>)` when the current step names an [action](#actions) (`next.line`, `next.line_skill`, `next.run`; `next.none` when status shows no next step); the text is the next-step text of `status` without its final period, the skill part is left out when none is assigned. `--format json` prints one object per subject with `id`, `step` (the current step, `null` when done or held by an entry before the steps), `text`, `skill`, `action` and `run` (the command, `null` without an action to run). Rendered from the very collection `status` renders (`svod.render.one_line`), never evaluated again | 0 found, 2 not found, ambiguous, or only such missing subjects |
 | `record new <pipeline> <name>` | `--services a,b`, `--parent <id>`, `--kind <kind>`, `--tags a,b`, `--key <key>` | creates the [record](#records) `<root>/<name>/` from the skeletons `<profile>/records/<pipeline>/`; prints `record.created` with the path and the files | 0 created, 1 the record exists, 2 unknown pipeline, a bad name, no record directory or no skeletons |
@@ -976,8 +987,8 @@ gate:
 | `init` | `--login`, `--email`, `--force` | writes the local config; without `--login` asks at a terminal, and fails without one; the email defaults to `git config user.email`; an existing file is kept unless `--force` | 0 written, 1 exists, 2 no login or no `local_config` |
 | `init --wizard` | `--wizard`, `--login`, `--email`, `--service <name>=<path>`, `--autonomy <pipeline>=<level>`, `--checks <service>=<command>`, `--hooks project\|global\|none` | sets up a store, see [the wizard](#the-wizard); each of the last four flags runs it too and is repeatable but `--hooks` | 0 done, 1 the hook setup failed, 2 an answer refused, no terminal and no flags, or input ended |
 | `doctor` | `--format text\|json` | checks that the store is ready to work in, see [the doctor](#the-doctor) | 0 no check failed, 1 a check failed |
-| `install` | `--from`, `--to` | puts a copy of the engine into `.svod/` of the store, see [Vendored copy](#vendored-copy); refuses when `.svod/` exists | 0 done, 1 refused or the store does not validate after it, 2 nothing fetched (the store is unchanged) |
-| `update` | `--from`, `--to` | replaces the copy in `.svod/`, migrates the store, validates it with the new engine, prints the changelog between the versions and the migration notes; refuses without `.svod/` | as `install` |
+| `install` | `--from`, `--to`, `--template`, `--no-profile` | puts a copy of the engine into `.svod/` of the store, see [Vendored copy](#vendored-copy); refuses when `.svod/` exists | 0 done, 1 refused or the store does not validate after it, 2 nothing fetched (the store is unchanged) |
+| `update` | `--from`, `--to`, `--template`, `--no-profile` | replaces the copy in `.svod/`, merges the [profile from the template](#profile-from-the-template), migrates the store, validates it with the new engine, prints the changelog between the versions and the migration notes; refuses without `.svod/` | as `install` |
 | `knowledge <action>` | `--tags`, `--title`, `--source` | `index`, `add <file>`, `note "<text>"`, `list`: see [Knowledge](#knowledge) | 0 done, 1 the note exists, 2 no such file or the config does not load |
 | `retro <query>` | `--all`, `--accept <n>`, `--reject <n>`, `--note <text>`, `--explain` | prints the proposals of the [retrospective](#retrospective) for the works the query resolves to, or with `--all` for every open work: number, rule, facts, proposed change; `--accept` or `--reject` records the decision on proposal `n` in `evidence/decisions.yaml` (with `--note`), after which it is not shown again; `--accept` prints the diff to apply by hand, no file is changed; `--explain` prints, for every rule, the facts it saw and the threshold it compared them with, whether it proposed or not | 0 listed, explained or recorded; 2 wrong arguments (`--explain` with a decision too), not found, ambiguous, no such number, or profile rules or decisions that do not load |
 | `report <query>` | `--all`, `--format text\|json` | prints from the [evidence log](#evidence), for the records the query resolves to, the time in each step, approval rounds, failed checks, hook denials and actions run; `--all` reports every pipeline: its sums and medians, then each record with a log; `--format json` gives the same data; see **Report** in [Evidence](#evidence) | 0 printed; 2 neither or both of query and `--all`, not found, ambiguous |
@@ -1039,6 +1050,7 @@ A refused answer at a terminal is said and asked again; at the end of input noth
 | `service`, one per entry of `services` | the directory is missing or holds no `.git` | — |
 | `hooks`: the svod hooks in `<store>/.claude/settings.json` and `$CLAUDE_CONFIG_DIR/settings.json` (`~/.claude` by default) | the program a hook runs (after `NAME=value` and `env`) is neither an executable path nor on `PATH` | none registered in either file, an event missing, a file that is not JSON |
 | `copy`: the [copy of the engine](#vendored-copy) against its `MANIFEST` | it differs, or has no `MANIFEST` | — |
+| `template`: the template the profile follows, by `template` and `template_version` of `.svod/VERSION`; only with a copy | — | no `template` recorded (`svod update` cannot merge the profile), or `template_version` older than `version`: the profile lags the engine's template, bring it up to `.svod/lib/svod/templates/<template>/` by hand, then `svod update --template <template>` |
 | `version`: the engine (the copy's `version`, else the running one) against the newest `vX.Y.Z` tag of its source, through the cache of the [update notice](#update-notice) | — | a newer release, with `svod update` or the `pip install` command; not checked (`update_check: false`, off git or offline) |
 | `evidence`: a temporary file can be written in `evidence/` (the store root before the directory exists); skipped with `evidence.enabled: false` | it cannot | — |
 | `knowledge`: the table between the markers of `knowledge/INDEX.md` is what `svod knowledge index` would write now | — | it is not, or the file is missing while notes exist |
@@ -1259,6 +1271,8 @@ A store may keep its own copy of the engine, so the whole team runs one version 
 | `.svod/lib/svod/` | the engine package, locale files included |
 | `.svod/skills/<name>/` | the skills of the engine (`svod/skills/` of the Svod repository): `svod-pipeline`, `svod-efficient-execution` |
 | `.svod/VERSION` | YAML: `version` (the engine version), `source` (git URL or local path it was fetched from), `ref` (the tag or branch taken) |
+| `.svod/skills/<name>/` | the skills of the release (`svod/templates/local/skills/` of the Svod repository) |
+| `.svod/VERSION` | YAML: `version` (the engine version), `source` (git URL or local path it was fetched from), `ref` (the tag or branch taken); when known, `template` (the template the store was made from: `local`, `task` or `standard`) and `template_version` (the engine whose template the profile was last merged with) |
 | `.svod/MANIFEST` | one line per file under `lib/` and `skills/`: its sha256, two spaces, its POSIX path relative to `.svod/`; sorted by path |
 | `.svod/.gitignore` | keeps byte-code (`__pycache__/`) out of the repository |
 
@@ -1268,12 +1282,28 @@ Byte-code files (`__pycache__/`, `*.pyc`) are neither listed nor checked. The in
 
 **Integrity.** `validate` compares the files under `.svod/lib/` and `.svod/skills/` with `MANIFEST`: a changed, added or removed file is the error `vendored copy modified: <files>; run svod update --to <ref> to restore`; a copy without `MANIFEST` is an error too. Without `.svod/` there is no check.
 
-**install and update.** `svod install [--from <git URL or path>] [--to <ref>]` creates `.svod/`; `svod update` with the same flags replaces it. The source defaults to `source` of `.svod/VERSION`, for `install` to the Svod repository; a local path to a clone works the same (it is cloned too, so exactly the ref is taken). `--to` defaults to the newest tag `vX.Y.Z` of the source, by semantic version. Steps:
+**install and update.** `svod install [--from <git URL or path>] [--to <ref>] [--template <name>] [--no-profile]` creates `.svod/`; `svod update` with the same flags replaces it. The source defaults to `source` of `.svod/VERSION`, for `install` to the Svod repository; a local path to a clone works the same (it is cloned too, so exactly the ref is taken). `--to` defaults to the newest tag `vX.Y.Z` of the source, by semantic version. Steps:
 
 1. `git clone --depth 1 --branch <ref>` into a temporary directory; a failure leaves the store untouched.
-2. `svod/` of the clone becomes `.svod/lib/svod/`, `skills/` becomes `.svod/skills/`; `VERSION` and `MANIFEST` are written. The copy is assembled in a directory next to `.svod/` and renamed into place.
-3. The new copy runs `migrate --since <old version>` (for `install`, the version of the engine at hand), then `validate`.
-4. The releases of `CHANGELOG.md` of the source after the old version up to the new one are printed, then the **Migration** notes they carry, then a reminder: nothing is committed, review `git diff`, commit, open a pull request.
+2. The [merge of the profile](#profile-from-the-template) is computed while the old copy is still in place.
+3. `svod/` of the clone becomes `.svod/lib/svod/`, `skills/` becomes `.svod/skills/`; `VERSION` and `MANIFEST` are written. The copy is assembled in a directory next to `.svod/` and renamed into place. Then the merged files are written and listed.
+4. The new copy runs `migrate --since <old version>` (for `install`, the version of the engine at hand), then `validate`.
+5. The releases of `CHANGELOG.md` of the source after the old version up to the new one are printed, then the **Migration** notes they carry, then a reminder: nothing is committed, review `git diff`, commit, open a pull request.
+
+### Profile from the template
+
+`svod new --template <name>` gives the store files the engine keeps improving: `svod.yaml`, `AGENTS.md`, `profile/` (pipelines, gates, locale, actions) and `skills/`. After replacing the engine, `svod update` merges them three ways: base is the template of the old engine (`.svod/lib/svod/templates/<template>/` of the copy being replaced), theirs the template of the new engine, ours the store. Only files of either template under those paths are candidates (`README.md`, example works and the rest are not), so a file of the store alone is never touched. Per file:
+
+| case | result |
+|---|---|
+| the same in both templates, or the store already has the new one | nothing |
+| the store never changed it | replaced by the new template's (`updated`), created (`added`) or deleted (`removed`) |
+| changed in the store and in the template | `git merge-file`: a clean merge is written (`merged`); a conflict is written with git markers `<<<<<<< store` … `>>>>>>> template <new>` and listed (`CONFLICT`) |
+| changed in the store and dropped by the template, or deleted in the store and changed by the template | kept as the store has it (`kept`) |
+
+`validate` names every file under those paths holding a line `<<<<<<<` first (`<file>:<line>: conflict marker <<<<<<< left by svod update; ...`), before the error of a YAML file that no longer parses, so `update` ends with exit 1 until they are resolved. Nothing is committed: `git diff` shows every change.
+
+The template comes from `template` of `.svod/VERSION`. `install` records it: `--template <name>`, or else the one template whose `profile/` the store holds byte for byte (of the engine running `install` or of the new one); install then merges from that template to the new engine's. Without it (a `VERSION` written before 0.6, or a profile already changed at install) `update` says `update.profile_unknown` and merges nothing; it never guesses. `--template <name>` names it and merges from the old copy's template. `template_version` becomes the new version after a merge, conflicts included. When it differs from the old copy's `version` (an update with `--no-profile`, or a merge that failed), the old copy is not the base of the profile: `update` says `update.profile_lags` and merges nothing, and [the doctor](#the-doctor) warns, until the profile is brought up by hand and `--template` is given. `--no-profile` replaces the engine only and keeps the template fields as they were. The merge needs `git` on `PATH`; without it nothing is merged and `update.profile_failed` says why.
 
 ### Migrations
 

@@ -2,7 +2,8 @@
 
 Each check stands alone and reads only what it needs, so a store that does not load still gets
 every other answer: svod.yaml, the services, the hooks of Claude Code, the copy of the engine,
-the newest release, the evidence log, the knowledge index and the local config.
+the template the profile follows, the newest release, the evidence log, the knowledge index and
+the local config.
 """
 from __future__ import annotations
 
@@ -40,6 +41,7 @@ CHECK_SERVICE = "service"
 CHECK_HOOKS = "hooks"
 CHECK_COPY = "copy"
 CHECK_VERSION = "version"
+CHECK_TEMPLATE = "template"
 CHECK_EVIDENCE = "evidence"
 CHECK_KNOWLEDGE = "knowledge"
 CHECK_LOCAL = "local_config"
@@ -207,6 +209,27 @@ def copy_check(root: Path, locale: Locale) -> Check:
                                              version=read_stamp(root).version or "?"))
 
 
+def template_checks(root: Path, locale: Locale) -> list[Check]:
+    """The profile follows the template of the copy's engine; nothing without a copy."""
+    from .vendor import copy_template, has_copy, read_stamp
+    from .versions import is_newer
+    if not has_copy(root):
+        return []
+    stamp = read_stamp(root)
+    if stamp.template is None:
+        return [Check(CHECK_TEMPLATE, WARN, locale.text(keys.DOCTOR_TEMPLATE_UNKNOWN))]
+    version = stamp.version or "?"
+    profile = stamp.template_version
+    if profile and stamp.version and is_newer(stamp.version, profile):
+        path = copy_template(root, stamp.template).relative_to(root)
+        return [Check(CHECK_TEMPLATE, WARN, locale.text(
+            keys.DOCTOR_TEMPLATE_OLDER, template=stamp.template, profile=profile,
+            version=version, path=path))]
+    return [Check(CHECK_TEMPLATE, OK, locale.text(keys.DOCTOR_TEMPLATE_OK,
+                                                  template=stamp.template,
+                                                  version=profile or version))]
+
+
 LatestFn = Callable[[Path, str, dt.datetime], Any]
 
 
@@ -306,6 +329,7 @@ def checks(root: Path, locale: Locale, env: dict[str, str] | None = None,
             *service_checks(root, locale, data),
             *hooks_checks(root, locale, settings_files(root, env)),
             copy_check(root, locale),
+            *template_checks(root, locale),
             version_check(root, locale, data, latest, at),
             evidence_check(root, locale, data),
             knowledge_check(root, locale, data),

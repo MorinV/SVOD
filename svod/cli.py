@@ -173,6 +173,10 @@ def build_parser() -> StatusParser:
                               help="git URL or local clone of Svod; the recorded source by default")
         delivery.add_argument("--to", dest="ref",
                               help="tag or branch; the newest vX.Y.Z by default")
+        delivery.add_argument("--template",
+                              help="template the store was made from, recorded in .svod/VERSION")
+        delivery.add_argument("--no-profile", dest="profile", action="store_false",
+                              help="replace the engine only; leave the profile as it is")
     migrate = commands.add_parser(CMD_MIGRATE,
                                   help="apply the store migrations of the versions after a version")
     migrate.add_argument("--since", required=True, help="version the store was used with")
@@ -651,22 +655,25 @@ def run(args: argparse.Namespace) -> int:
     if args.command in DELIVERY_COMMANDS:
         from svod.update import deliver
         return deliver(root, error_locale(root), args.command == CMD_INSTALL, args.source,
-                       args.ref)
+                       args.ref, args.template, args.profile)
     if args.command == CMD_MIGRATE:
         return migrate(root, args.since)
     if args.command == CMD_KNOWLEDGE:
         return knowledge(root, args)
 
     copy_errors = []
+    conflicts: list[str] = []
     if args.command == CMD_VALIDATE:
+        from svod.profile_merge import conflict_errors
         from svod.vendor import copy_errors as vendored_errors
+        conflicts = conflict_errors(root)
         copy_errors = vendored_errors(root)
     try:
         runtime = load_runtime(root)
     except LoadError as exc:
         locale = error_locale(root)
         if args.command == CMD_VALIDATE:
-            errors = exc.errors + copy_errors
+            errors = conflicts + exc.errors + copy_errors
             print_errors(locale.text(keys.VALIDATE_FAILED, count=len(errors)), errors)
             return EXIT_FINDINGS
         if args.command == CMD_STATUS and getattr(args, "format", "text") == "json":
@@ -678,7 +685,7 @@ def run(args: argparse.Namespace) -> int:
                   pipelines=runtime.by_name())
     if args.command == CMD_VALIDATE:
         from svod.actions import action_errors
-        copy_errors += action_errors(ctx, runtime.pipelines)
+        copy_errors = conflicts + copy_errors + action_errors(ctx, runtime.pipelines)
         if copy_errors:
             print_errors(runtime.locale.text(keys.VALIDATE_FAILED, count=len(copy_errors)),
                          copy_errors)
