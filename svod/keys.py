@@ -83,6 +83,16 @@ DO_LIST_NO_DESCRIPTION = "do.list_no_description"
 DO_LIST_NONE = "do.list_none"
 DO_NOT_CURRENT = "do.not_current"
 DO_NO_CURRENT = "do.no_current"
+NEXT_LINE = "next.line"
+NEXT_LINE_SKILL = "next.line_skill"
+NEXT_RUN = "next.run"
+NEXT_NONE = "next.none"
+RECORD_CREATED = "record.created"
+RECORD_EXISTS = "record.exists"
+RECORD_UNKNOWN_PIPELINE = "record.unknown_pipeline"
+RECORD_BAD_NAME = "record.bad_name"
+RECORD_NO_ROOT = "record.no_root"
+RECORD_NO_SKELETON = "record.no_skeleton"
 WIZARD_NOT_TTY = "wizard.not_tty"
 WIZARD_PROMPT_LOGIN = "wizard.prompt_login"
 WIZARD_SERVICES_CURRENT = "wizard.services_current"
@@ -363,6 +373,16 @@ CORE_KEYS = (
     DO_LIST_NONE,
     DO_NOT_CURRENT,
     DO_NO_CURRENT,
+    NEXT_LINE,
+    NEXT_LINE_SKILL,
+    NEXT_RUN,
+    NEXT_NONE,
+    RECORD_CREATED,
+    RECORD_EXISTS,
+    RECORD_UNKNOWN_PIPELINE,
+    RECORD_BAD_NAME,
+    RECORD_NO_ROOT,
+    RECORD_NO_SKELETON,
     WIZARD_NOT_TTY,
     WIZARD_PROMPT_LOGIN,
     WIZARD_SERVICES_CURRENT,

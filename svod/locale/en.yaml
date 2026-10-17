@@ -92,6 +92,18 @@ do:
   list_none: "The profile has no actions: add scripts to {dir}"
   not_current: "Action {name} belongs to step {step}, which {id} has not reached (current step: {current}); it runs only with --force"
   no_current: "none, an entry holds it"
+next:
+  line: "{id}: {text}"
+  line_skill: "{id}: {text} (skill {skill})"
+  run: "run {command}"
+  none: "nothing to do"
+record:
+  created: "Created {path}: {files}. Next: svod next {path}"
+  exists: "{path} already exists: choose another name, or continue it: svod next {path}"
+  unknown_pipeline: "Unknown pipeline: {name}; the pipelines: {names}"
+  bad_name: "Not a record name: {name}. Give one directory name, without /, spaces or a leading dot"
+  no_root: "Pipeline {name} has no record directory: its subject provider names no roots"
+  no_skeleton: "No skeletons for pipeline {name}: put the files of a new record into {dir}"
 wizard:
   not_tty: "svod init --wizard asks at a terminal; without one give the answers as flags: --login <login>, --email <email>, --service <name>=<path>, --autonomy <pipeline>=<level>, --checks <service>=\"<command>\", --hooks project|global|none"
   prompt_login: "Login [{default}]: "

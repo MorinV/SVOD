@@ -28,6 +28,9 @@ EXIT_USAGE = 2
 HOOK_FLAG = "--hook"
 CMD_VALIDATE = "validate"
 CMD_STATUS = "status"
+CMD_NEXT = "next"
+CMD_RECORD = "record"
+RECORD_NEW = "new"
 CMD_ACTIVE = "active"
 CMD_RENDER = "render"
 CMD_INIT = "init"
@@ -117,6 +120,10 @@ def build_parser() -> StatusParser:
     status.add_argument("--format", choices=("text", "json"), default="text")
     status.add_argument("--fresh", action="store_true",
                         help="run the command gates of every step, not only of the current one")
+    nxt = commands.add_parser(CMD_NEXT, help="the next action of a task or container, one line")
+    nxt.add_argument("query", help="tracker key or container name")
+    nxt.add_argument("--format", choices=("text", "json"), default="text")
+    add_record_parser(commands)
     active = commands.add_parser(CMD_ACTIVE, help="summary of open work")
     active.add_argument("--all", action="store_true", help="expand the team's work")
     active.add_argument(HOOK_FLAG, action="store_true", help="SessionStart hook JSON")
@@ -170,6 +177,21 @@ def build_parser() -> StatusParser:
     report.add_argument("--all", action="store_true", help="every pipeline and its records")
     report.add_argument("--format", choices=("text", "json"), default="text")
     return parser
+
+
+def add_record_parser(commands: argparse._SubParsersAction) -> None:
+    """The record command with its new action."""
+    record = commands.add_parser(CMD_RECORD, help="records of the pipelines")
+    actions = record.add_subparsers(dest="action", required=True)
+    new = actions.add_parser(RECORD_NEW,
+                             help="create a record from <profile>/records/<pipeline>/")
+    new.add_argument("pipeline", help="pipeline name")
+    new.add_argument("name", help="name of the record: one directory name")
+    new.add_argument("--services", help="services separated by commas")
+    new.add_argument("--parent", default="", help="id of the parent record")
+    new.add_argument("--kind", default="", help="kind of the record; the pipeline name by default")
+    new.add_argument("--tags", help="tags separated by commas")
+    new.add_argument("--key", default="", help="tracker key")
 
 
 def add_retro_parser(commands: argparse._SubParsersAction) -> None:
@@ -259,6 +281,29 @@ def render(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace) ->
     for path, changed in results:
         key = keys.RENDER_WRITTEN if changed else keys.RENDER_CURRENT
         print(ctx.locale.text(key, path=relative_or_absolute(ctx.root, path)))
+    return EXIT_OK
+
+
+def next_action(ctx: Context, pipelines: list[Pipeline], query: str, form: str) -> int:
+    """Print the position status shows, one line per subject (one JSON object per line).
+
+    The lines come from the very collection status renders. Exit 0, or 2 with the errors of
+    status when no position is shown.
+    """
+    from svod.render import next_fields, one_line
+    from svod.status import collect_status
+
+    collection = collect_status(ctx, pipelines, query)
+    if not collection.report.ok:
+        return emit(collection.report)
+    for item in collection.items:
+        if item.position is None:
+            continue
+        if form == "json":
+            print(json.dumps(next_fields(ctx.locale, item.position, item.skills),
+                             ensure_ascii=False))
+        else:
+            print(one_line(ctx.locale, item.position, item.skills))
     return EXIT_OK
 
 
@@ -622,6 +667,20 @@ def run(args: argparse.Namespace) -> int:
                 print(json.dumps(data, ensure_ascii=False, allow_nan=False))
                 return data["report"]["exit_code"]
             return emit(status_report(ctx, runtime.pipelines, args.query))
+        if getattr(args, "format", "text") == "json":
+            from svod.status import collect_status
+            from svod.status_json import to_json
+            data = to_json(collect_status(ctx, runtime.pipelines, args.query))
+            print(json.dumps(data, ensure_ascii=False, allow_nan=False))
+            return data["report"]["exit_code"]
+        return emit(status_report(ctx, runtime.pipelines, args.query))
+    if args.command == CMD_NEXT:
+        return next_action(ctx, runtime.pipelines, args.query, args.format)
+    if args.command == CMD_RECORD:
+        from svod.records import NewRecord, new_record, split_list
+        return emit(new_record(ctx, runtime.pipelines, NewRecord(
+            args.pipeline, args.name, services=split_list(args.services), parent=args.parent,
+            kind=args.kind, tags=split_list(args.tags), key=args.key)))
     if args.command == CMD_RENDER:
         return render(ctx, runtime.pipelines, args)
     if args.command == CMD_DO:
