@@ -45,6 +45,11 @@ BOOL_FIELDS = (FIELD_MAIN_READ_ONLY, FIELD_UPDATE_CHECK)
 KNOWN_FIELDS = frozenset(STRING_FIELDS + LIST_FIELDS + BOOL_FIELDS
                          + (FIELD_APPROVAL, FIELD_PROFILE_CONFIG, FIELD_SERVICES,
                             FIELD_KNOWLEDGE))
+FIELD_EVIDENCE = "evidence"
+EVIDENCE_ENABLED = "enabled"
+EVIDENCE_COMMIT = "commit"
+EVIDENCE_FIELDS = frozenset({EVIDENCE_ENABLED, EVIDENCE_COMMIT})
+KNOWN_FIELDS |= {FIELD_EVIDENCE}
 DEFAULT_BRANCH_FALLBACK = "origin/main"
 LOCAL_LOGIN = "login"
 LOCAL_EMAIL = "email"
@@ -77,6 +82,8 @@ class Config:
     services: dict[str, Path] = field(default_factory=dict)
     knowledge_dir: str = DEFAULT_KNOWLEDGE_DIR
     knowledge_limit: int = DEFAULT_KNOWLEDGE_LIMIT
+    evidence_enabled: bool = True
+    evidence_commit: bool = True
 
 
 def string_errors(path: Path, data: dict[str, Any], keys: Iterable[str]) -> list[str]:
@@ -143,6 +150,14 @@ def knowledge_errors(path: Path, data: Any) -> list[str]:
     limit = data.get(KNOWLEDGE_LIMIT, DEFAULT_KNOWLEDGE_LIMIT)
     if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
         errors.append(f"{where}.{KNOWLEDGE_LIMIT} must be a positive integer")
+def evidence_errors(path: Path, data: Any) -> list[str]:
+    """Errors of the evidence block: a mapping of known keys with boolean values."""
+    if not isinstance(data, dict):
+        return [f"{path}: {FIELD_EVIDENCE} must be a mapping"]
+    errors = [f"{path}: {FIELD_EVIDENCE}: unknown key: {key}"
+              for key in sorted(set(data) - EVIDENCE_FIELDS)]
+    errors += [f"{path}: {FIELD_EVIDENCE}.{key} must be a boolean"
+               for key in sorted(set(data) & EVIDENCE_FIELDS) if not isinstance(data[key], bool)]
     return errors
 
 
@@ -193,6 +208,8 @@ def load_config(root: str | Path, local: bool = True) -> Config:
     if FIELD_SERVICES in data:
         errors += services_errors(path, root, data[FIELD_SERVICES])
     errors += knowledge_errors(path, data[FIELD_KNOWLEDGE]) if FIELD_KNOWLEDGE in data else []
+    if FIELD_EVIDENCE in data:
+        errors += evidence_errors(path, data[FIELD_EVIDENCE])
     for key in LIST_FIELDS:
         value = data.get(key, [])
         if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
@@ -231,6 +248,8 @@ def load_config(root: str | Path, local: bool = True) -> Config:
                   for name, value in (data.get(FIELD_SERVICES) or {}).items()},
         knowledge_dir=knowledge.get(KNOWLEDGE_DIR, DEFAULT_KNOWLEDGE_DIR),
         knowledge_limit=knowledge.get(KNOWLEDGE_LIMIT, DEFAULT_KNOWLEDGE_LIMIT),
+        evidence_enabled=(data.get(FIELD_EVIDENCE) or {}).get(EVIDENCE_ENABLED, True),
+        evidence_commit=(data.get(FIELD_EVIDENCE) or {}).get(EVIDENCE_COMMIT, True),
     )
 
 

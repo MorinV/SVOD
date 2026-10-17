@@ -7,6 +7,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from . import evidence_log
 from . import local_evidence as evidence
 from . import local_workflow as workflow
 from .approval import digest
@@ -117,6 +118,7 @@ def unready_step(ctx, pipeline, subject):
     return None
 
 
+@evidence_log.local_outcome(evidence_log.EVENT_CHECKS_RUN)
 def checks(root, key):
     """Run once, retain actual output and pre/post Git observations, report failure honestly."""
     ctx, subject, policy = state(root, key)
@@ -175,6 +177,7 @@ def verify(root, key):
     return {"passed": True, "receipt": str(subject.path / evidence.RECEIPT)}
 
 
+@evidence_log.local_outcome(evidence_log.EVENT_DELIVERED)
 def deliver(root, key):
     """Record local completion after live validation; later read it without source."""
     ctx, subject, _ = state(root, key)

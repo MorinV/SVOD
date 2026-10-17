@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from . import keys
+from . import evidence_log, keys
 from .approval import (bound_files, consume_mark, digest, is_fresh, mark_keys, mark_time,
                        names_any, now, read_mark, write_fields)
 from .checkouts import subject_context
@@ -152,6 +152,7 @@ def confirmed(ctx: Context, subject: Subject, step: str | None, ref: GateRef,
     return answer.strip().casefold() in YES_ANSWERS
 
 
+@evidence_log.approval_outcome
 def approve(ctx: Context, pipelines: list[Pipeline], query: str, at: dt.datetime | None = None,
             step: str | None = None, confirm: bool = False) -> Report:
     """Write approval fields, then consume only this subject's named approval keys.

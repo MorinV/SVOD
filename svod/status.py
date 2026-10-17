@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from . import keys
+from . import evidence_log, keys
 from .checkouts import subject_context
 from .gates import Status
 from .position import evaluate, position
@@ -79,6 +79,7 @@ def collect_status(ctx: Context, pipelines: list[Pipeline], query: str) -> Colle
             out.append("")
         pos = position(own, pipeline, subject)
         item.position = pos
+        evidence_log.note_position(ctx, pos)
         item.skills = step_skills(own, pos)
         item.instruction_variant = text_key(locale, pos.text, pos.facts) if pos.text else None
         out += render_position(locale, pos, item.skills)
