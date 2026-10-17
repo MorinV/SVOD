@@ -18,10 +18,9 @@ HOTFIX = "work/tasks/hot"
 FEATURE = "work/features/greet"
 PARENT = "work/features/greet"
 RECORDS = "profile/records"
-SKELETONS = {"task": ("card.md", "contract.md", "questions.md"),
-             "feature": ("brief.md", "card.md", "questions.md"),
-             "project": ("card.md", "questions.md", "vision.md"),
-             "research": ("card.md", "question.md", "questions.md")}
+PIPELINES = ("task", "feature", "project", "research")
+FIRST_STEPS = {"feature": "brief", "project": "vision", "research": "question"}
+QUESTIONS_MISSING = "ask your questions with svod ask <record>"
 ROOTS = {"task": "work/tasks", "feature": "work/features", "project": "work/projects",
          "research": "work/research"}
 NEXT_STEP_PREFIX = "Next step: "
@@ -59,16 +58,17 @@ class RecordNewTest(unittest.TestCase):
         """svod record new with the arguments."""
         return self.sb.cli("record", "new", *args)
 
-    def test_every_pipeline_gets_its_skeletons(self):
-        """The files of profile/records/<pipeline>/ land in the root of the pipeline's provider."""
-        for pipeline, files in SKELETONS.items():
+    def test_every_pipeline_gets_its_card(self):
+        """The template ships card.md alone; a new record stands at its first open step."""
+        for pipeline in PIPELINES:
             with self.subTest(pipeline=pipeline):
-                made = self.new(pipeline, "first")
+                made = self.new(pipeline, "first", "--services", SERVICE)
                 self.assertEqual(made.returncode, EXIT_OK, made.stderr)
                 record = self.sb.store / ROOTS[pipeline] / "first"
-                self.assertEqual(tuple(sorted(p.name for p in record.iterdir())), files)
-                self.assertEqual((record / "questions.md").read_text(encoding=ENCODING),
-                                 "none\n")
+                self.assertEqual([p.name for p in record.iterdir()], ["card.md"])
+                step = json.loads(self.sb.cli("next", f"{ROOTS[pipeline]}/first", "--format",
+                                              "json").stdout)["step"]
+                self.assertEqual(step, FIRST_STEPS.get(pipeline, "questions"))
                 fm = read_frontmatter(record / "card.md")
                 self.assertEqual((fm["type"], fm["kind"], fm["status"]),
                                  ("card", pipeline, "open"))
@@ -117,6 +117,28 @@ class RecordNewTest(unittest.TestCase):
         self.assertEqual(made.returncode, EXIT_OK, made.stderr)
         self.assertTrue((self.sb.store / TASK / "card.md").is_file())
 
+    def test_new_task_asks_its_questions_then_its_contract(self):
+        """A task with services stands at questions (the _missing text), then at contract."""
+        made = self.new("task", "login", "--services", SERVICE)
+        self.assertEqual(made.returncode, EXIT_OK, made.stderr)
+        status = self.sb.cli("status", TASK).stdout
+        self.assertIn(QUESTIONS_MISSING, status)
+        self.assertEqual(json.loads(self.sb.cli("next", TASK, "--format", "json").stdout)["step"],
+                         "questions")
+        self.assertEqual(self.sb.cli("ask", TASK, "--none").returncode, EXIT_OK)
+        nxt = json.loads(self.sb.cli("next", TASK, "--format", "json").stdout)
+        self.assertEqual(nxt["step"], "contract")
+        self.assertIn("contract.md", nxt["text"])
+
+    def test_instance_skeleton_files_are_copied(self):
+        """Files an instance adds to profile/records/<pipeline>/ are copied and filled too."""
+        self.sb.write(f"{RECORDS}/task/notes/plan.md", "# Plan of {name}\n")
+        made = self.new("task", "login")
+        self.assertEqual(made.returncode, EXIT_OK, made.stderr)
+        self.assertEqual((self.sb.store / TASK / "notes/plan.md").read_text(encoding=ENCODING),
+                         "# Plan of login\n")
+        self.assertIn("notes/plan.md", made.stdout)
+
     def test_refusals(self):
         """Unknown pipeline, a name that is no directory name, a pipeline without skeletons."""
         unknown = self.new("story", "x")
@@ -153,7 +175,8 @@ class RecordNewTest(unittest.TestCase):
             self.assertEqual(started.returncode, EXIT_OK, started.stderr)
         fm = frontmatter(self.sb, TASK)
         self.assertEqual((fm["kind"], fm["services"], fm["key"]), ("task", [SERVICE], "PROJ-9"))
-        self.assertTrue((self.sb.store / TASK / "contract.md").is_file())
+        self.assertEqual([p.name for p in (self.sb.store / TASK).iterdir()
+                          if p.suffix == ".md"], ["card.md"])
         self.assertTrue((self.sb.base / f"{SERVICE}-task-login" / ".git").exists())
 
 
@@ -192,11 +215,12 @@ class NextTest(unittest.TestCase):
                           fields["run"]), (TASK, "card", "svod-task", None, None))
 
     def test_run_command_of_the_step_action(self):
-        """A hotfix with a cause stands at implement: the line names svod do start-task."""
+        """A hotfix with a cause and no questions stands at implement: run svod do start-task."""
         made = self.sb.cli("record", "new", "task", "hot", "--kind", "hotfix",
                            "--services", SERVICE)
         self.assertEqual(made.returncode, EXIT_OK, made.stderr)
         self.sb.edit(f"{HOTFIX}/card.md", "status: open", "cause: incident 42\nstatus: open")
+        self.assertEqual(self.sb.cli("ask", HOTFIX, "--none").returncode, EXIT_OK)
         fields = self.assert_same(HOTFIX)
         self.assertEqual((fields["step"], fields["action"], fields["run"]),
                          ("implement", "start-task", f"svod do start-task {HOTFIX}"))
@@ -204,9 +228,9 @@ class NextTest(unittest.TestCase):
         self.assertEqual(line, f"{HOTFIX}: run svod do start-task {HOTFIX} (skill svod-task)")
 
     def test_feature_and_done(self):
-        """A feature at its breakdown; a done record says the done text without a step."""
+        """A feature at its brief; a done record says the done text without a step."""
         self.assertEqual(self.sb.cli("record", "new", "feature", "greet").returncode, EXIT_OK)
-        self.assertEqual(self.assert_same(FEATURE)["step"], "breakdown")
+        self.assertEqual(self.assert_same(FEATURE)["step"], "brief")
         self.sb.edit(f"{FEATURE}/card.md", "status: open", "status: done")
         data = json.loads(self.sb.cli("next", FEATURE, "--format", "json").stdout)
         self.assertEqual((data["step"], data["skill"], data["run"]), (None, None, None))

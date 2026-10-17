@@ -7,7 +7,7 @@
 . "$(dirname "$0")/_env.sh"
 
 if [ ! -f "$CARD" ]; then
-  # The record from the skeletons of profile/records/<pipeline>/: card.md, questions.md, contract.md.
+  # The record from the skeletons of profile/records/<pipeline>/ (the template ships card.md).
   svod_cli --root "$SVOD_ROOT" record new "$SVOD_PIPELINE" "$SLUG" --kind "$SVOD_KIND" \
     --services "${SVOD_SERVICES// /,}" --key "$SVOD_KEY"
   if [ ! -f "$CARD" ]; then

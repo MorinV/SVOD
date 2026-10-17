@@ -21,7 +21,7 @@ Connect the agent's hooks with `integrations/setup-claude.sh --project <store>` 
 | hotfix | `work/tasks/<name>/`, `kind: hotfix` | card with `cause`, questions, implement, checks, deliver |
 | research | `work/research/<name>/` | question, findings, outcome (hotfix, feature or `knowledge/`) |
 
-Each record has `card.md` with frontmatter `type: card` plus `kind`, `services`, `parent`, `tags`, `status`; see `work/tasks/example/`. `svod record new <pipeline> <name> [--services a,b] [--parent <id>] [--kind hotfix] [--tags a,b]` makes a record from the skeletons in `profile/records/<pipeline>/` (card, `questions.md` saying `none`, and `contract.md`, `brief.md`, `vision.md` or `question.md`); `svod next <record>` prints its next action in one line. A record is done when its card says `status: done`. Approvals live in `approval.yaml` and are written only by `svod approve`.
+Each record has `card.md` with frontmatter `type: card` plus `kind`, `services`, `parent`, `tags`, `status`; see `work/tasks/example/`. `svod record new <pipeline> <name> [--services a,b] [--parent <id>] [--kind hotfix] [--tags a,b]` makes a record from the skeletons in `profile/records/<pipeline>/` (the template ships `card.md` only; add files of your own there); `svod next <record>` prints its next action in one line. A record is done when its card says `status: done`. Approvals live in `approval.yaml` and are written only by `svod approve`.
 
 ## Services and actions
 
