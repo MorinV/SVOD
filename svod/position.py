@@ -5,6 +5,7 @@ from .gates import ArchivedGate, Status, unknown
 from .pipeline import SEVERITY_BLOCK, SEVERITY_WARN, VIOLATION_SEPARATOR
 from .workflow_policy import step_applies
 
+GATE_RAISED = "gate {gate} raised {error}"
 FACT_STEP = "step"
 
 
@@ -78,11 +79,17 @@ class Position:
 
 
 def evaluate(ctx, ref, subject):
-    """Outcome of one gate use; an unreadable file system is UNKNOWN."""
+    """Outcome of one gate use; a gate that raises is UNKNOWN with the error as its reason.
+
+    A status or a hook never fails because one gate did: a profile gate with a bug, or a
+    file system that cannot be read, leaves its step unpassed and names the error.
+    """
     try:
         result = ref.impl.evaluate(ctx, subject)
     except OSError as exc:
         result = unknown(str(exc))
+    except Exception as exc:
+        result = unknown(GATE_RAISED.format(gate=ref.gate, error=f"{type(exc).__name__}: {exc}"))
     return Outcome(ref, result)
 
 

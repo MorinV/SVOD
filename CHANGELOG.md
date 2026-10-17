@@ -6,6 +6,19 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Changed
+
+- A gate that raises no longer fails `status` or a hook: the outcome is UNKNOWN with the reason `gate <name> raised <error>`, the step stays unpassed and the status says why.
+- `status` marks every step: a step without a labelled gate is shown as one mark by its `title` or `id`, so a profile without labels still shows where the work stands.
+- A step text ending with a period is no longer followed by a second one in the next-step line.
+- `svod active` says when no pipeline declares `active` instead of printing nothing.
+- The reference documents `GitResult`, the type `ctx.cache.git` returns to a custom gate.
+- The examples, the skills and the docs are checked against the packaged templates by a test, so the copies cannot drift.
+
+### Migration
+
+none
+
 ## [0.3.0] - 2026-10-17
 
 ### Added

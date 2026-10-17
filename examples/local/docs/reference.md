@@ -212,7 +212,7 @@ steps:
 An archived subject with a native `archived` terminal gate is historical: the engine reports that terminal outcome without executing live entry/step gates or presenting them as passing. Otherwise the rules below apply, omitting inapplicable steps and gate uses consistently with approval and code guards.
 
 1. **Entry** — the pipeline `entry` gates are evaluated for every subject, found or not, skipping those whose `when` attribute is falsy. The first failed `block` gate blocks the position; failed `warn` gates are printed as warnings after the step line. An entry gate that is UNKNOWN is printed as `status.unknown` instead of its warning; a blocking UNKNOWN still blocks, with no text of its own.
-2. **Marks** — when the subject exists, every step gate with a `label` (optional steps included) is shown as a mark: the gate's `display` when set, else `status.mark.<pass|fail|unknown>` with the rendered label.
+2. **Marks** — when the subject exists, every step gate with a `label` (optional steps included) is shown as a mark: the gate's `display` when set, else `status.mark.<pass|fail|unknown>` with the rendered label. A step with no labelled gate is shown as one mark of its own: its `title` when declared, else its `id`; it passes when the step passes and is unknown when a gate of it could not be checked.
 3. **Done** — evaluated after the step gates. When it passes, its `text` becomes the step line (inside `status.next_step`) and nothing else is computed; entry warnings and UNKNOWNs are still printed. A done gate that is UNKNOWN is reported and evaluation goes on.
 4. **Steps** — only non-optional steps count. A step passes when it has gates and all of them pass; FAIL and UNKNOWN both mean not passed. Every UNKNOWN gate of a non-optional step is reported.
 5. **Violations** — a passed step preceded by a `required` step that did not pass; one line per pair, text from `violations` or `status.violation` with `{later}`, `{earlier}`. Computed also when the entry blocks; never for a missing subject.
@@ -220,10 +220,10 @@ An archived subject with a native `archived` terminal gate is historical: the en
 7. **Current step** — the first non-optional step that did not pass. Its step `entry` is evaluated now (same rules as 1). Text: a failed blocking step entry's `text`; else the `text` of the first gate that did not pass, when it has one; else the step `text`. Facts come from that gate (or entry). All steps passed and done did not: the `pending` text of done when declared, else no step line.
 8. **Code freeze** — when the subject exists and a `blocks_code` step lies at or after the current step, `status.do_not_touch` is printed with the facts of that step's first open gate and `{step}` = its id.
 9. **Step skill** — printed after the step line when the current step has a `role`, bindings are configured and the text does not come from a blocking entry.
-10. **Errors while reading** — an `OSError` raised by a gate becomes UNKNOWN with the error as reason.
+10. **Errors while reading** — an `OSError` raised by a gate becomes UNKNOWN with the error as reason; any other exception becomes UNKNOWN with the reason `gate <name> raised <error>`, so a broken gate leaves its step unpassed instead of failing the command or the hook.
 11. **Missing subject** — a subject the provider did not find (`exists: false`, see [Subject providers](#subject-providers)). When the pipeline declares `missing` and that gate FAILs, `status` prints its `text` on stderr instead of a position — only when the query shows no position at all: another pipeline presenting the same query is the answer; on PASS or UNKNOWN the position is computed. A position of a missing subject never has order violations (rule 5) nor the code freeze (rules 6 and 8): nothing has been done for it yet, so there is no order to break and no plan to wait for.
 
-Output order of a `status` block: header, the checkout line (`status.checkout`, for a subject of another checkout), marks, blank line, step line, skill line, code freeze, UNKNOWN lines, warnings, violations.
+Output order of a `status` block: header, the checkout line (`status.checkout`, for a subject of another checkout), marks, blank line, step line, skill line, code freeze, UNKNOWN lines, warnings, violations. A step text ending with a period loses it inside `status.next_step`, which ends the sentence itself.
 
 ## Core gates
 
@@ -452,6 +452,7 @@ Core keys (all required in every core locale file):
 | `active.mine_active`, `active.mine_idle`, `active.theirs`, `active.no_keys`, `active.hook_tail`, `active.no_identity` | — |
 | `active.no_local_config` | `{file}` |
 | `active.worktree` | `{dir}` |
+| `active.none` | — (printed by `active` when no pipeline declares `active`; not in the hook) |
 | `active.theirs_collapsed` | `{count}`, `{who}` |
 | `active.author_count` | `{author}`, `{count}` |
 | `active.item` | `{id}`, `{keys}`, `{pipeline}`, `{step}`, `{frontmatter}` |
@@ -533,7 +534,9 @@ A profile gate is a class in `<profile>/gates/<module>.py`, registered by the mo
 | `evaluate(self, ctx, subject)` | returns a `Result` |
 | `describe(self, params, locale)` | what must hold, for the documentation; default: locale key `gate.<name>` formatted with the params |
 
-`ctx` carries `config` (`root`, `default_branch`, `workspaces`, …), `locale` (may be `None` in tests), `today`, `bindings`, `root`, `pipelines` — loaded pipelines by name, for a gate that consults another pipeline (for example its subject provider as `ctx.pipelines[name].subject.impl`) — and `cache`, the memory of one run shared by every context rooted in another checkout: `cache.git(cwd, *args)` runs git once per directory and arguments, `cache.prefetch([(cwd, args), …])` runs the calls not known yet in parallel (a pool of `GIT_WORKERS` threads), `cache.value(key, compute)` keeps a value computed from files. Nothing is written to disk: hooks and sessions run in parallel. A gate reads git through `ctx.cache`, not `run_git`; `worktree_list` and `changed_paths` of `svod.git` take it as `run`.
+`ctx` carries `config` (`root`, `default_branch`, `workspaces`, …), `locale` (may be `None` in tests), `today`, `bindings`, `root`, `pipelines` — loaded pipelines by name, for a gate that consults another pipeline (for example its subject provider as `ctx.pipelines[name].subject.impl`) — and `cache`, the memory of one run shared by every context rooted in another checkout: `cache.git(cwd, *args)` runs git once per directory and arguments, `cache.prefetch([(cwd, args), …])` runs the calls not known yet in parallel (a pool of `GIT_WORKERS` threads), `cache.value(key, compute)` keeps a value computed from files. Nothing is written to disk: hooks and sessions run in parallel. A gate reads git through `ctx.cache`, not `run_git`; `worktree_list` and `changed_paths` of `svod.git` take it as `run`. `cache.git` returns a `GitResult` (`svod.git`), not a string: `ok` tells whether git succeeded, `out` is its stripped stdout, `error` the first line of stderr on failure.
+
+A gate that raises does not break `status` or a hook: its outcome is UNKNOWN with the reason `gate <name> raised <error>`, so the step stays unpassed and the status says why. Return `unknown(reason)` yourself for the cases you foresee; an exception is for the ones you did not.
 
 `Result(status, facts={}, display=None, reason=None)`: `status` is `Status.PASS`, `Status.FAIL` or `Status.UNKNOWN`; `facts` fill texts; `display` replaces the standard mark line; `reason` is shown for UNKNOWN. Helpers: `verdict(ok, **facts)` and `unknown(reason, **facts)`.
 

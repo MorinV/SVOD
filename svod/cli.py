@@ -304,6 +304,8 @@ def run(args):
         from svod.approve import approve
         return emit(approve(ctx, runtime.pipelines, args.query, step=args.step))
     lines = summarize(ctx, runtime.pipelines, args.all)
+    if not args.hook and not any(p.active for p in runtime.pipelines):
+        lines.append(runtime.locale.text(keys.ACTIVE_NONE))
     if args.hook:
         from svod.notice import update_notice, with_notice
         lines = with_notice(lines, update_notice(runtime.config, runtime.locale))

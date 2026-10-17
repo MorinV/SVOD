@@ -228,6 +228,20 @@ class PositionTest(SharedStoreTestCase):
         self.assertEqual(self.pos("tk-777").marks, [])
         self.assertEqual(self.status("tk-777")[:2], ["Task tk-777", ""])
 
+    def test_unlabelled_steps_are_marked_by_id(self):
+        """A step without a labelled gate is one mark of its own, in step order, by its id."""
+        lines = self.status("full")
+        marks = lines[1:lines.index("")]
+        self.assertEqual(marks[-1], "  - close")
+        self.assertEqual(len(marks), len(self.pos("full").steps))
+
+    def test_step_text_period_is_not_doubled(self):
+        """A step text ending with a period keeps one period inside the next-step line."""
+        from svod.render import sentence
+        self.assertEqual(sentence("Do it."), "Do it")
+        self.assertEqual(sentence("Do it"), "Do it")
+        self.assertEqual(sentence("Wait..."), "Wait...")
+
     def test_missing_subject_has_no_violations_and_no_freeze(self):
         """A subject the provider did not find gets neither violations nor the freeze."""
         pipeline = self.runtime.pipeline("task")
@@ -356,9 +370,10 @@ class ArchiveHistoryTest(unittest.TestCase):
         for entries in (pipeline.entry, []):
             with self.subTest(entry=bool(entries)):
                 with patch.object(live, "evaluate", side_effect=AssertionError("live gate replay")):
-                    with self.assertRaisesRegex(AssertionError, "live gate replay"):
-                        position(None, dataclasses.replace(pipeline, entry=entries),
-                                 Subject("active", None))
+                    pos = position(None, dataclasses.replace(pipeline, entry=entries),
+                                   Subject("active", None))
+                self.assertIsNone(pos.done)
+                self.assertIn("live gate replay", pos.unknown[0].result.reason)
 
     def test_active_arbitrary_done_retains_live_outcomes(self):
         """Existing successful active done still contains evaluated entries and marks."""
@@ -378,9 +393,18 @@ class ArchiveHistoryTest(unittest.TestCase):
             with self.subTest(archived=archived):
                 live = PassGate()
                 with patch.object(live, "evaluate", side_effect=AssertionError("live gate replay")):
-                    with self.assertRaisesRegex(AssertionError, "live gate replay"):
-                        position(None, self.pipeline(live, PassGate()),
-                                 Subject("subject", None, archived=archived))
+                    pos = position(None, self.pipeline(live, PassGate()),
+                                   Subject("subject", None, archived=archived))
+                self.assertIn("live gate replay", pos.unknown[0].result.reason)
+
+    def test_raising_gate_is_unknown_not_a_crash(self):
+        """A gate that raises leaves its step unpassed and names the error as the reason."""
+        live = PassGate()
+        with patch.object(live, "evaluate", side_effect=ValueError("boom")):
+            pos = position(None, self.pipeline(live, PassGate()), Subject("subject", None))
+        self.assertEqual(pos.unknown[0].result.status, Status.UNKNOWN)
+        self.assertEqual(pos.unknown[0].result.reason, "gate live raised ValueError: boom")
+        self.assertFalse(pos.steps[0].passed)
 
     def test_failed_or_unknown_historical_done_is_not_success(self):
         """Retain the actual done result once; failure must not manufacture history."""

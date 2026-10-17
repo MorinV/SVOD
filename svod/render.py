@@ -15,6 +15,8 @@ FACT_KEYS = "keys"
 FACT_PIPELINE = "pipeline"
 FACT_REASON = "reason"
 VARIANT_SEPARATOR = "_"
+PERIOD = "."
+ELLIPSIS = "..."
 MARK_KEYS = {Status.PASS: keys.MARK_PASS, Status.FAIL: keys.MARK_FAIL,
              Status.UNKNOWN: keys.MARK_UNKNOWN}
 
@@ -103,19 +105,53 @@ def skill_line(locale, role, skills):
         for label, skill in items))
 
 
+def step_status(state):
+    """Status of a step as one mark: PASS when passed, UNKNOWN when a gate could not be checked."""
+    if state.passed:
+        return Status.PASS
+    if any(o.result.status is Status.UNKNOWN for o in state.outcomes):
+        return Status.UNKNOWN
+    return Status.FAIL
+
+
+def step_mark_text(locale, state):
+    """Mark of a step without labelled gates: its title when declared, else its id."""
+    label = locale.text(state.step.title) if state.step.title else state.step.id
+    return locale.text(MARK_KEYS[step_status(state)], label=label)
+
+
+def mark_lines(locale, pos):
+    """One line of marks per step: its labelled gates, or the step itself when none is labelled."""
+    if not pos.subject.exists:
+        return []
+    labelled = dict(pos.marks)
+    lines = []
+    for state in pos.steps:
+        outcomes = labelled.get(state.step.id)
+        if outcomes:
+            lines.append(MARK_SEPARATOR.join(mark_text(locale, o) for o in outcomes))
+        else:
+            lines.append(step_mark_text(locale, state))
+    return lines
+
+
+def sentence(text):
+    """The text without its final period, for a template that ends the sentence itself."""
+    return text[:-1] if text.endswith(PERIOD) and not text.endswith(ELLIPSIS) else text
+
+
 def render_position(locale, pos, skills=None):
     """Lines of the status block for one position; skills of the current step when resolved."""
     header = pos.pipeline.header or keys.STATUS_HEADER
     lines = [locale.text(header, **subject_facts(pos))]
     if pos.subject.checkout is not None:
         lines.append(INDENT + locale.text(keys.STATUS_CHECKOUT, dir=pos.subject.checkout.name))
-    for _, outcomes in pos.marks:
-        lines.append(INDENT + MARK_SEPARATOR.join(mark_text(locale, o) for o in outcomes))
+    lines += [INDENT + line for line in mark_lines(locale, pos)]
     text = step_text(locale, pos)
     body = []
     if text:
         body.append(text if pos.text_from_entry
-                    else locale.text(keys.STATUS_NEXT_STEP, step=text))
+                    else locale.text(keys.STATUS_NEXT_STEP, step=sentence(text)))
     if skills:
         body.append(skill_line(locale, pos.current.step.role, skills))
     if pos.do_not_touch is not None:

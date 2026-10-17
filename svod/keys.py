@@ -34,6 +34,7 @@ ACTIVE_HOOK_TAIL = "active.hook_tail"
 ACTIVE_NO_LOCAL_CONFIG = "active.no_local_config"
 ACTIVE_NO_IDENTITY = "active.no_identity"
 ACTIVE_WORKTREE = "active.worktree"
+ACTIVE_NONE = "active.none"
 INIT_WRITTEN = "init.written"
 INIT_EXISTS = "init.exists"
 INIT_NOT_CONFIGURED = "init.not_configured"
@@ -166,6 +167,7 @@ CORE_KEYS = (
     ACTIVE_NO_LOCAL_CONFIG,
     ACTIVE_NO_IDENTITY,
     ACTIVE_WORKTREE,
+    ACTIVE_NONE,
     INIT_WRITTEN,
     INIT_EXISTS,
     INIT_NOT_CONFIGURED,

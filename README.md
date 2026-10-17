@@ -65,6 +65,7 @@ svod status PROJ-1
 
 ```
 add-login (PROJ-1)
+  + Propose
   + proposal   + design   + spec   + tasks
   - plan approved
   ...

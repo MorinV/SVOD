@@ -37,6 +37,7 @@ active:
   no_local_config: "Local config {file} is missing: ask the person for a login, then svod init --login <login> --email <email>"
   no_identity: "Who you are is unknown: no email in the local config nor in git user.email, so all work below is shown as yours"
   worktree: "In progress in the checkout {dir}:"
+  none: "No pipeline takes part in the summary: add active: to a pipeline (see the reference)"
 init:
   written: "Local config written: {path}"
   exists: "Local config already exists: {path} (--force to overwrite)"
