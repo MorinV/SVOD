@@ -8,6 +8,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ### Added
 
+- The evidence log `evidence/<pipeline>/<subject>.jsonl` (`svod.evidence_log`): `status`, `approve`, `local checks`/`deliver` and the `pre-tool` hook append one JSON line per event (position changes, passed steps, approvals, checks, deliveries, refusals, unchecked gates), codes and numbers only; `evidence: {enabled, commit}` in `svod.yaml`, see the reference.
 - `svod approve <query> --confirm` records an approval that a person confirms with y at a terminal when there is no fresh mark, for agents without a prompt hook; all YAML is read by one loader that refuses repeated keys, and the approval fields are read and written only through `svod.approval.read_fields` and `write_fields`.
 
 ### Changed

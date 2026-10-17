@@ -31,6 +31,7 @@ Its presence marks the store root: the CLI walks up from the working directory t
 | `workspace_gate` | no | string / none | name of a gate with a `worktrees(ctx, keys)` method (see [Writing a custom gate](#writing-a-custom-gate)); it tells the `pre-tool` hook which directories are work directories of a subject; without it that check is off |
 | `main_checkout_read_only` | no | bool / `false` | the `pre-tool` hook refuses edits in the main checkout of the store repository, except paths git ignores; work goes into worktrees |
 | `update_check` | no | bool / `true` | with a [copy of the engine](#vendored-copy) in the store, the session start summary says when a newer release is out, checked at most once a day; `false` turns the check off |
+| `evidence` | no | mapping / `{}` | the [evidence log](#evidence): `enabled` (bool, `true`) writes it, `commit` (bool, `true`) keeps it in version control; any other key or a non-bool value is a load error |
 
 ```yaml
 locale: en
@@ -47,6 +48,7 @@ approval:
 workspace_gate: worktree
 main_checkout_read_only: true
 update_check: false
+evidence: { commit: false }
 profile_config:
   publishing: { mode: review }
 ```
@@ -656,6 +658,39 @@ The hooks run as the same user as the agent and see only the tool calls the agen
 Every git call of one event goes through one run cache (`svod.cache.RunCache`), the gates of the store and the approval mark included, so no call repeats within the event. Rule 3 checks the freeze of the subjects of the key before it asks the workspace gate about the directory: an edit in the work directory of an approved subject costs none of the git calls of the gate. Rule 3 and `svod local` share one code-freeze rule, `svod.position.freeze`.
 
 The hooks are the package `svod.hooks`, each module importing only those before it: `protocol` (the event JSON), `shell` (tokens of a command, programs known to only read, the paths a command names, the python script exception of rule 1), `store` (the store of the session and its loading), `prompt`, `guard` (the `pre-tool` rules) and `events` (the answer to each event, `svod hook`).
+
+## Evidence
+
+The evidence log keeps the facts of the course of each piece of work, for rules that later look back over many of them. It holds codes, ids, counts, exit codes and seconds: no texts of the plan, of instructions or of commands, no output, no secrets. It does not measure tokens. It is secondary: a failed write is said once on stderr (`svod: the evidence log is not written: <error>`) and never changes the outcome or the exit code of the command.
+
+**Where.** `evidence/<pipeline>/<subject id>.jsonl` under the store root, `/` of the id written as `__` (`evidence/task/openspec__changes__add-login.jsonl`); an event tied to no subject goes to `evidence/store.jsonl`. Lines are only appended, each by one write of one line.
+
+**Line.** One JSON object per event: `{"at": "<ISO time with offset>", "event": "<code>", "subject": "<id>", "pipeline": "<name>", "step": "<step id>" or null, "facts": {...}}`. A fact is a string of at most 100 characters, a number, a bool or null; seconds are rounded to milliseconds.
+
+| event | written by | step | facts |
+|---|---|---|---|
+| `position_changed` | `status`, when the current step differs from `to` of the last such line (the first status of a subject with a current step writes one) | the current step | `from`, `to`: step ids, null when no step is current (done, or held by an entry) |
+| `step_passed` | `status`, with a `position_changed`, for each passed step from `from` up to the new current step | the step | — |
+| `unknown_gate` | `status`, for a gate that could not be checked, once per gate and reason at one position | the current step | `gate`, `reason` (its first 100 characters) |
+| `approval_recorded` | `approve`, recorded | the approved step | `by`: the approver |
+| `approval_drift` | `approve`, refused with `approve.changed_after_mark` | the step | — |
+| `approval_refused` | `approve`, any other refusal of an open subject | the step when known | `reason`: the locale key without `approve.` (`no_mark`, `not_ready`, …) |
+| `checks_run` | `local checks`, when it returns a result | — | `service` (from the receipt) or `workspace` (the name of the source directory), `code`: exit code or null, `seconds`, `passed` |
+| `delivered` | `local deliver`, recorded | — | — |
+| `hook_denied` | the `pre-tool` [hook](#hooks), each refusal; the subject is the one holding a path of the call, else the open subject of a key in the name of its work directory, else none | — | `rule`: `approval`, `plan`, `main`, `mark`, `broken` or `external` (null when the text is none of theirs), `tool` |
+| `action_run` | `svod.evidence_log.record_action(root, pipeline, subject_id, action, code, seconds, step=None)` | as given | `action`, `code`, `seconds` |
+
+A `not found` or ambiguous `approve`, a `local` command that raises and a hook without a store of the session write nothing.
+
+**svod.yaml.** `evidence.enabled: false` turns the log off. `evidence.commit: false` keeps it local: the first write adds the line `evidence/` to the `.gitignore` of the store when no line names the directory yet.
+
+```yaml
+evidence:
+  enabled: true
+  commit: false
+```
+
+**API.** `svod.evidence_log`: `record(root, pipeline, subject_id, event, step=None, **facts)` appends one event and returns whether a line was written (an unknown event code is a `ValueError`); `read(root, pipeline, subject_id)` returns the events in order, leaving out a torn line; `summary(root, pipeline, subject_id)` returns `{"events": {<code>: <count>}, "seconds": <sum of the seconds facts>}`. With `pipeline` or `subject_id` None they use the store log.
 
 ## Vendored copy
 

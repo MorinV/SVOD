@@ -3,6 +3,7 @@ import json
 import sys
 
 from ..active import hook_payload, summarize
+from ..evidence_log import note_denial
 from ..notice import update_notice, with_notice
 from .guard import Guard, broken_reason, tool_reason
 from .prompt import prompt_hook
@@ -40,10 +41,12 @@ def pre_tool(event, fallback):
     guard = Guard(store_root(event, fallback))
     reason = tool_reason(guard, event, tool, data)
     if reason:
+        note_denial(guard, event, tool, data, reason)
         return deny_output(reason)
     if guard.broken:
         reason = broken_reason(guard, event, tool, data)
         if reason:
+            note_denial(guard, event, tool, data, reason)
             return deny_output(reason)
         if tool != BASH_TOOL:
             return context_output(EVENT_PRE_TOOL, broken_text(guard.root, guard.broken))
