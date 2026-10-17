@@ -76,7 +76,8 @@ class RenderTest(StoreTestCase):
             with self.subTest(line=line):
                 self.assertIn(line, lines)
         self.assertIn("  class s1 optional", self.lines("project"))
-        self.assertIn("| review | review ... | - | decide whether to continue |", self.lines("note"))
+        self.assertIn("| review | review ... | - | decide whether to continue |",
+                      self.lines("note"))
 
     def test_print_and_unknown(self):
         """Without --write the block goes to stdout; an unknown pipeline is a usage error."""

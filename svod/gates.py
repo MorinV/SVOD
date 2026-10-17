@@ -1,9 +1,14 @@
 """Gates: named checks over a subject, core set and registry."""
+from __future__ import annotations
+
 import datetime as dt
 import importlib.util
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
+from types import ModuleType
+from typing import TYPE_CHECKING, Any
 
 from .approval import bound_files, digest_matches, read_fields
 from .errors import LoadError, ParamError
@@ -18,6 +23,12 @@ from .keys import (
 )
 from .params import Configurable
 from .subject import ATTR_CONTAINER, ATTR_FRONTMATTER
+
+if TYPE_CHECKING:
+    from .context import Context
+    from .locale import Locale
+    from .providers import Provider
+    from .subject import Subject
 
 PARAM_PATH = "path"
 PARAM_GLOB = "glob"
@@ -73,27 +84,27 @@ class Result:
     """Gate outcome with facts for texts, an optional display line and a failure reason."""
 
     status: Status
-    facts: dict = field(default_factory=dict)
+    facts: dict[str, Any] = field(default_factory=dict)
     display: str | None = None
     reason: str | None = None
 
     @property
-    def passed(self):
+    def passed(self) -> bool:
         """Whether the gate passed."""
         return self.status is Status.PASS
 
 
-def verdict(ok, **facts):
+def verdict(ok: bool, **facts: Any) -> Result:
     """PASS or FAIL result with facts."""
     return Result(Status.PASS if ok else Status.FAIL, facts)
 
 
-def unknown(reason, **facts):
+def unknown(reason: str, **facts: Any) -> Result:
     """UNKNOWN result: the check could not be performed."""
     return Result(Status.UNKNOWN, facts, reason=reason)
 
 
-def subject_dir(subject):
+def subject_dir(subject: Subject) -> Path | None:
     """Artifact root of an existing subject, or None."""
     if not subject.exists or subject.path is None:
         return None
@@ -103,11 +114,11 @@ def subject_dir(subject):
 class Gate(Configurable):
     """Named check over a subject."""
 
-    def evaluate(self, ctx, subject):
+    def evaluate(self, ctx: Context, subject: Subject) -> Result:
         """Result of the check for the subject."""
         raise NotImplementedError
 
-    def describe(self, params, locale):
+    def describe(self, params: dict[str, Any], locale: Locale) -> str:
         """What must hold for the gate to pass, from the locale key gate.<name> and the params."""
         return locale.text(f"{DESCRIBE_PREFIX}{self.name}", **params)
 
@@ -115,15 +126,15 @@ class Gate(Configurable):
 class KeyGate(Gate):
     """Gate that also recognises tracker keys in queries and texts."""
 
-    def match(self, query):
+    def match(self, query: str) -> str | None:
         """Tracker key named by the query, or None."""
         raise NotImplementedError
 
-    def find(self, text):
+    def find(self, text: str) -> set[str]:
         """Set of tracker keys mentioned in the text."""
         raise NotImplementedError
 
-    def evaluate(self, ctx, subject):
+    def evaluate(self, ctx: Context, subject: Subject) -> Result:
         """Passes when the subject carries at least one tracker key."""
         return verdict(bool(subject.keys), keys=KEYS_SEPARATOR.join(sorted(subject.keys)))
 
@@ -133,11 +144,11 @@ class ExistsGate(Gate):
 
     name = "exists"
 
-    def evaluate(self, ctx, subject):
+    def evaluate(self, ctx: Context, subject: Subject) -> Result:
         """PASS when the provider found the subject."""
         return verdict(subject.exists)
 
-    def describe(self, params, locale):
+    def describe(self, params: dict[str, Any], locale: Locale) -> str:
         """The subject was found."""
         return locale.text(DESCRIBE_EXISTS)
 
@@ -148,7 +159,7 @@ class ArtifactGate(Gate):
     name = "artifact"
     PARAMS = frozenset({PARAM_PATH, PARAM_GLOB, PARAM_MIN})
 
-    def check(self):
+    def check(self) -> None:
         """Exactly one of path and glob; min is a positive integer."""
         if (PARAM_PATH in self.params) == (PARAM_GLOB in self.params):
             raise ParamError(f"{self.name}: exactly one of {PARAM_PATH} and {PARAM_GLOB}")
@@ -160,7 +171,7 @@ class ArtifactGate(Gate):
         if PARAM_PATH in self.params and minimum > DEFAULT_MIN:
             raise ParamError(f"{self.name}: {PARAM_MIN} applies to {PARAM_GLOB} only")
 
-    def evaluate(self, ctx, subject):
+    def evaluate(self, ctx: Context, subject: Subject) -> Result:
         """Count matching files under the subject; facts.count."""
         base = subject_dir(subject)
         count = 0
@@ -171,7 +182,7 @@ class ArtifactGate(Gate):
                 count = sum(1 for _ in base.glob(self.params[PARAM_GLOB]))
         return verdict(count >= self.params.get(PARAM_MIN, DEFAULT_MIN), count=count)
 
-    def describe(self, params, locale):
+    def describe(self, params: dict[str, Any], locale: Locale) -> str:
         """The path exists, or the glob matches at least min entries."""
         if PARAM_PATH in params:
             return locale.text(DESCRIBE_ARTIFACT_PATH, path=params[PARAM_PATH])
@@ -192,7 +203,7 @@ class ApprovalGate(Gate):
     PARAMS = frozenset({PARAM_MARKER, PARAM_FILE, PARAM_BIND, *LINE_RULES})
     REQUIRED = frozenset({PARAM_MARKER, PARAM_FILE})
 
-    def check(self):
+    def check(self) -> None:
         """Marker and file are strings; bind and the line rules are non-empty lists."""
         self.require_type(PARAM_MARKER, str, "a string")
         self.require_type(PARAM_FILE, str, "a string")
@@ -202,7 +213,7 @@ class ApprovalGate(Gate):
         for rule in LINE_RULES:
             self.check_line_rule(rule, bind)
 
-    def check_line_rule(self, rule, bind):
+    def check_line_rule(self, rule: str, bind: Any) -> None:
         """A line rule, when given, needs bind and is a non-empty list of regular expressions."""
         patterns = self.params.get(rule)
         if patterns is None:
@@ -217,22 +228,21 @@ class ApprovalGate(Gate):
                 re.compile(pattern)
             except re.error as exc:
                 raise ParamError(f"{self.name}: {rule}: {pattern!r} is not a regular "
-                                 f"expression: {exc}")
+                                 f"expression: {exc}") from exc
 
-    def failed(self, reason, **facts):
+    def failed(self, reason: str, **facts: Any) -> Result:
         """FAIL with the reason among the facts."""
         return Result(Status.FAIL, {**facts, FACT_REASON: reason})
 
-    def evaluate(self, ctx, subject):
+    def evaluate(self, ctx: Context, subject: Subject) -> Result:
         """Read the approval fields; facts.value, marker, by, date and reason on failure."""
         marker = self.params[PARAM_MARKER]
         empty = {FACT_VALUE: "", FACT_MARKER: marker, FACT_BY: "", FACT_DATE: ""}
         bind = self.params.get(PARAM_BIND)
-        if bind and (subject_dir(subject) is None or not bound_files(subject_dir(subject), bind)):
-            return self.failed(REASON_MISSING, **empty)
         base = subject_dir(subject)
-        path = base / self.params[PARAM_FILE] if base is not None else None
-        if path is None or not path.is_file():
+        if bind and (base is None or not bound_files(base, bind)):
+            return self.failed(REASON_MISSING, **empty)
+        if base is None or not (path := base / self.params[PARAM_FILE]).is_file():
             return self.failed(REASON_MISSING, **empty)
         try:
             value, by, sha = read_fields(path, marker)
@@ -251,7 +261,7 @@ class ApprovalGate(Gate):
             return self.failed(REASON_DRIFT, **facts)
         return Result(Status.PASS, facts)
 
-    def describe(self, params, locale):
+    def describe(self, params: dict[str, Any], locale: Locale) -> str:
         """The marker is set in the file, for the current bound files when bound."""
         if params.get(PARAM_BIND):
             return locale.text(DESCRIBE_APPROVAL_BOUND, marker=params[PARAM_MARKER],
@@ -260,7 +270,7 @@ class ApprovalGate(Gate):
         return locale.text(DESCRIBE_APPROVAL, marker=params[PARAM_MARKER], file=params[PARAM_FILE])
 
 
-def non_empty_strings(value):
+def non_empty_strings(value: Any) -> bool:
     """Whether the value is a non-empty list of non-blank strings."""
     return isinstance(value, list) and bool(value) and all(
         isinstance(item, str) and item.strip() for item in value)
@@ -273,7 +283,7 @@ class FieldGate(Gate):
     PARAMS = frozenset({PARAM_NAME, *FIELD_CONDITIONS})
     REQUIRED = frozenset({PARAM_NAME})
 
-    def check(self):
+    def check(self) -> None:
         """Exactly one condition; boolean conditions are booleans."""
         given = [c for c in FIELD_CONDITIONS if c in self.params]
         if len(given) != 1:
@@ -282,7 +292,7 @@ class FieldGate(Gate):
         self.require_type(PARAM_DATE_NOT_PAST, bool, "a boolean")
         self.require_type(PARAM_PRESENT, bool, "a boolean")
 
-    def evaluate(self, ctx, subject):
+    def evaluate(self, ctx: Context, subject: Subject) -> Result:
         """Apply the condition to the frontmatter field; facts.value."""
         frontmatter = subject.attrs.get(ATTR_FRONTMATTER) or {}
         value = frontmatter.get(self.params[PARAM_NAME])
@@ -299,7 +309,7 @@ class FieldGate(Gate):
             return verdict(False, value=text)
         return verdict((day >= ctx.today) == self.params[PARAM_DATE_NOT_PAST], value=text)
 
-    def describe(self, params, locale):
+    def describe(self, params: dict[str, Any], locale: Locale) -> str:
         """The condition on the field in words."""
         name = params[PARAM_NAME]
         if PARAM_EQUALS in params:
@@ -322,13 +332,13 @@ class DocTypeGate(Gate):
     PARAMS = frozenset({PARAM_TYPE, PARAM_SCOPE})
     REQUIRED = frozenset({PARAM_TYPE})
 
-    def check(self):
+    def check(self) -> None:
         """Scope is one of the known scopes."""
         self.require_type(PARAM_TYPE, str, "a string")
         if self.params.get(PARAM_SCOPE, SCOPE_SUBJECT) not in SCOPES:
             raise ParamError(f"{self.name}: {PARAM_SCOPE} must be one of {', '.join(SCOPES)}")
 
-    def evaluate(self, ctx, subject):
+    def evaluate(self, ctx: Context, subject: Subject) -> Result:
         """Search the subject or its container for a document of the type."""
         if self.params.get(PARAM_SCOPE, SCOPE_SUBJECT) == SCOPE_CONTAINER:
             container = subject.attrs.get(ATTR_CONTAINER)
@@ -341,7 +351,7 @@ class DocTypeGate(Gate):
         return verdict(any((read_frontmatter(p) or {}).get(FIELD_TYPE) == wanted
                            for p in documents(base)))
 
-    def describe(self, params, locale):
+    def describe(self, params: dict[str, Any], locale: Locale) -> str:
         """A document of the type in the subject or in its container."""
         key = (DESCRIBE_DOC_TYPE_CONTAINER if params.get(PARAM_SCOPE) == SCOPE_CONTAINER
                else DESCRIBE_DOC_TYPE)
@@ -353,11 +363,11 @@ class ArchivedGate(Gate):
 
     name = "archived"
 
-    def evaluate(self, ctx, subject):
+    def evaluate(self, ctx: Context, subject: Subject) -> Result:
         """PASS when the provider marked the subject archived."""
         return verdict(subject.archived)
 
-    def describe(self, params, locale):
+    def describe(self, params: dict[str, Any], locale: Locale) -> str:
         """The subject is archived."""
         return locale.text(DESCRIBE_ARCHIVED)
 
@@ -368,11 +378,11 @@ class GitPushedGate(Gate):
     name = "git_pushed"
     PARAMS = frozenset({PARAM_REPO})
 
-    def check(self):
+    def check(self) -> None:
         """Repo is a string path."""
         self.require_type(PARAM_REPO, str, "a string")
 
-    def evaluate(self, ctx, subject):
+    def evaluate(self, ctx: Context, subject: Subject) -> Result:
         """Count commits ahead of the default branch; git failure is UNKNOWN."""
         repo = ctx.root / self.params[PARAM_REPO] if PARAM_REPO in self.params else ctx.root
         out = ctx.cache.git(repo, "rev-list", "--count", f"{ctx.config.default_branch}..HEAD")
@@ -384,7 +394,7 @@ class GitPushedGate(Gate):
             return unknown(f"git rev-list: unexpected output: {out.out}")
         return verdict(count == 0, count=count)
 
-    def describe(self, params, locale):
+    def describe(self, params: dict[str, Any], locale: Locale) -> str:
         """No commits ahead of the default branch in the store or the given repository."""
         if PARAM_REPO in params:
             return locale.text(DESCRIBE_GIT_PUSHED_REPO, repo=params[PARAM_REPO])
@@ -396,15 +406,17 @@ CORE_GATES = {cls.name: cls for cls in (
 )}
 
 
-def load_module(path):
+def load_module(path: Path) -> ModuleType:
     """Import a profile gate module from its file path."""
     spec = importlib.util.spec_from_file_location(f"{MODULE_PREFIX}{path.stem}", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # A spec or loader of None raises here; load_profile reports it as a failed import.
+    module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
     return module
 
 
-def registered(path, table, base, core, found, errors):
+def registered(path: Path, table: dict[str, Any], base: type[Configurable], core: dict[str, Any],
+               found: dict[str, Any], errors: list[str]) -> None:
     """Add the classes of one module mapping to found; record every problem in errors."""
     for name, cls in table.items():
         if not (isinstance(cls, type) and issubclass(cls, base)):
@@ -417,13 +429,16 @@ def registered(path, table, base, core, found, errors):
             found[name] = cls
 
 
-def load_profile(profile_dir):
+def load_profile(
+        profile_dir: Path) -> tuple[dict[str, type[Gate]], dict[str, type[Provider]]]:
     """(gates, providers) declared by GATES and the optional PROVIDERS of the profile modules."""
     from .providers import CORE_PROVIDERS, Provider
     directory = profile_dir / GATES_DIR
     if not directory.is_dir():
         return {}, {}
-    gates, providers, errors = {}, {}, []
+    gates: dict[str, type[Gate]] = {}
+    providers: dict[str, type[Provider]] = {}
+    errors: list[str] = []
     for path in sorted(directory.glob(GATES_GLOB)):
         if path.name.startswith(PRIVATE_PREFIX):
             continue
@@ -447,7 +462,8 @@ def load_profile(profile_dir):
     return gates, providers
 
 
-def build_registries(profile_dir):
+def build_registries(
+        profile_dir: Path) -> tuple[dict[str, type[Gate]], dict[str, type[Provider]]]:
     """(gate registry, provider registry): the core ones plus those of the profile."""
     from .providers import CORE_PROVIDERS
     gates, providers = load_profile(profile_dir)

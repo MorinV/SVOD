@@ -13,7 +13,6 @@ PORCELAIN_WORKTREE = "worktree "
 PORCELAIN_BRANCH = "branch "
 PORCELAIN_BARE = "bare"
 BRANCH_PREFIX = "refs/heads/"
-NUL = "\0"
 COMMON_DIR = ("rev-parse", "--git-common-dir")
 
 
@@ -106,7 +105,7 @@ def changed_paths(cwd, base, run=None):
     for args in changed_calls(base):
         out = (run or run_git)(cwd, *args)
         if out.ok:
-            paths.update(p for p in out.out.split(NUL) if p)
+            paths.update(p for p in out.out.split("\0") if p)
         else:
             errors.append(out.error)
     return paths, errors

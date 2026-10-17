@@ -536,7 +536,7 @@ class LauncherTest(SourceTestCase):
                 self.assertEqual(out.stdout.strip(), f"svod {version}")
 
     def test_modified_copy_is_not_run(self):
-        """A copy that differs from its MANIFEST does not run: the installed engine does, and says so.
+        """A copy differing from its MANIFEST does not run: the installed engine does, and says so.
 
         A child process: `python -m svod.cli` is started as an agent starts it, importing svod
         through PYTHONPATH, and the refusal must reach the real stderr of that process.

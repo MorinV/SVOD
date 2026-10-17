@@ -23,7 +23,8 @@ CMD_HOOK = "hook"
 OWN_COMMANDS = ("install", "update")
 ENCODING = "utf-8"
 PACKAGE_HOME = Path(__file__).resolve().parent
-COPY_REFUSED = "svod: not running the copy of the engine in the store: {reason}; running the installed engine"
+COPY_REFUSED = ("svod: not running the copy of the engine in the store: {reason}; "
+                "running the installed engine")
 
 
 @dataclass(frozen=True)
@@ -92,7 +93,7 @@ def run_copy(root, argv, stdin=None):
 def handed_over(root):
     """Whether this process already runs the copy of the store or was handed over to it."""
     lib = lib_dir(root).resolve()
-    return PACKAGE_HOME == (lib / PACKAGE_DIR) or os.environ.get(LAUNCH_ENV) == str(lib)
+    return (lib / PACKAGE_DIR) == PACKAGE_HOME or os.environ.get(LAUNCH_ENV) == str(lib)
 
 
 def launch(argv, stdin=None):

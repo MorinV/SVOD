@@ -20,3 +20,17 @@ class ParamError(SvodError):
 
 class LocaleError(SvodError):
     """A locale key is missing or its placeholders are not satisfied."""
+
+
+class LocalWorkflowError(SvodError, ValueError):
+    """The compact local workflow refused its input, evidence or source state.
+
+    Also a ValueError: the local workflow and its callers report a refused input as one.
+    """
+
+
+class PolicyError(SvodError, ValueError):
+    """A subject's pipeline or approval is missing or ambiguous, or a prerequisite pends.
+
+    Also a ValueError: the local workflow and its callers report a refused input as one.
+    """

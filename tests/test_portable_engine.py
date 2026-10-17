@@ -1,13 +1,11 @@
 """Portable boundaries: conditional-only groups, entry readiness and native consent."""
 import dataclasses
-import importlib
 import unittest
-from pathlib import Path
 from unittest import mock
 
 from support import StoreTestCase
 from svod.approval import read_mark
-from svod.approve import approve, pending_prerequisites
+from svod.approve import approve
 from svod.context import Context
 from svod.gates import ApprovalGate, Status, unknown, verdict
 from svod.loader import load_runtime
@@ -57,11 +55,13 @@ class PortableApprovalTest(unittest.TestCase):
                     ref = dataclasses.replace(template, severity='block', when=None, impl=gate)
                     selected = self.pipeline.step(controls.SECOND_STEP)
                     previous = self.pipeline.steps[0]
-                    target = self.pipeline if location == 'pipeline' else previous if location == 'previous' else selected
+                    target = (self.pipeline if location == 'pipeline'
+                              else previous if location == 'previous' else selected)
                     with mock.patch.object(target, 'entry', [ref]):
                         self.fx.mark()
                         before = read_mark(self.fx.sb.store)
-                        report = approve(self.ctx, self.runtime.pipelines, 'tk-1', step=controls.SECOND_STEP)
+                        report = approve(self.ctx, self.runtime.pipelines, 'tk-1',
+                                         step=controls.SECOND_STEP)
                         self.assertFalse(report.ok)
                         self.assertTrue(report.refused)
                         self.assertEqual(read_mark(self.fx.sb.store), before)

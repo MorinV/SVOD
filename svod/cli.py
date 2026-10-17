@@ -1,15 +1,24 @@
 """Command line entry of svod."""
+from __future__ import annotations
+
 import argparse
 import importlib.util
 import io
 import json
 import sys
+from collections.abc import Iterable, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING, NoReturn
 
 from svod import __version__
 from svod.hooks import EVENTS, run as run_hook
 from svod.launcher import launch
 from svod.locale import error_locale
+
+if TYPE_CHECKING:
+    from svod.context import Context
+    from svod.pipeline import Pipeline
+    from svod.render import Report
 
 PROG = "svod"
 EXIT_OK = 0
@@ -34,7 +43,7 @@ YAML_MODULE = "yaml"
 ERROR_INDENT = "  "
 
 
-def emit_json_error(code, query=None):
+def emit_json_error(code: str, query: str | None = None) -> int:
     """Structured status failures contain only a safe reason code."""
     from svod.status_json import error_json
     print(json.dumps(error_json(code, query), ensure_ascii=False))
@@ -46,13 +55,14 @@ class StatusParser(argparse.ArgumentParser):
 
     json_errors = False
 
-    def error(self, message):
+    def error(self, message: str) -> NoReturn:
+        """Exit with a safe JSON failure in JSON status mode, else with argparse usage text."""
         if self.json_errors:
             raise SystemExit(emit_json_error("invalid_arguments"))
         super().error(message)
 
 
-def build_parser():
+def build_parser() -> StatusParser:
     """Argument parser with one subcommand per mode."""
     parser = StatusParser(prog=PROG)
     parser.add_argument("--root", help="store root holding svod.yaml")
@@ -92,21 +102,22 @@ def build_parser():
         delivery = commands.add_parser(name, help=text)
         delivery.add_argument("--from", dest="source",
                               help="git URL or local clone of Svod; the recorded source by default")
-        delivery.add_argument("--to", dest="ref", help="tag or branch; the newest vX.Y.Z by default")
+        delivery.add_argument("--to", dest="ref",
+                              help="tag or branch; the newest vX.Y.Z by default")
     migrate = commands.add_parser(CMD_MIGRATE,
                                   help="apply the store migrations of the versions after a version")
     migrate.add_argument("--since", required=True, help="version the store was used with")
     return parser
 
 
-def print_errors(header, errors):
+def print_errors(header: str, errors: Iterable[str]) -> None:
     """Header and indented error lines on stderr."""
     print(header, file=sys.stderr)
     for error in errors:
         print(f"{ERROR_INDENT}{error}", file=sys.stderr)
 
 
-def emit(report):
+def emit(report: Report) -> int:
     """Print a report; exit 0 when ok, 1 for a refusal, 2 otherwise."""
     for line in report.out:
         print(line)
@@ -117,7 +128,7 @@ def emit(report):
     return EXIT_FINDINGS if report.refused else EXIT_USAGE
 
 
-def render(ctx, pipelines, args):
+def render(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace) -> int:
     """Print the block of a pipeline, or write it into every document holding its markers."""
     from svod import keys
     from svod.document import MARKER_BEGIN, block, relative_or_absolute, write_blocks
@@ -140,7 +151,7 @@ def render(ctx, pipelines, args):
     return EXIT_OK
 
 
-def ask(prompt):
+def ask(prompt: str) -> str:
     """Answer typed at the terminal, stripped; empty at end of input."""
     try:
         return input(prompt).strip()
@@ -148,7 +159,7 @@ def ask(prompt):
         return ""
 
 
-def init_local(root, args):
+def init_local(root: Path, args: argparse.Namespace) -> int:
     """Create the local config from the arguments, asking at a terminal when no login is given."""
     from svod import keys
     from svod.config import FIELD_LOCAL_CONFIG, LOCAL_EMAIL, LOCAL_LOGIN, load_config, write_local
@@ -181,7 +192,7 @@ def init_local(root, args):
     return EXIT_OK
 
 
-def migrate(root, since):
+def migrate(root: Path, since: str) -> int:
     """Apply the migrations after since up to this engine; print what they changed."""
     from svod import keys
     from svod.migrations import apply
@@ -206,11 +217,11 @@ def migrate(root, since):
     return EXIT_OK
 
 
-def run(args):
+def run(args: argparse.Namespace) -> int:
     """Dispatch the parsed command; return the exit code."""
     from svod import keys
     from svod.active import hook_payload, summarize
-    from svod.config import CONFIG_FILE, find_root
+    from svod.paths import CONFIG_FILE, find_root
     from svod.context import Context
     from svod.errors import LoadError
     from svod.loader import load_runtime
@@ -225,6 +236,7 @@ def run(args):
         except (OSError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
             return EXIT_FINDINGS
+    root: Path | None
     if args.root:
         root = Path(args.root).resolve()
         root = root if (root / CONFIG_FILE).is_file() else None
@@ -307,14 +319,15 @@ def run(args):
     return EXIT_OK
 
 
-def main(argv=None):
+def main(argv: Sequence[str] | None = None) -> int:
     """Hand over to the copy of the store, or parse arguments and run.
 
     Exits quietly in hook mode without PyYAML.
     """
     argv = sys.argv[1:] if argv is None else list(argv)
-    json_status = CMD_STATUS in argv and ("--format=json" in argv or
-                    any(a == "--format" and b == "json" for a, b in zip(argv, argv[1:])))
+    json_status = CMD_STATUS in argv and (
+        "--format=json" in argv
+        or any(a == "--format" and b == "json" for a, b in zip(argv, argv[1:], strict=False)))
     launched = launch(argv)
     if launched.code is not None:
         return launched.code

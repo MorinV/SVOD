@@ -3,12 +3,19 @@
 Also the narrow exception for a python script that only reads an approval metadata file: its
 source is parsed and every use of the file name must be an inline Path read.
 """
+from __future__ import annotations
+
 import ast
 import re
 import shlex
+from collections.abc import Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from .protocol import absolute
+from .protocol import Event, absolute
+
+if TYPE_CHECKING:
+    from .guard import Guarded
 
 SEGMENT = r"[^\n|;&]*?"
 IN_PLACE = r"\s(?:-[A-Za-z]*i\b|--in-?place\b)"
@@ -55,7 +62,7 @@ PYTHON_HEREDOC = re.compile(
 )
 PYTHON_PREFIX_RE = re.compile(r"\s*(?:[A-Za-z0-9_./~-]+/)?")
 HEREDOC_OPEN = "<<"
-HEREDOC_ARGS = ([], ["-"], ["-u"], ["-u", "-"])
+HEREDOC_ARGS: tuple[list[str], ...] = ([], ["-"], ["-u"], ["-u", "-"])
 SHELL_EXPANSIONS = ("$", "`")
 SCRIPT_PUNCTUATION = ";&|<>"
 SCRIPT_FLAG = "-c"
@@ -74,12 +81,12 @@ VALUE_METHODS = ("encode", "hexdigest")
 SAME_DIRS = (".", "..")
 
 
-def shell_tokens(command):
+def shell_tokens(command: str) -> list[str]:
     """Tokens of a shell command line by line, operators as tokens of their own.
 
     A line shlex cannot parse is split on blanks; a long command is cut at MAX_TOKENS.
     """
-    tokens = []
+    tokens: list[str] = []
     for line in command.splitlines():
         lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
         lexer.whitespace_split = True
@@ -91,14 +98,15 @@ def shell_tokens(command):
     return tokens[:MAX_TOKENS]
 
 
-def is_operator(token):
+def is_operator(token: str) -> bool:
     """Whether the token separates simple commands."""
     return token in SHELL_OPERATORS or token == SHELL_OPERATORS_NEWLINE
 
 
-def command_segments(tokens):
+def command_segments(tokens: Iterable[str]) -> list[list[str]]:
     """Simple commands of a token list, split at the shell operators."""
-    segments, current = [], []
+    segments: list[list[str]] = []
+    current: list[str] = []
     for token in tokens:
         if is_operator(token):
             if current:
@@ -111,7 +119,7 @@ def command_segments(tokens):
     return segments
 
 
-def git_subcommand(words):
+def git_subcommand(words: Iterable[str]) -> str | None:
     """Subcommand of a git command line, its options skipped; None without one."""
     skip = False
     for word in words:
@@ -124,7 +132,7 @@ def git_subcommand(words):
     return None
 
 
-def segment_reads_only(segment):
+def segment_reads_only(segment: list[str]) -> bool:
     """Whether one simple command is known not to write files."""
     words = [w for w in segment if not ASSIGNMENT_RE.match(w) and w not in COMMAND_PREFIXES]
     if not words:
@@ -139,7 +147,7 @@ def segment_reads_only(segment):
     return name in READ_ONLY_COMMANDS
 
 
-def bash_reads_only(command):
+def bash_reads_only(command: str) -> bool:
     """Whether every simple command of the line is known not to write files.
 
     A redirection, an interpreter, an unknown program or an in-place edit counts as a write:
@@ -151,12 +159,12 @@ def bash_reads_only(command):
     return all(segment_reads_only(segment) for segment in command_segments(tokens))
 
 
-def bash_paths(event, command):
+def bash_paths(event: Event, command: str) -> list[Path]:
     """Tokens of the command read as paths from the event cwd that exist or look like a file.
 
     A word such as `echo` or `x` names no file; `new.md`, `src/x` or an existing path does.
     """
-    paths = []
+    paths: list[Path] = []
     for token in shell_tokens(command):
         if is_operator(token) or REDIRECT_CHAR in token:
             continue
@@ -174,7 +182,7 @@ def bash_paths(event, command):
     return paths
 
 
-def bash_writes_approval(command, guarded):
+def bash_writes_approval(command: str, guarded: Iterable[Guarded]) -> bool:
     """The command writes into a metadata file and names one of its approval fields.
 
     guarded: items with the trailing path parts of a metadata file and its approval fields. A
@@ -196,7 +204,7 @@ def bash_writes_approval(command, guarded):
     return False
 
 
-def heredoc_source(command, start):
+def heredoc_source(command: str, start: int) -> str | None:
     """Script of a quoted heredoc opened at start that ends the command, fed to a bare python."""
     heredoc = PYTHON_HEREDOC.match(command, start)
     if heredoc is None or not heredoc.group(1) or command[heredoc.end():].strip():
@@ -206,7 +214,7 @@ def heredoc_source(command, start):
     return heredoc.group(3)
 
 
-def dash_c_source(command):
+def dash_c_source(command: str) -> str | None:
     """Script of a command that is exactly `python -c <script>`, without shell expansions."""
     if any(mark in command for mark in SHELL_EXPANSIONS):
         return None
@@ -219,7 +227,7 @@ def dash_c_source(command):
     return args[2]
 
 
-def python_source(command):
+def python_source(command: str) -> str | None:
     """Source of the one python script the command consists of, or None.
 
     The exception must cover exactly one python command, never sibling commands or a -c
@@ -239,7 +247,7 @@ def python_source(command):
         return None
 
 
-def path_expression(node):
+def path_expression(node: ast.AST) -> bool:
     """Whether the node builds a path from literals and names only: Path(...), / or a constant."""
     if isinstance(node, (ast.Constant, ast.Name)):
         return True
@@ -254,7 +262,7 @@ def path_expression(node):
     return False
 
 
-def path_filename(node):
+def path_filename(node: ast.AST) -> str | None:
     """File name a path expression ends with, when its last part is a string literal."""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return Path(node.value).name
@@ -265,7 +273,7 @@ def path_filename(node):
     return None
 
 
-def allowed_call(node, name):
+def allowed_call(node: ast.Call, name: str) -> bool:
     """Whether a call is in the small vocabulary of a script writing a receipt elsewhere.
 
     A write must name its file by a literal other than the metadata file name.
@@ -286,7 +294,7 @@ def allowed_call(node, name):
     return func.attr in VALUE_METHODS
 
 
-def allowed_node(node, name):
+def allowed_node(node: ast.AST, name: str) -> bool:
     """Whether one node of the script stays within the vocabulary of allowed_call.
 
     A decoy read must not bless other operations in the same script: unfamiliar statements,
@@ -309,7 +317,7 @@ def allowed_node(node, name):
     return not isinstance(node, ast.Call) or allowed_call(node, name)
 
 
-def read_literal(literal, parents):
+def read_literal(literal: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
     """Whether the literal lies in the path expression of an inline read_text or read_bytes."""
     child = literal
     while child in parents:
@@ -323,7 +331,7 @@ def read_literal(literal, parents):
     return False
 
 
-def python_reads_metadata(command, name):
+def python_reads_metadata(command: str, name: str) -> bool:
     """Recognize only explicit Path(...).read_text/read_bytes uses of metadata literals.
 
     Unknown syntax, path aliases and write operations retain the conservative guard.

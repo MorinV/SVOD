@@ -105,9 +105,9 @@ class _Parser:
             self.error(where, f"{FIELD_EXTERNAL} must be a boolean")
         when = data.get(FIELD_WHEN) or {}
         when_where = f"{where}.{FIELD_WHEN}"
-        if self.mapping(when, when_where, WHEN_FIELDS) is not None:
-            if WHEN_HAS_FILE in when and not isinstance(when[WHEN_HAS_FILE], str):
-                self.error(when_where, f"{WHEN_HAS_FILE} must be a file name")
+        if (self.mapping(when, when_where, WHEN_FIELDS) is not None
+                and WHEN_HAS_FILE in when and not isinstance(when[WHEN_HAS_FILE], str)):
+            self.error(when_where, f"{WHEN_HAS_FILE} must be a file name")
         return Rule(skill=skill, when=when if isinstance(when, dict) else {},
                     external=external is True)
 

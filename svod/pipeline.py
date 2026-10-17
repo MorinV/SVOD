@@ -1,10 +1,20 @@
 """Pipeline declarations: schema validation, binding to registries, evaluation of gate uses."""
+from __future__ import annotations
+
 import re
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from .errors import ParamError
-from .gates import KeyGate, Status, unknown
+from .gates import KeyGate, Result, Status, unknown
+
+if TYPE_CHECKING:
+    from .context import Context
+    from .gates import Gate
+    from .providers import Provider
+    from .subject import Subject
 
 FIELD_PIPELINE = "pipeline"
 FIELD_SUBJECT = "subject"
@@ -76,14 +86,15 @@ class GateRef:
     """Use of a gate in a pipeline: name, params and presentation."""
 
     gate: str
-    params: dict
+    params: dict[str, Any]
     where: str
     label: str | None = None
     text: str | None = None
     when: str | None = None
     severity: str | None = None
     pending: str | None = None
-    impl: object = None
+    # The bound Gate; None until bind_pipeline instantiates it.
+    impl: Any = None
     purpose: str | None = None
 
 
@@ -97,8 +108,8 @@ class Step:
     optional: bool
     blocks_code: bool
     role: str | None
-    gates: list
-    entry: list
+    gates: list[GateRef]
+    entry: list[GateRef]
     title: str | None = None
     when: str | None = None
 
@@ -109,10 +120,11 @@ class SubjectSpec:
 
     provider: str
     key_gate: str | None
-    params: dict
-    impl: object = None
-    key_impl: object = None
-    key_params: dict = field(default_factory=dict)
+    params: dict[str, Any]
+    # The bound Provider and KeyGate; None until bind_pipeline instantiates them.
+    impl: Any = None
+    key_impl: Any = None
+    key_params: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -122,7 +134,7 @@ class ActiveSpec:
     in_progress: GateRef | None
     fact: str | None
     item: str | None
-    headings: dict
+    headings: dict[str, str]
 
 
 @dataclass
@@ -132,19 +144,19 @@ class Pipeline:
     name: str
     source: Path
     subject: SubjectSpec
-    steps: list
-    entry: list = field(default_factory=list)
+    steps: list[Step]
+    entry: list[GateRef] = field(default_factory=list)
     done: GateRef | None = None
     missing: GateRef | None = None
     active: ActiveSpec | None = None
-    violations: dict = field(default_factory=dict)
+    violations: dict[str, str] = field(default_factory=dict)
     header: str | None = None
 
-    def step(self, step_id):
+    def step(self, step_id: str) -> Step:
         """Step by id."""
         return next(s for s in self.steps if s.id == step_id)
 
-    def gate_refs(self):
+    def gate_refs(self) -> list[GateRef]:
         """Every gate use in the pipeline."""
         refs = list(self.entry)
         if self.done:
@@ -158,7 +170,7 @@ class Pipeline:
             refs.extend(step.gates)
         return refs
 
-    def documented_refs(self):
+    def documented_refs(self) -> list[GateRef]:
         """Gate uses shown in the rendered documentation: entry, done, steps and their entry."""
         refs = list(self.entry)
         if self.done:
@@ -168,7 +180,7 @@ class Pipeline:
             refs.extend(step.gates)
         return refs
 
-    def locale_keys(self):
+    def locale_keys(self) -> set[str]:
         """Every locale key the declaration refers to."""
         keys = set(self.violations.values())
         if self.header:
@@ -372,7 +384,8 @@ class _Parser:
         for key, value in data.items():
             parts = str(key).split(VIOLATION_SEPARATOR)
             if len(parts) != VIOLATION_PARTS or not all(p in order for p in parts):
-                self.error(where, f"{key}: expected <later step>{VIOLATION_SEPARATOR}<earlier step>")
+                self.error(where,
+                           f"{key}: expected <later step>{VIOLATION_SEPARATOR}<earlier step>")
                 continue
             later, earlier = parts
             if order[later] <= order[earlier]:
@@ -428,16 +441,17 @@ class _Parser:
         )
 
 
-def parse_pipeline(data, source):
+def parse_pipeline(data: Any, source: str | Path) -> tuple[Pipeline | None, list[str]]:
     """Validate a raw declaration; return (pipeline or None, errors)."""
     parser = _Parser(source)
     pipeline = parser.pipeline(data)
     return (None if parser.errors else pipeline), parser.errors
 
 
-def bind_pipeline(pipeline, gates, providers):
+def bind_pipeline(pipeline: Pipeline, gates: dict[str, type[Gate]],
+                  providers: dict[str, type[Provider]]) -> list[str]:
     """Instantiate gates and the provider of a parsed pipeline; return errors."""
-    errors = []
+    errors: list[str] = []
     prefix = pipeline.source.name
 
     def make_gate(name, params, where):
@@ -480,11 +494,11 @@ def bind_pipeline(pipeline, gates, providers):
 class Outcome:
     """A gate use together with its result."""
 
-    ref: object
-    result: object
+    ref: GateRef
+    result: Result
 
     @property
-    def passed(self):
+    def passed(self) -> bool:
         """Whether the gate passed."""
         return self.result.passed
 
@@ -493,47 +507,47 @@ class Outcome:
 class OpenStep:
     """A step that has not passed and the gate holding it; no gate for a step without gates."""
 
-    step: object
+    step: Step
     outcome: Outcome | None = None
 
     @property
-    def text(self):
+    def text(self) -> str | None:
         """Locale key of the open gate's text, else of the step text."""
         ref = self.outcome.ref if self.outcome else None
         return (ref.text if ref else None) or self.step.text
 
     @property
-    def facts(self):
+    def facts(self) -> dict[str, Any]:
         """Facts of the open gate; none for a step without gates."""
         return self.outcome.result.facts if self.outcome else {}
 
     @property
-    def gate(self):
+    def gate(self) -> str | None:
         """Name of the open gate, or None for a step without gates."""
         return self.outcome.ref.gate if self.outcome else None
 
     @property
-    def unknown(self):
+    def unknown(self) -> bool:
         """Whether the open gate could not be checked."""
         return self.outcome is not None and self.outcome.result.status is Status.UNKNOWN
 
     @property
-    def reason(self):
+    def reason(self) -> str | None:
         """Why the open gate could not be checked, or None when it simply failed."""
-        return self.outcome.result.reason if self.unknown else None
+        return self.outcome.result.reason if self.outcome is not None and self.unknown else None
 
 
-def applies(ref, subject):
+def applies(ref: GateRef, subject: Subject) -> bool:
     """Whether the gate use applies: its when attribute, if any, is truthy."""
     return not ref.when or bool(subject.attrs.get(ref.when))
 
 
-def step_applies(step, subject):
+def step_applies(step: Step, subject: Subject) -> bool:
     """Absent predicates apply; declared predicates use subject attribute truthiness."""
     return not step.when or bool(subject.attrs.get(step.when))
 
 
-def evaluate(ctx, ref, subject):
+def evaluate(ctx: Context, ref: GateRef, subject: Subject) -> Outcome:
     """Outcome of one gate use; a gate that raises is UNKNOWN with the error as its reason.
 
     A status or a hook never fails because one gate did: a profile gate with a bug, or a
@@ -548,18 +562,19 @@ def evaluate(ctx, ref, subject):
     return Outcome(ref, result)
 
 
-def run_entries(ctx, refs, subject):
+def run_entries(ctx: Context, refs: Iterable[GateRef], subject: Subject) -> list[Outcome]:
     """Outcomes of the applicable entry gates."""
     return [evaluate(ctx, ref, subject) for ref in refs if applies(ref, subject)]
 
 
-def first_blocking(outcomes):
+def first_blocking(outcomes: Iterable[Outcome]) -> Outcome | None:
     """First block-severity entry that did not pass."""
     return next((o for o in outcomes
                  if o.ref.severity == SEVERITY_BLOCK and not o.passed), None)
 
 
-def open_step(ctx, step, subject, exclude=None):
+def open_step(ctx: Context, step: Step, subject: Subject,
+              exclude: Callable[[GateRef], bool] | None = None) -> OpenStep | None:
     """The step held by its first applicable gate that did not pass, or None when it passes.
 
     A step without gates never passes. A gate group whose uses are all inapplicable (or

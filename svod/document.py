@@ -45,8 +45,6 @@ CLASS_STYLES = {
     CLASS_FROZEN: "stroke:#c0392b,stroke-width:3px",
 }
 CLASS_JOIN = "_"
-STYLE_JOIN = ","
-LEGEND_JOIN = " "
 LEGEND_KEYS = {
     CLASS_REQUIRED: keys.DOC_LEGEND_REQUIRED,
     CLASS_OPTIONAL: keys.DOC_LEGEND_OPTIONAL,
@@ -140,13 +138,13 @@ def step_class(step):
 
 def class_style(name):
     """Style of a combined class: the styles of its parts, the later part winning."""
-    return STYLE_JOIN.join(CLASS_STYLES[part] for part in name.split(CLASS_JOIN))
+    return ",".join(CLASS_STYLES[part] for part in name.split(CLASS_JOIN))
 
 
 def legend(locale, pipeline):
     """Legend of the styles the flowchart uses, in a fixed order; empty without styles."""
     used = {part for step in pipeline.steps for part in (step_class(step) or "").split(CLASS_JOIN)}
-    return LEGEND_JOIN.join(locale.text(key) for name, key in LEGEND_KEYS.items() if name in used)
+    return " ".join(locale.text(key) for name, key in LEGEND_KEYS.items() if name in used)
 
 
 def flowchart(locale, pipeline):

@@ -61,7 +61,8 @@ class LocalConfigTest(unittest.TestCase):
         """Unknown keys, non-strings and non-mappings fail; local=False skips the file."""
         cases = (("colour: red\n", "unknown key: colour"), ("login: [a]\n", "login must be"),
                  ("- a\n", "expected a mapping"),
-                 ("profile_config: on\n", "profile_config must be a mapping"), ("login: [\n", "invalid YAML"))
+                 ("profile_config: on\n", "profile_config must be a mapping"),
+                 ("login: [\n", "invalid YAML"))
         for text, message in cases:
             with self.subTest(text=text):
                 self.sb.write(LOCAL, text)

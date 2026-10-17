@@ -201,7 +201,8 @@ class ClaudeProjectTest(IntegrationTestCase):
         """A hook calling an old svod script gets the engine command in its place."""
         settings = self.store / PROJECT_DIR / SETTINGS_FILE
         old = f"{OLD_SVOD} --root {self.store} hook {EVENTS[TOOL_EVENT]}"
-        group = {"matcher": "|".join(WATCHED_TOOLS), "hooks": [{"type": COMMAND_TYPE, "command": old}]}
+        group = {"matcher": "|".join(WATCHED_TOOLS),
+                 "hooks": [{"type": COMMAND_TYPE, "command": old}]}
         write_json(settings, {"hooks": {TOOL_EVENT: [group]}})
         out = self.project()
         self.assertEqual(out.returncode, EXIT_OK, out.stderr)

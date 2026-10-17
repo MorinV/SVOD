@@ -1,7 +1,13 @@
 """The prompt hook: the approval phrase and its mark, positions of the subjects a prompt names."""
+from __future__ import annotations
+
+import datetime as dt
 import json
 import re
 import unicodedata
+from collections.abc import Iterable
+from pathlib import Path
+from typing import TYPE_CHECKING, Final
 
 from ..approval import MARK_AT, is_fresh, write_mark
 from ..checkouts import subject_context
@@ -11,9 +17,16 @@ from ..keys import (HOOK_APPROVAL_JOINERS, HOOK_APPROVAL_MARKED, HOOK_APPROVAL_M
 from ..position import position
 from ..render import render_position, step_skills
 from ..resolve import resolve
-from .protocol import EVENT_PROMPT, FIELD_PROMPT, context_output
+from .protocol import EVENT_PROMPT, FIELD_PROMPT, Event, context_output
 from .store import (agent_context_setting, broken_text, context_of, cut_key, load, query_keys,
                     store_root)
+
+if TYPE_CHECKING:
+    from ..context import Context
+    from ..loader import Runtime
+    from ..locale import Locale
+    from ..pipeline import Pipeline
+    from ..position import Position
 
 QUESTION_REPLY_OPEN = "<send_user_message_question_reply>"
 QUESTION_REPLY_CLOSE = "</send_user_message_question_reply>"
@@ -22,7 +35,7 @@ AGENT_MESSAGE_TAG = "<agent-message"
 AGENT_MESSAGE_PREFIX = "Another Claude session sent a message"
 MAX_QUERIES = 3
 MIN_NAME = 8
-NORMAL_FORM = "NFC"
+NORMAL_FORM: Final = "NFC"
 NAME_RE = r"(?<![\w-]){name}(?![\w-])"
 PHRASE_RE = r"\s*{phrase}(?!\w)"
 APPROVAL_END_RE = re.compile(r"[\s.!]*$")
@@ -40,22 +53,22 @@ SETTING_POSITIONS = "prompt_positions"
 SETTING_NOTICE = "approval_notice"
 
 
-def nfc(text):
+def nfc(text: str) -> str:
     """Text in Unicode NFC."""
     return unicodedata.normalize(NORMAL_FORM, text)
 
 
-def folded(text):
+def folded(text: str) -> str:
     """Text comparable across Unicode forms and letter case."""
     return nfc(text).casefold()
 
 
-def is_agent_message(prompt):
+def is_agent_message(prompt: str) -> bool:
     """The prompt is a message of another agent, not a request of a person."""
     return AGENT_MESSAGE_TAG in prompt or prompt.lstrip().startswith(AGENT_MESSAGE_PREFIX)
 
 
-def approval_keys(runtime, prompt):
+def approval_keys(runtime: Runtime, prompt: str) -> list[str] | None:
     """Keys named by an approving prompt, or None when the prompt does not approve.
 
     The prompt approves when it is, as a whole, a configured phrase optionally followed by keys
@@ -78,7 +91,7 @@ def approval_keys(runtime, prompt):
     return None
 
 
-def human_answers(prompt):
+def human_answers(prompt: str) -> list[str]:
     """Extract only actual answers from a UI reply, never the questions/options."""
     text = prompt.strip()
     if not text.startswith(QUESTION_REPLY_OPEN):
@@ -97,9 +110,9 @@ def human_answers(prompt):
     return [reply[REPLY_ANSWER] for reply in replies]
 
 
-def subject_names(ctx, pipelines):
+def subject_names(ctx: Context, pipelines: Iterable[Pipeline]) -> list[str]:
     """Last path segment of the id of every open subject, long enough to be named on purpose."""
-    names = []
+    names: list[str] = []
     for pipeline in pipelines:
         for subject in pipeline.subject.impl.enumerate(ctx):
             name = subject.id.rsplit(ID_SEPARATOR, 1)[-1]
@@ -108,7 +121,7 @@ def subject_names(ctx, pipelines):
     return list(dict.fromkeys(names))
 
 
-def queries(ctx, pipelines, prompt):
+def queries(ctx: Context, pipelines: list[Pipeline], prompt: str) -> list[str]:
     """Keys, then exact subject names named in the prompt; at most MAX_QUERIES."""
     text = folded(prompt)
     names = [n for n in subject_names(ctx, pipelines)
@@ -116,7 +129,7 @@ def queries(ctx, pipelines, prompt):
     return list(dict.fromkeys(query_keys(pipelines, prompt) + names))[:MAX_QUERIES]
 
 
-def awaits_approval(pos):
+def awaits_approval(pos: Position) -> bool:
     """Whether the next step of the position is an approval gate that has not passed."""
     if pos.text_from_entry or pos.current is None:
         return False
@@ -124,7 +137,7 @@ def awaits_approval(pos):
     return first is not None and isinstance(first.ref.impl, ApprovalGate)
 
 
-def marked_step(locale, pos, marked):
+def marked_step(locale: Locale, pos: Position, marked: Iterable[str]) -> Position:
     """The position told that the person has just approved, when it waits for that approval.
 
     The next step becomes the variant <text>_marked of the profile, given the key as {keys},
@@ -143,12 +156,13 @@ def marked_step(locale, pos, marked):
     return pos
 
 
-def positions(ctx, pipelines, named, marked=()):
+def positions(ctx: Context, pipelines: list[Pipeline], named: Iterable[str],
+              marked: Iterable[str] = ()) -> list[str]:
     """Status blocks of the existing subjects the queries resolve to, without repeats.
 
     marked: keys whose approval mark the prompt has just recorded.
     """
-    found = []
+    found: list[str] = []
     for query in named:
         resolution = resolve(ctx, pipelines, query)
         if resolution.ambiguous:
@@ -163,7 +177,7 @@ def positions(ctx, pipelines, named, marked=()):
     return list(dict.fromkeys(found))
 
 
-def marked_text(locale, keys, minutes):
+def marked_text(locale: Locale, keys: list[str] | None, minutes: int) -> str:
     """Notice of a recorded approval mark: with the command for each key named, or unnamed."""
     if not keys:
         return locale.text(HOOK_APPROVAL_MARKED_UNNAMED, minutes=minutes)
@@ -172,7 +186,8 @@ def marked_text(locale, keys, minutes):
                                                         for key in keys))
 
 
-def prompt_hook(event, fallback, at=None):
+def prompt_hook(event: Event, fallback: str | Path | None,
+                at: dt.datetime | None = None) -> str | None:
     """Mark a human prompt; a verified redelivery keeps its original event time.
 
     ``at`` is for a trusted integration replaying the same actual human event, never
@@ -189,7 +204,7 @@ def prompt_hook(event, fallback, at=None):
         return context_output(EVENT_PROMPT, broken_text(root, reason))
     locale = runtime.locale
     ctx = context_of(runtime)
-    blocks = []
+    blocks: list[str] = []
     answers = human_answers(prompt)
     approvals = [keys for answer in answers
                  if (keys := approval_keys(runtime, answer)) is not None]
@@ -202,7 +217,7 @@ def prompt_hook(event, fallback, at=None):
     if agent_context_setting(runtime, SETTING_POSITIONS):
         found = positions(ctx, runtime.pipelines,
                           queries(ctx, runtime.pipelines, LINE_SEPARATOR.join(answers)),
-                          keys if marked else ())
+                          keys if marked and keys is not None else ())
         if found:
             blocks += [locale.text(HOOK_POSITION_HEAD), *found, locale.text(HOOK_POSITION_TAIL)]
     return context_output(EVENT_PROMPT, BLOCK_SEPARATOR.join(blocks)) if blocks else None

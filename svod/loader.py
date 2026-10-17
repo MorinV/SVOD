@@ -1,15 +1,23 @@
 """Loads a store: config, registries, pipelines and locale."""
-from dataclasses import dataclass
+from __future__ import annotations
 
-from .bindings import check_bindings, load_bindings
-from .config import load_config
-from .config import FIELD_WORKSPACE_GATE
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from .bindings import Bindings, check_bindings, load_bindings
+from .config import FIELD_WORKSPACE_GATE, Config, load_config
 from .errors import LoadError, LocaleError, ParamError
 from .gates import build_registries
 from .keys import CORE_KEYS
 from .locale import load_locale
-from .pipeline import bind_pipeline, parse_pipeline
+from .pipeline import Pipeline, bind_pipeline, parse_pipeline
 from .yamlio import read_yaml
+
+if TYPE_CHECKING:
+    from .gates import Gate
+    from .locale import Locale
+    from .providers import Provider
 
 PIPELINES_DIR = "pipelines"
 PIPELINE_GLOB = "*.yaml"
@@ -20,25 +28,29 @@ WORKTREES_METHOD = "worktrees"
 class Runtime:
     """Everything loaded for one store."""
 
-    config: object
-    locale: object
-    gates: dict
-    pipelines: list
-    bindings: object = None
-    workspace_gate: object = None
+    config: Config
+    locale: Locale
+    gates: dict[str, type[Gate]]
+    pipelines: list[Pipeline]
+    bindings: Bindings | None = None
+    # A gate instance with worktrees(ctx, keys); None when not configured.
+    workspace_gate: Any = None
 
-    def by_name(self):
+    def by_name(self) -> dict[str, Pipeline]:
         """Pipelines keyed by name, for gates that consult another pipeline."""
         return {p.name: p for p in self.pipelines}
 
-    def pipeline(self, name):
+    def pipeline(self, name: str) -> Pipeline:
         """Pipeline by name."""
         return next(p for p in self.pipelines if p.name == name)
 
 
-def load_pipelines(profile, gates, providers):
+def load_pipelines(profile: Path, gates: dict[str, type[Gate]],
+                   providers: dict[str, type[Provider]]) -> tuple[list[Pipeline], list[str]]:
     """Parse and bind every pipeline of the profile; return (pipelines, errors)."""
-    pipelines, errors, names = [], [], set()
+    pipelines: list[Pipeline] = []
+    errors: list[str] = []
+    names: set[str] = set()
     directory = profile / PIPELINES_DIR
     if not directory.is_dir():
         return [], [f"{directory}: pipelines directory not found"]
@@ -63,7 +75,7 @@ def load_pipelines(profile, gates, providers):
     return pipelines, errors
 
 
-def description_errors(pipelines, locale):
+def description_errors(pipelines: list[Pipeline], locale: Locale) -> list[str]:
     """Gate uses shown in the documentation without a label whose description does not render."""
     errors = []
     for pipeline in pipelines:
@@ -77,7 +89,7 @@ def description_errors(pipelines, locale):
     return errors
 
 
-def workspace_gate(name, gates):
+def workspace_gate(name: str | None, gates: dict[str, type[Gate]]) -> tuple[Gate | None, list[str]]:
     """(instance of the gate naming task workspaces, errors); (None, []) when not configured."""
     if name is None:
         return None, []
@@ -92,7 +104,7 @@ def workspace_gate(name, gates):
         return None, [f"{FIELD_WORKSPACE_GATE}: {exc}"]
 
 
-def load_runtime(root):
+def load_runtime(root: Path) -> Runtime:
     """Load the store at root; raise LoadError listing every problem found."""
     config = load_config(root)
     gates, providers = build_registries(config.profile)
