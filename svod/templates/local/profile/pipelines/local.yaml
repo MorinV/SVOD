@@ -3,6 +3,13 @@ subject:
   provider: container
   params:
     roots: [tasks]
+active:
+  item: local.active.item
+  headings:
+    mine_idle: local.active.mine
+    theirs: local.active.theirs
+    theirs_collapsed: local.active.theirs_collapsed
+    worktree: local.active.worktree
 done:
   gate: current_process
   params: {phase: complete}

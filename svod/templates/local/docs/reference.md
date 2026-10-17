@@ -27,7 +27,7 @@ Its presence marks the store root: the CLI walks up from the working directory t
 | `bindings` | no | string / none | bindings file relative to the root; without it roles are neither checked nor printed |
 | `local_config` | no | string / none | per-person config file relative to the root, kept out of version control; see [Local config](#local-config) |
 | `approval` | no | mapping / none | how a person approves in the chat; see [Approval by a person](#approval-by-a-person) |
-| `profile_config` | no | mapping / `{}` | profile settings exposed as `ctx.config.profile_config`; hooks also read optional `agent_context` controls described below |
+| `profile_config` | no | mapping / `{}` | profile settings exposed as `ctx.config.profile_config`; the core checks only its `agent_context` mapping, read by the [hooks](#hooks): its keys are `session_summary`, `prompt_positions` and `approval_notice`, each a bool; any other key or a non-bool value is a load error naming the key |
 | `workspace_gate` | no | string / none | name of a gate with a `worktrees(ctx, keys)` method (see [Writing a custom gate](#writing-a-custom-gate)); it tells the `pre-tool` hook which directories are work directories of a subject; without it that check is off |
 | `main_checkout_read_only` | no | bool / `false` | the `pre-tool` hook refuses edits in the main checkout of the store repository, except paths git ignores; work goes into worktrees |
 | `update_check` | no | bool / `true` | with a [copy of the engine](#vendored-copy) in the store, the session start summary says when a newer release is out, checked at most once a day; `false` turns the check off |
@@ -268,6 +268,17 @@ Without `bind`: PASS when the marker is non-empty after stripping. With `bind`: 
 | `date_not_past` | exactly one condition | bool | the field is an ISO date; PASS when "date ≥ today" equals the value; not a date → FAIL |
 
 An empty or missing field never equals and never differs. Never UNKNOWN. Facts: `value` (the stripped field or empty).
+
+**Where the frontmatter comes from.** `field` reads no file itself: it reads `attrs.frontmatter`, which the [provider](#subject-providers) fills when it finds the subject.
+
+| provider | `attrs.frontmatter` |
+|---|---|
+| `frontmatter_doc` | the frontmatter of the subject file itself |
+| `container` | the frontmatter of the head document: the first `*.md` directly in the container directory, by name, whose frontmatter `type` equals the provider's `head_type`; empty without `head_type` or without such a document |
+| `openspec_change` | always empty |
+| a profile provider | whatever it puts there |
+
+A `container` has no param naming a file by path, and nothing below the top level of the container is read. A `field` on a file the provider does not pick up, such as `posts/<name>/draft.md` without `head_type: draft` and `type: draft` in that file, sees an empty field and FAILs on every evaluation. Give that file a `type` and declare it as `head_type`, check that the document exists with [`doc_type`](#doc_type), or write a profile gate that reads the file (see [Writing a custom gate](#writing-a-custom-gate)). With an always empty frontmatter only `present: false` passes.
 
 ### `doc_type`
 

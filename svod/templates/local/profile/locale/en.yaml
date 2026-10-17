@@ -7,3 +7,8 @@ local.approve_drift: contract.md or testing/plan.yaml changed after the approval
 local.result: Run the selected command once on a clean committed checkout with svod local checks tasks/<name>, then svod local deliver tasks/<name>.
 local.result_process_contract: 'Run the selected command once on a clean committed checkout with svod local checks tasks/<name>, then svod local deliver tasks/<name>: {detail}.'
 local.done: Local completion recorded; no merge, push or deployment implied.
+local.active.item: '- {id} - {step}'
+local.active.mine: 'Local tasks:'
+local.active.theirs: 'Local tasks last changed by others:'
+local.active.theirs_collapsed: 'Local tasks last changed by others: {count} ({who}) · expand: svod active --all'
+local.active.worktree: 'Local tasks changed in the checkout {dir}:'

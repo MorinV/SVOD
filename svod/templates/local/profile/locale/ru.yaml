@@ -7,3 +7,8 @@ local.approve_drift: contract.md или testing/plan.yaml изменились �
 local.result: Выполнить выбранную команду один раз на чистом закоммиченном чекауте через svod local checks tasks/<name>, затем svod local deliver tasks/<name>.
 local.result_process_contract: 'Выполнить выбранную команду один раз на чистом закоммиченном чекауте через svod local checks tasks/<name>, затем svod local deliver tasks/<name>: {detail}.'
 local.done: Локальное завершение записано; слияние, push и развёртывание этим не подразумеваются.
+local.active.item: '- {id} - {step}'
+local.active.mine: 'Локальные задачи:'
+local.active.theirs: 'Локальные задачи, последним менял другой человек:'
+local.active.theirs_collapsed: 'Локальные задачи, последним менял другой человек: {count} ({who}) · развернуть: svod active --all'
+local.active.worktree: 'Локальные задачи, изменённые в чекауте {dir}:'
