@@ -9,6 +9,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 ### Added
 
 - `svod approve <query> --confirm` records an approval that a person confirms with y at a terminal when there is no fresh mark, for agents without a prompt hook; all YAML is read by one loader that refuses repeated keys, and the approval fields are read and written only through `svod.approval.read_fields` and `write_fields`.
+- `autonomy` in `svod.yaml` (guided, supervised, autonomous per pipeline) makes approval steps optional as loaded and `status` prints `Autonomy: <level>`; the prompt hook leaves the human mark `svod-human.json` on every reply of a person; `pre-tool` refuses writes of that mark and of `questions.md` of a work record, and holds commands with an external effect (`git push`, publish, deploy, remote hosts; `external_effects` in `svod.yaml`) until a fresh reply says go ahead.
 
 ### Changed
 

@@ -1,6 +1,7 @@
 """Store configuration: svod.yaml at the store root."""
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,6 +42,21 @@ LOCAL_LOGIN = "login"
 LOCAL_EMAIL = "email"
 LOCAL_FIELDS = (LOCAL_LOGIN, LOCAL_EMAIL, FIELD_WORKSPACES, FIELD_LOCALE)
 LOCAL_MAPPINGS = (FIELD_PROFILE_CONFIG,)
+FIELD_AUTONOMY = "autonomy"
+FIELD_EXTERNAL_EFFECTS = "external_effects"
+KNOWN_FIELDS = KNOWN_FIELDS | {FIELD_AUTONOMY, FIELD_EXTERNAL_EFFECTS}
+AUTONOMY_GUIDED = "guided"
+AUTONOMY_SUPERVISED = "supervised"
+AUTONOMY_AUTONOMOUS = "autonomous"
+AUTONOMY_LEVELS = (AUTONOMY_GUIDED, AUTONOMY_SUPERVISED, AUTONOMY_AUTONOMOUS)
+# Kinds of work (frontmatter `kind` of a subject) autonomy may name besides pipelines.
+AUTONOMY_KINDS = frozenset({"hotfix"})
+EXTERNAL_DENY = "deny"
+EXTERNAL_ALLOW = "allow"
+EXTERNAL_PHRASES = "phrases"
+EXTERNAL_PATTERNS = (EXTERNAL_DENY, EXTERNAL_ALLOW)
+EXTERNAL_FIELDS = frozenset({*EXTERNAL_PATTERNS, EXTERNAL_PHRASES})
+DEFAULT_EXTERNAL_PHRASES = ("go ahead", "давай", "выполняй")
 
 
 @dataclass(frozen=True)
@@ -65,6 +81,10 @@ class Config:
     workspace_gate: str | None = None
     main_checkout_read_only: bool = False
     update_check: bool = True
+    autonomy: dict[str, str] = field(default_factory=dict)
+    external_deny: tuple[str, ...] = ()
+    external_allow: tuple[str, ...] = ()
+    external_phrases: tuple[str, ...] = DEFAULT_EXTERNAL_PHRASES
 
 
 def string_errors(path: Path, data: dict[str, Any], keys: Iterable[str]) -> list[str]:
@@ -100,6 +120,43 @@ def agent_context_errors(path: Path, profile_config: Any) -> list[str]:
     errors += [f"{where}.{key} must be a boolean"
                for key in sorted(set(data) & AGENT_CONTEXT_FIELDS)
                if not isinstance(data[key], bool)]
+    return errors
+
+
+def autonomy_errors(path: Path, data: Any) -> list[str]:
+    """Errors of the autonomy block: a mapping of names to known levels.
+
+    Whether each name is a pipeline is checked by the loader, which knows the pipelines.
+    """
+    if not isinstance(data, dict):
+        return [f"{path}: {FIELD_AUTONOMY} must be a mapping"]
+    return [f"{path}: {FIELD_AUTONOMY}.{name} must be one of {', '.join(AUTONOMY_LEVELS)}"
+            for name, level in data.items() if level not in AUTONOMY_LEVELS]
+
+
+def strings_error(where: str, value: Any) -> str | None:
+    """Error of a value that must be a list of non-empty strings, or None."""
+    if isinstance(value, list) and all(isinstance(x, str) and x.strip() for x in value):
+        return None
+    return f"{where} must be a list of strings"
+
+
+def external_errors(path: Path, data: Any) -> list[str]:
+    """Errors of the external_effects block: known keys, lists of strings, valid patterns."""
+    where = f"{path}: {FIELD_EXTERNAL_EFFECTS}"
+    if not isinstance(data, dict):
+        return [f"{where} must be a mapping"]
+    errors = [f"{where}: unknown key: {key}" for key in sorted(set(data) - EXTERNAL_FIELDS)]
+    for key in (*EXTERNAL_PATTERNS, EXTERNAL_PHRASES):
+        error = strings_error(f"{where}.{key}", data[key]) if key in data else None
+        if error:
+            errors.append(error)
+        elif key in data and key in EXTERNAL_PATTERNS:
+            for pattern in data[key]:
+                try:
+                    re.compile(pattern)
+                except re.error as exc:
+                    errors.append(f"{where}.{key}: invalid pattern {pattern!r}: {exc}")
     return errors
 
 
@@ -151,6 +208,8 @@ def load_config(root: str | Path, local: bool = True) -> Config:
         value = data.get(key, [])
         if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
             errors.append(f"{path}: {key} must be a list of strings")
+    errors += autonomy_errors(path, data.get(FIELD_AUTONOMY, {}))
+    errors += external_errors(path, data.get(FIELD_EXTERNAL_EFFECTS, {}))
     if errors:
         raise LoadError(errors)
     profile = root / data[FIELD_PROFILE]
@@ -180,7 +239,17 @@ def load_config(root: str | Path, local: bool = True) -> Config:
         workspace_gate=data.get(FIELD_WORKSPACE_GATE),
         main_checkout_read_only=data.get(FIELD_MAIN_READ_ONLY, False),
         update_check=data.get(FIELD_UPDATE_CHECK, True),
+        **policy_settings(data),
     )
+
+
+def policy_settings(data: dict[str, Any]) -> dict[str, Any]:
+    """Config fields of the validated autonomy and external_effects blocks."""
+    external = data.get(FIELD_EXTERNAL_EFFECTS) or {}
+    return {"autonomy": dict(data.get(FIELD_AUTONOMY) or {}),
+            "external_deny": tuple(external.get(EXTERNAL_DENY, ())),
+            "external_allow": tuple(external.get(EXTERNAL_ALLOW, ())),
+            "external_phrases": tuple(external.get(EXTERNAL_PHRASES, DEFAULT_EXTERNAL_PHRASES))}
 
 
 def write_local(path: str | Path, values: dict[str, Any]) -> None:

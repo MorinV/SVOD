@@ -6,6 +6,7 @@ VALIDATE_OK = "validate.ok"
 VALIDATE_FAILED = "validate.failed"
 STATUS_HEADER = "status.header"
 STATUS_CHECKOUT = "status.checkout"
+STATUS_AUTONOMY = "status.autonomy"
 STATUS_NEXT_STEP = "status.next_step"
 STATUS_DO_NOT_TOUCH = "status.do_not_touch"
 STATUS_DO_NOT_TOUCH_BLOCKED = "status.do_not_touch_blocked"
@@ -113,6 +114,9 @@ HOOK_DENY_PLAN = "hook.deny_plan"
 HOOK_DENY_MAIN = "hook.deny_main"
 HOOK_DENY_MARK = "hook.deny_mark"
 HOOK_DENY_BROKEN = "hook.deny_broken"
+HOOK_DENY_HUMAN = "hook.deny_human"
+HOOK_DENY_QUESTIONS = "hook.deny_questions"
+HOOK_DENY_EXTERNAL = "hook.deny_external"
 DESCRIBE_PREFIX = "gate."
 DESCRIBE_EXISTS = "gate.exists"
 DESCRIBE_ARTIFACT_PATH = "gate.artifact_path"
@@ -146,6 +150,7 @@ CORE_KEYS = (
     VALIDATE_FAILED,
     STATUS_HEADER,
     STATUS_CHECKOUT,
+    STATUS_AUTONOMY,
     STATUS_NEXT_STEP,
     STATUS_DO_NOT_TOUCH,
     STATUS_DO_NOT_TOUCH_BLOCKED,
@@ -250,5 +255,8 @@ CORE_KEYS = (
     HOOK_DENY_MAIN,
     HOOK_DENY_MARK,
     HOOK_DENY_BROKEN,
+    HOOK_DENY_HUMAN,
+    HOOK_DENY_QUESTIONS,
+    HOOK_DENY_EXTERNAL,
     *DESCRIBE_KEYS,
 )

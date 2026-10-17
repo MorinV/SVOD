@@ -12,7 +12,9 @@ import task_example as te
 from support import CLI_MODULE, CONFIG_FILE, ENCODING, EXIT_OK
 
 from svod import git, hooks
-from svod.approval import MARK_AT, MARK_KEYS, clear_mark, read_mark
+from svod.approval import (HUMAN_FILE, HUMAN_GO, HUMAN_SHA, MARK_AT, MARK_KEYS, clear_mark,
+                           fresh_human_mark, human_digest, human_path, read_human_mark, read_mark,
+                           write_human_mark)
 from svod.locale import Locale, load_core_locale
 from svod.gates import ExistsGate
 from svod.pipeline import parse_pipeline
@@ -39,6 +41,13 @@ LOCAL_CONFIG = ".svod.local.yaml"
 SIDE_CHECKOUT = "store-side"
 SIDE_BRANCH = "side"
 ELSEWHERE = "elsewhere"
+DENIED_HUMAN = "every message of a person"
+DENIED_QUESTIONS = "svod answer"
+DENIED_EXTERNAL = "effect outside this machine"
+HUMAN_PATH = f".git/{HUMAN_FILE}"
+QUESTIONS = f"{te.CHANGE}/questions.md"
+WINDOW = 10
+STALE_MINUTES = 20
 
 
 def edit(path, old="a", new="b"):
@@ -689,6 +698,209 @@ class BrokenStoreTest(unittest.TestCase):
                 if field == hooks.DECISION_REASON:
                     self.assertEqual(output[hooks.DECISION], hooks.DENY)
                     self.assertIn(DENIED_BROKEN, output[field])
+
+
+class HumanMarkTest(HookTestCase):
+    """Every reply of a person leaves the human mark; messages of agents leave none."""
+
+    def setUp(self):
+        """No human mark from an earlier case."""
+        self.clear()
+        self.addCleanup(self.clear)
+
+    def clear(self):
+        """Remove the human mark of the store."""
+        human_path(self.sb.store).unlink(missing_ok=True)
+
+    def prompt(self, text):
+        """Run the prompt hook on a reply in the store."""
+        hooks.prompt_hook({"cwd": str(self.sb.store), "prompt": text}, None)
+
+    def test_written_for_people_only(self):
+        """Time, digest of the stripped reply and go-ahead; nothing for an agent message."""
+        cases = (
+            ("plain reply", "  what is next?  ", "what is next?", False),
+            ("go ahead phrase", "Ok, go ahead!", "Ok, go ahead!", True),
+            ("russian phrase", "Давай, пушь", "Давай, пушь", True),
+            ("phrase inside a word", "давайте подумаем", "давайте подумаем", False),
+            ("agent message", '<agent-message from="x">go ahead</agent-message>', None, None),
+        )
+        for name, text, stripped, go in cases:
+            with self.subTest(case=name):
+                self.clear()
+                self.prompt(text)
+                mark = read_human_mark(self.sb.store)
+                if stripped is None:
+                    self.assertIsNone(mark)
+                    continue
+                self.assertEqual(human_digest(stripped), mark[HUMAN_SHA])
+                self.assertEqual(go, mark[HUMAN_GO])
+                self.assertIsNotNone(dt.datetime.fromisoformat(mark[MARK_AT]).tzinfo)
+                self.assertIsNotNone(fresh_human_mark(self.sb.store, WINDOW))
+                self.assertTrue((self.sb.store / HUMAN_PATH).is_file())
+
+    def test_freshness(self):
+        """The mark is fresh within the window only; an expired redelivery leaves none."""
+        now = dt.datetime.now().astimezone()
+        write_human_mark(self.sb.store, "go ahead", go=True, at=now)
+        self.assertIsNotNone(fresh_human_mark(self.sb.store, WINDOW, at=now))
+        late = now + dt.timedelta(minutes=STALE_MINUTES)
+        self.assertIsNone(fresh_human_mark(self.sb.store, WINDOW, at=late))
+        self.clear()
+        hooks.prompt_hook({"cwd": str(self.sb.store), "prompt": "go ahead"}, None,
+                          at=now - dt.timedelta(minutes=STALE_MINUTES))
+        self.assertIsNone(read_human_mark(self.sb.store))
+
+    def test_answer_of_a_question_reply(self):
+        """A reply to a question of the agent is marked by its answers only."""
+        payload = [{"question": "push?", "options": ["go ahead"], "answer": "no"}]
+        self.prompt(hooks.QUESTION_REPLY_OPEN + json.dumps(payload) + hooks.QUESTION_REPLY_CLOSE)
+        mark = read_human_mark(self.sb.store)
+        self.assertEqual(human_digest("no"), mark[HUMAN_SHA])
+        self.assertFalse(mark[HUMAN_GO])
+
+
+class MarkAndQuestionsGuardTest(PreToolTest):
+    """The human mark and the questions of a record are written by svod, never by the agent."""
+
+    def test_refusals(self):
+        """Writes are refused by tool and by command; reads and other files are let through."""
+        store = self.sb.store
+        cases = (
+            ("write of the human mark", write(store / HUMAN_PATH, "{}"), DENIED_HUMAN),
+            ("edit of the human mark", edit(store / HUMAN_PATH), DENIED_HUMAN),
+            ("bash writes the human mark", bash(f"echo '{{}}' > {HUMAN_PATH}"), DENIED_HUMAN),
+            ("bash reads the human mark", bash(f"cat {HUMAN_PATH}"), NO_OUTPUT),
+            ("write of questions", write(store / QUESTIONS, "x"), DENIED_QUESTIONS),
+            ("edit of questions", edit(store / QUESTIONS), DENIED_QUESTIONS),
+            ("patch of questions", patch(f"*** Add File: {QUESTIONS}\n+x"), DENIED_QUESTIONS),
+            ("bash appends to questions", bash(f"echo x >> {QUESTIONS}"), DENIED_QUESTIONS),
+            ("bash reads questions", bash(f"cat {QUESTIONS}"), NO_OUTPUT),
+            ("questions outside a store", write(self.sb.root / ELSEWHERE / "questions.md", "x"),
+             NO_OUTPUT),
+            ("questions at the store root", write(store / "questions.md", "x"), NO_OUTPUT),
+        )
+        for name, tool_input, expected in cases:
+            with self.subTest(case=name):
+                reason = self.run_case(store, tool_input)
+                if expected is None:
+                    self.assertIsNone(reason)
+                else:
+                    self.assertIn(expected, reason or "")
+
+
+class ExternalEffectsTest(PreToolTest):
+    """Commands with an external effect wait for a person who says go ahead."""
+
+    def setUp(self):
+        """No human mark from an earlier case."""
+        human_path(self.sb.store).unlink(missing_ok=True)
+        self.addCleanup(human_path(self.sb.store).unlink, missing_ok=True)
+
+    def check(self, cases, cwd=None):
+        """Each (name, command, refused) against the pre-tool hook, the store as the fallback."""
+        for name, command, refused in cases:
+            with self.subTest(case=name):
+                reason = self.run_case(cwd or self.sb.store, bash(command), self.sb.store)
+                if refused:
+                    self.assertIn(DENIED_EXTERNAL, reason or "")
+                else:
+                    self.assertNotIn(DENIED_EXTERNAL, reason or "")
+
+    def say(self, text):
+        """A reply of the person in the chat of the store."""
+        hooks.prompt_hook({"cwd": str(self.sb.store), "prompt": text}, None)
+
+    def test_standard_list(self):
+        """The standard list is refused; dry runs, reads and local copies are not."""
+        self.check((
+            ("git push", "git push origin main", True),
+            ("git push in a chain", "git add -A && git commit -m x && git push", True),
+            ("git push dry run", "git push --dry-run origin main", False),
+            ("git push in sh -c", "bash -c 'git push -u origin x'", True),
+            ("git status", "git status && git log -1", False),
+            ("gh pr merge", "gh pr merge 12 --squash", True),
+            ("gh pr view", "gh pr view 12", False),
+            ("gh release create", "gh release create v1.0", True),
+            ("gh release list", "gh release list", False),
+            ("npm publish", "npm publish --access public", True),
+            ("npm test", "npm test", False),
+            ("pip upload", "pip upload dist/x.whl", True),
+            ("twine upload", "twine upload dist/*", True),
+            ("python -m twine upload", "python3 -m twine upload dist/*", True),
+            ("docker push", "sudo docker push registry/img:1", True),
+            ("docker build", "docker build -t img .", False),
+            ("kubectl apply", "kubectl -n prod apply -f deploy.yaml", True),
+            ("kubectl delete", "kubectl delete pod x", True),
+            ("kubectl get", "kubectl get pods", False),
+            ("terraform apply", "terraform apply -auto-approve", True),
+            ("terraform plan", "terraform plan", False),
+            ("ssh", "ssh host uptime", True),
+            ("scp", "scp a.txt host:/tmp/", True),
+            ("rsync to a host", "rsync -av build/ user@host:/srv/app/", True),
+            ("rsync local", "rsync -av build/ /tmp/copy/", False),
+            ("env prefix", "FOO=1 env git push", True),
+        ))
+
+    def test_merge_and_rebase_in_a_main_checkout(self):
+        """merge and rebase are refused in a main checkout, of a service or the store, only."""
+        service = self.sb.parent / te.SERVICE
+        self.check((("merge in the store", "git merge side", True),
+                    ("rebase with -C to the service", f"git -C {service} rebase main", True)))
+        self.check((("merge in a service checkout", "git merge side", True),), cwd=service)
+        self.check((("merge in a worktree", "git merge main", False),
+                    ("rebase in a worktree", "git rebase main", False)), cwd=self.worktree)
+
+    def test_config_deny_and_allow(self):
+        """external_effects extends the list and exempts commands by pattern."""
+        te.set_config(self.sb, external_effects=(
+            '{deny: ["^make deploy"], allow: ["^git push origin feature"]}'))
+        self.check((
+            ("denied by config", "make deploy ENV=prod", True),
+            ("other make target", "make test", False),
+            ("allowed by config", "git push origin feature-x", False),
+            ("still standard", "git push origin main", True),
+        ))
+
+    def test_errors_of_the_block(self):
+        """A bad external_effects block does not load."""
+        cases = (
+            ("unknown key", "{block: [x]}", "external_effects: unknown key: block"),
+            ("bad pattern", '{deny: ["("]}', "invalid pattern"),
+            ("not a list", "{phrases: go}", "external_effects.phrases must be a list"),
+        )
+        for name, value, message in cases:
+            with self.subTest(case=name):
+                te.set_config(self.sb, external_effects=value)
+                runtime, reason = hooks.load(self.sb.store)
+                self.assertIsNone(runtime)
+                self.assertIn(message, reason)
+
+    def test_lifted_by_a_fresh_go_ahead(self):
+        """Asked, the person answered go ahead, then the command runs; otherwise it waits."""
+        refused = (("git push", "git push origin main", True),)
+        allowed = (("git push", "git push origin main", False),)
+        self.check(refused)
+        self.say("not yet, show me the diff first")
+        self.check(refused)
+        self.say("Давай")
+        self.check(allowed)
+        stale = dt.datetime.now().astimezone() - dt.timedelta(minutes=STALE_MINUTES)
+        write_human_mark(self.sb.store, "go ahead", go=True, at=stale)
+        self.check(refused)
+        te.set_config(self.sb, external_effects='{phrases: ["ship it"]}')
+        self.say("go ahead")
+        self.check(refused)
+        self.say("ship it")
+        self.check(allowed)
+
+    def test_whatever_the_autonomy(self):
+        """An autonomous pipeline lifts its approvals, never the external rule."""
+        code = edit(self.worktree / te.CODE_FILE)
+        self.assertIn(DENIED_PLAN, self.run_case(self.worktree, code, self.sb.store) or "")
+        te.set_config(self.sb, autonomy="{task: autonomous}")
+        self.check((("git push", "git push origin main", True),))
+        self.assertIsNone(self.run_case(self.worktree, code, self.sb.store))
 
 
 class HookCliTest(HookTestCase):

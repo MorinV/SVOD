@@ -31,6 +31,8 @@ Its presence marks the store root: the CLI walks up from the working directory t
 | `workspace_gate` | no | string / none | name of a gate with a `worktrees(ctx, keys)` method (see [Writing a custom gate](#writing-a-custom-gate)); it tells the `pre-tool` hook which directories are work directories of a subject; without it that check is off |
 | `main_checkout_read_only` | no | bool / `false` | the `pre-tool` hook refuses edits in the main checkout of the store repository, except paths git ignores; work goes into worktrees |
 | `update_check` | no | bool / `true` | with a [copy of the engine](#vendored-copy) in the store, the session start summary says when a newer release is out, checked at most once a day; `false` turns the check off |
+| `autonomy` | no | mapping / `{}` | level of each pipeline: which approval steps become optional; see [Autonomy](#autonomy) |
+| `external_effects` | no | mapping / none | extends and exempts the commands the `pre-tool` hook holds for a person; see [External effects](#external-effects) |
 
 ```yaml
 locale: en
@@ -47,9 +49,40 @@ approval:
 workspace_gate: worktree
 main_checkout_read_only: true
 update_check: false
+autonomy: { task: supervised, hotfix: autonomous, note: guided }
+external_effects:
+  deny: ["^make deploy"]
+  allow: ["^git push origin feature/"]
+  phrases: [go ahead, давай, выполняй]
 profile_config:
   publishing: { mode: review }
 ```
+
+### Autonomy
+
+`autonomy` maps a pipeline name to a level; the level decides which approval steps (steps with an `approval` gate) the pipeline waits for. A name that is not a loaded pipeline, or a level not in the list, is a load error.
+
+| level | approval steps |
+|---|---|
+| `guided` | all as declared |
+| `supervised` | a step with an approval gate of `purpose: result` becomes optional |
+| `autonomous` | every approval step becomes optional |
+
+The steps are relaxed as loaded (`svod.loader.apply_autonomy`), the pipeline file is not touched: a relaxed step is `optional`, neither `required` nor `blocks_code`, so it never becomes the position, takes no part in violations and freezes no code (the `pre-tool` rule of frozen code included). Its gates still show marks, the approval fields stay guarded, `approve` still records an approval. `status` prints `status.autonomy` under the header of a subject whose pipeline has a level.
+
+`hotfix` is also accepted as a name: the level of the work kind `kind: hotfix` (frontmatter of a subject). The steps of a pipeline are shared by all its subjects, so for now that key is only validated and kept in `ctx.config.autonomy`; the level applied is the one of the pipeline.
+
+### External effects
+
+The `pre-tool` [hook](#hooks) refuses a shell command with an effect outside this machine, whatever the autonomy, until a person in the chat says go ahead.
+
+| key | req | type / default | meaning |
+|---|---|---|---|
+| `deny` | no | list of regular expressions / `[]` | more commands to hold, besides the standard list |
+| `allow` | no | list of regular expressions / `[]` | commands never held, the standard list included |
+| `phrases` | no | list of strings / `[go ahead, давай, выполняй]` | phrases of a reply that lift the refusal |
+
+Every pattern is searched (`re.search`) in each simple command of the line: its words joined by single spaces, from the program on (leading `VAR=value`, `env`, `sudo`, `nohup`, `command`, `exec`, `time`, `nice` dropped). An invalid pattern or an unknown key is a load error.
 
 ### Approval by a person
 
@@ -61,6 +94,8 @@ An approval is two acts: a person writes a phrase in the chat, then the agent re
 | `window_minutes` | no | positive int / `10` | how long a mark stays fresh |
 
 The mark is `svod-approval.json` in the git common directory of the store (so every worktree of the store shares it, and it is never committed): `{"at": "<ISO time with offset>", "keys": [<keys named in the prompt>]}`. The prompt hook writes it from a real human answer. `approve` requires a fresh mark for the subject, ready preceding nonoptional stages and bound files not modified after the answer. It consumes only this subject's named keys, preserving other keys and the original timestamp; an unnamed mark is single-use. Do not call the internal mark writer to manufacture human consent. `approve --step <id>` selects a specific applicable approval stage; otherwise the first unsatisfied applicable approval is selected.
+
+**The human mark.** The prompt hook also leaves `svod-human.json` next to the approval mark, on every reply of a person (never on a message of another agent): `{"at": "<ISO time with offset>", "sha": "<sha256 hex of the reply, stripped>", "go": <bool>}`. For a reply to a question of the agent the text is its answers joined by newlines. `go` is true when the reply holds, as whole words (letter case ignored), one of `external_effects.phrases`. The mark is fresh for `window_minutes`; each reply replaces it, and a redelivered event older than the window leaves none. `svod.approval` reads it: `write_human_mark(root, text)`, `read_human_mark(root)`, `fresh_human_mark(root, minutes)`. It tells that the last reply came from a person, and when; `svod answer` and the [external-effects rule](#external-effects) rely on it.
 
 Agents without a prompt hook (Cursor, Aider, a plain terminal) have no mark to leave. For them `approve <query> --confirm` asks the person at the terminal instead: with no fresh mark and stdin a terminal, it prints on stderr what is approved (`approve.confirm_plan`: the keys of the subject, the step, the approval file; `approve.confirm_files`: the bound files and the version to record) and asks `approve.confirm_question`; only `y` or `yes` (letter case ignored) records the approval, with the approver from the local config or git as usual, and any other answer or end of input refuses with `approve.not_confirmed` and writes nothing. The person answers in the terminal, not the agent: input from a pipe or a file is not a terminal, so it refuses with `approve.no_mark` as without `--confirm`. A fresh mark, when there is one, is used as without the flag. Like the hooks, this keeps a careless agent from approving its own plan, not a determined one that can fake a terminal.
 
@@ -450,6 +485,7 @@ Core keys (all required in every core locale file):
 | `validate.ok`, `validate.failed` | `{count}` |
 | `status.header` | `{id}`, `{keys}`, `{pipeline}` |
 | `status.checkout` | `{dir}` |
+| `status.autonomy` | `{level}` |
 | `status.next_step` | `{step}` |
 | `status.do_not_touch`, `status.do_not_touch_blocked` | facts of the open gate, `{step}` |
 | `status.unknown` | `{reason}`, `{gate}` |
@@ -486,6 +522,8 @@ Core keys (all required in every core locale file):
 | `hook.deny_main` | `{main}` |
 | `hook.deny_mark` | `{file}` |
 | `hook.deny_broken` | `{reason}` |
+| `hook.deny_human`, `hook.deny_questions` | `{file}` |
+| `hook.deny_external` | `{command}`, `{phrases}`, `{minutes}` |
 | `init.written`, `init.exists` | `{path}` |
 | `init.not_configured` | `{field}` |
 | `init.need_login`, `init.prompt_login` | — |
@@ -636,11 +674,12 @@ Optional `profile_config.agent_context` booleans `session_summary`, `prompt_posi
 | event | agent event | does |
 |---|---|---|
 | `session-start` | `SessionStart` | the `active` summary, as `active --hook`, preceded by the [update notice](#update-notice) |
-| `prompt` | `UserPromptSubmit` | approval mark and positions, see below; silent on messages of other agents |
+| `prompt` | `UserPromptSubmit` | human mark, approval mark and positions, see below; silent on messages of other agents |
 | `pre-tool` | `PreToolUse` | refuses the tool call by the rules below |
 
 `prompt`:
 
+- **Human mark.** Every reply of a person leaves the [human mark](#approval-by-a-person) `svod-human.json`, silently: nothing is added to the context.
 - **Approval.** When the prompt, as a whole, is one of `approval.phrases` (letter case ignored), optionally followed by keys joined by separators or the words of `hook.approval_joiners`, and closing `.` or `!`, the hook writes the approval mark with those keys (`svod.approval.write_mark`) and says so: `hook.approval_marked` names the keys and the `svod approve <key>` command of each, `hook.approval_marked_unnamed` is said when no key was named. A phrase inside a longer text does not approve. In the positions of the same answer, a subject of a marked key whose next step is that approval gets the variant `<text>_marked` of the step text (with `{keys}`, the marked key) when the locale has it, and no next step otherwise: the answer never asks to wait for the approval it has just recorded.
 - **Positions.** Keys the `key_gate` of any pipeline recognises in the prompt, then exact names (the last path segment of the id, at least 8 characters, as a whole word) of open subjects, at most three queries. For each, the `status` block of every existing subject it resolves to, between `hook.position_head` and `hook.position_tail`. A key with nothing in the store adds nothing.
 
@@ -650,12 +689,14 @@ Optional `profile_config.agent_context` booleans `session_summary`, `prompt_posi
 2. **Read-only main checkout.** With `main_checkout_read_only` in the `svod.yaml` of the store holding the path: a path in the first checkout of `git worktree list` of that store, not in a nested repository nor in the git directory, and not ignored by git. A checkout whose `.git` is a directory is the main one without asking git; `git worktree list` is asked only for a `.git` file. Text: `hook.deny_main`.
 3. **Frozen code.** With `workspace_gate`: the nearest directory above the path holding `.git` is a work directory when a key gate finds a key in its name and `worktrees(ctx, {key})` of the workspace gate returns it. Each existing, not archived subject of that key (in the store and its other checkouts) is checked: the first gate of a `blocks_code` step that does not pass refuses the edit, with `hook.deny_plan` carrying its step text. A key without a subject is not refused.
 4. **Shell commands.** `Bash` is checked against the same rules through the paths it names: every token of the command that exists or looks like a file (a suffix or a directory part) read as a path from its `cwd`; the `cwd` itself counts for the code freeze. A command made only of programs known not to write files (`cat`, `ls`, `grep`, `git status`/`log`/`diff`, `svod`, …) without a redirection is let through before the store is loaded, so no profile gate runs for it; an interpreter, an in-place edit, `git checkout`/`reset`/`stash`/… or an unknown program counts as a write. The approval mark file is refused to every write, by name (`hook.deny_mark`).
+5. **Human mark and questions.** The human mark `svod-human.json` is refused to every write like the approval mark (`hook.deny_human`). A file named `questions.md` below the root of a store (in a work record, not at the root) is refused to `Write`, `Edit`, `MultiEdit`, `apply_patch` and writing `Bash` commands (`hook.deny_questions`): `svod answer` writes it.
+6. **External effects.** Before anything else, and also for commands that only read, each simple command of a `Bash` line (and the script of `sh -c`/`bash -c`) is matched against the standard list: `git push` but `--dry-run`/`-n`; `git merge` and `git rebase` in a main checkout (whose `.git` is a directory: the checkout of a service or of the store, not a worktree; `-C` counts); `gh pr merge`; `gh release` but `list`, `view`, `download`; `npm publish`; `pip upload`, `twine upload` (also `python -m`); `docker push`; `kubectl apply`/`delete`; `terraform apply`/`destroy`; `ssh`; `scp`; `rsync` with a remote (`host:path`, `user@host:path`, `rsync://`). [`external_effects`](#external-effects) adds `deny` patterns and exempts `allow` ones. A match is refused with `hook.deny_external`, whatever the [autonomy](#autonomy), unless the human mark is fresh and its `go` is true: the agent asks in the chat, the person answers with a phrase, the agent runs the command. Without a store the rule is off; a store whose `svod.yaml` does not load gets the standard list and the default phrases. Only `svod.yaml` is read for it, so a read-only command still loads no profile.
 
 The hooks run as the same user as the agent and see only the tool calls the agent makes through them: they stop a careless agent, not one that sets out to write a file the user can write. Profile gates are Python the hooks run on every event: open only stores you trust.
 
 Every git call of one event goes through one run cache (`svod.cache.RunCache`), the gates of the store and the approval mark included, so no call repeats within the event. Rule 3 checks the freeze of the subjects of the key before it asks the workspace gate about the directory: an edit in the work directory of an approved subject costs none of the git calls of the gate. Rule 3 and `svod local` share one code-freeze rule, `svod.position.freeze`.
 
-The hooks are the package `svod.hooks`, each module importing only those before it: `protocol` (the event JSON), `shell` (tokens of a command, programs known to only read, the paths a command names, the python script exception of rule 1), `store` (the store of the session and its loading), `prompt`, `guard` (the `pre-tool` rules) and `events` (the answer to each event, `svod hook`).
+The hooks are the package `svod.hooks`, each module importing only those before it: `protocol` (the event JSON), `shell` (tokens of a command, programs known to only read, the paths a command names, the python script exception of rule 1), `store` (the store of the session and its loading), `prompt`, `guard` (the `pre-tool` rules), `external` (the external-effects rule) and `events` (the answer to each event, `svod hook`).
 
 ## Vendored copy
 

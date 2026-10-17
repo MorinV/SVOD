@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..config import Config, load_config
 from ..context import Context
 from ..errors import LoadError
 from ..keys import HOOK_ENGINE_BROKEN
@@ -72,6 +73,19 @@ def load(root: Path) -> tuple[Runtime | None, str | None]:
         return None, first_error(exc.errors)
     except Exception as exc:
         return None, f"{type(exc).__name__}: {exc}"
+
+
+def config_of(root: Path | None) -> Config | None:
+    """svod.yaml of the store without the local config, or None without a store or when broken.
+
+    Cheaper than load: no profile, gate or git call, so a hook may ask it of every command.
+    """
+    if root is None:
+        return None
+    try:
+        return load_config(root, local=False)
+    except Exception:
+        return None
 
 
 def context_of(runtime: Runtime, cache: RunCache | None = None) -> Context:

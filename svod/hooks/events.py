@@ -4,6 +4,7 @@ import sys
 
 from ..active import hook_payload, summarize
 from ..notice import update_notice, with_notice
+from .external import external_reason
 from .guard import Guard, broken_reason, tool_reason
 from .prompt import prompt_hook
 from .protocol import (BASH_TOOL, EVENT_PRE_TOOL, EVENT_PROMPT, EVENT_SESSION_START, FIELD_INPUT,
@@ -30,14 +31,24 @@ def session_start(event, fallback):
 
 
 def pre_tool(event, fallback):
-    """Refusal of a tool call that edits approval fields, frozen code or a read-only checkout."""
+    """Refusal of a tool call by the pre-tool rules, or None.
+
+    Refused: edits of approval fields, the marks, the questions of a record, frozen code or a
+    read-only checkout, and commands with an external effect. The external rule needs only
+    svod.yaml, so a command that only reads is still answered before the store is loaded.
+    """
     tool = event.get(FIELD_TOOL)
     data = event.get(FIELD_INPUT)
     if tool not in GUARDED_TOOLS or not isinstance(data, dict):
         return None
-    if tool == BASH_TOOL and bash_reads_only(command_of(data)):
-        return None
-    guard = Guard(store_root(event, fallback))
+    root = store_root(event, fallback)
+    if tool == BASH_TOOL:
+        reason = external_reason(root, event, command_of(data))
+        if reason:
+            return deny_output(reason)
+        if bash_reads_only(command_of(data)):
+            return None
+    guard = Guard(root)
     reason = tool_reason(guard, event, tool, data)
     if reason:
         return deny_output(reason)

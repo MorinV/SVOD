@@ -23,6 +23,9 @@ Rules = Iterable[str] | None
 MARK_FILE = "svod-approval.json"
 MARK_AT = "at"
 MARK_KEYS = "keys"
+HUMAN_FILE = "svod-human.json"
+HUMAN_SHA = "sha"
+HUMAN_GO = "go"
 SUFFIX_BY = "_by"
 SUFFIX_SHA = "_sha"
 DIGEST_SEPARATOR = b"\0"
@@ -234,6 +237,50 @@ def consume_mark(root: Path, keys: Iterable[str], mark: dict[str, Any] | None = 
         # Keys remain only from a current mark, so current is a mapping here.
         data = {**current, MARK_KEYS: sorted(remaining)}  # type: ignore[dict-item]
         path.write_text(json.dumps(data), encoding=ENCODING)
+
+
+def human_digest(text: str) -> str:
+    """sha256 hex of a reply of a person, stripped: what the human mark records of it."""
+    return hashlib.sha256(text.strip().encode(ENCODING)).hexdigest()
+
+
+def human_path(root: Path, run: Run | None = None) -> Path | None:
+    """Human mark file next to the approval mark in the git common directory; None off git."""
+    return common_dir_file(root, HUMAN_FILE, run)
+
+
+def write_human_mark(root: Path, text: str, go: bool = False, at: dt.datetime | None = None,
+                     run: Run | None = None) -> Path | None:
+    """Leave the mark of the last reply of a person: its time, digest and go-ahead.
+
+    go: the reply holds a phrase of external_effects.phrases. Return the path, or None off git.
+    run replaces run_git.
+    """
+    path = human_path(root, run)
+    if path is None:
+        return None
+    data = {MARK_AT: (at or now()).isoformat(), HUMAN_SHA: human_digest(text), HUMAN_GO: go}
+    path.write_text(json.dumps(data), encoding=ENCODING)
+    return path
+
+
+def read_human_mark(root: Path, run: Run | None = None) -> dict[str, Any] | None:
+    """The human mark as a mapping, or None when absent or unreadable; run replaces run_git."""
+    path = human_path(root, run)
+    if path is None or not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding=ENCODING))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def fresh_human_mark(root: Path, minutes: int, at: dt.datetime | None = None,
+                     run: Run | None = None) -> dict[str, Any] | None:
+    """The human mark when it was left within the window before the given time, else None."""
+    mark = read_human_mark(root, run)
+    return mark if is_fresh(mark, minutes, at) else None
 
 
 def mark_time(mark: dict[str, Any]) -> dt.datetime | None:

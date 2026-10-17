@@ -1,4 +1,4 @@
-"""The pre-tool rules: approval fields, the approval mark, a read-only main checkout, frozen code.
+"""The pre-tool rules: approval fields, marks, questions, a read-only main checkout, frozen code.
 
 Guard holds the store of one event; tool_reason asks it about one tool call.
 """
@@ -10,15 +10,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ..approval import MARK_FILE, field_names
+from ..approval import HUMAN_FILE, MARK_FILE, field_names
 from ..cache import RunCache
 from ..checkouts import subject_context
 from ..config import load_config
 from ..errors import LoadError
 from ..gates import PARAM_FILE, PARAM_MARKER
 from ..git import GitResult, run_git, worktree_list
-from ..keys import (HOOK_DENY_APPROVAL, HOOK_DENY_BROKEN, HOOK_DENY_MAIN, HOOK_DENY_MARK,
-                    HOOK_DENY_PLAN, STATUS_UNKNOWN)
+from ..keys import (HOOK_DENY_APPROVAL, HOOK_DENY_BROKEN, HOOK_DENY_HUMAN, HOOK_DENY_MAIN,
+                    HOOK_DENY_MARK, HOOK_DENY_PLAN, HOOK_DENY_QUESTIONS, STATUS_UNKNOWN)
 from ..locale import error_locale
 from ..paths import find_root
 from ..position import freeze
@@ -45,6 +45,7 @@ FIELD_LINE_RE = r"^\s*(?:{fields})\s*:"
 FIELDS_SEPARATOR = ", "
 LINE_SEPARATOR = "\n"
 CHECK_IGNORE = ("check-ignore", "--")
+QUESTIONS_FILE = "questions.md"
 
 
 @dataclass(frozen=True)
@@ -118,6 +119,14 @@ def patch_targets(event: Event, patch: str) -> list[tuple[Path, str]]:
         if line.startswith(PATCH_CHANGED):
             current.append(line)
     return [(path, LINE_SEPARATOR.join(lines)) for path, lines in sections.items()]
+
+
+def questions_file(path: Path) -> bool:
+    """Whether the path is the questions.md of a work record: below the root of a store."""
+    if path.name != QUESTIONS_FILE:
+        return False
+    root = find_root(existing_dir(path.parent))
+    return root is not None and path.parent != root
 
 
 def main_checkout(directory: Path, run: Run | None = None) -> tuple[Path, Path] | None:
@@ -200,14 +209,21 @@ class Guard:
         return self.runtime.locale.text(  # type: ignore[union-attr]
             HOOK_DENY_APPROVAL, fields=FIELDS_SEPARATOR.join(fields), file=name)
 
-    def mark_text(self) -> str:
-        """Refusal of a write of the approval mark, in the locale of the store when readable."""
-        return error_locale(self.root).text(HOOK_DENY_MARK, file=MARK_FILE)
+    def mark_text(self, name: str = MARK_FILE) -> str:
+        """Refusal of a write of the approval or the human mark, in the locale of the store."""
+        key = HOOK_DENY_HUMAN if name == HUMAN_FILE else HOOK_DENY_MARK
+        return error_locale(self.root).text(key, file=name)
+
+    def questions_text(self) -> str:
+        """Refusal of a direct write of the questions of a work record."""
+        return error_locale(self.root).text(HOOK_DENY_QUESTIONS, file=QUESTIONS_FILE)
 
     def edit_reason(self, path: Path, touches: Touches) -> str | None:
         """Refusal of an edit of the path; touches(fields) tells whether it changes them."""
-        if path.name == MARK_FILE:
-            return self.mark_text()
+        if path.name in (MARK_FILE, HUMAN_FILE):
+            return self.mark_text(path.name)
+        if questions_file(path):
+            return self.questions_text()
         fields, name = self.fields_of(path)
         if fields and touches(fields):
             return self.approval_text(fields, name)
@@ -220,8 +236,12 @@ class Guard:
             return self.approval_text(item.fields, Path(*item.parts).as_posix())
         if bash_reads_only(command):
             return None
-        if MARK_FILE in command:
-            return self.mark_text()
+        for name in (MARK_FILE, HUMAN_FILE):
+            if name in command:
+                return self.mark_text(name)
+        if QUESTIONS_FILE in command and any(questions_file(path)
+                                             for path in bash_paths(event, command)):
+            return self.questions_text()
         cwd = event_cwd(event).resolve()
         reason = self.plan_reason(cwd)
         if reason:
