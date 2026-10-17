@@ -301,10 +301,12 @@ Path('safe/.openspec.yaml').read_text()
 plan_approved_sha = True
 PY
 touch marker"""),
-            ("quoted heredoc header followed by sibling command", """python3 <<'PY'; ruby -e 'File.write("target/"+".open"+"spec.yaml", "plan_approved_sha: forged")'
-from pathlib import Path
-Path('safe/.openspec.yaml').read_text()
-PY"""),
+            ("quoted heredoc header followed by sibling command",
+             "python3 <<'PY'; ruby -e "
+             "'File.write(\"target/\"+\".open\"+\"spec.yaml\", \"plan_approved_sha: forged\")'\n"
+             "from pathlib import Path\n"
+             "Path('safe/.openspec.yaml').read_text()\n"
+             "PY"),
             ("unquoted heredoc", """python3 <<PY
 from pathlib import Path
 Path('safe/.openspec.yaml').read_text()

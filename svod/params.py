@@ -6,8 +6,8 @@ class Configurable:
     """Object configured by a params mapping validated against PARAMS and REQUIRED."""
 
     name = ""
-    PARAMS = frozenset()
-    REQUIRED = frozenset()
+    PARAMS: frozenset[str] = frozenset()
+    REQUIRED: frozenset[str] = frozenset()
 
     def __init__(self, params=None):
         """Store params after checking unknown and missing names."""

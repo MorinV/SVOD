@@ -1,9 +1,13 @@
 """Store configuration: svod.yaml at the store root."""
+from __future__ import annotations
+
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from .errors import LoadError
-from .paths import CONFIG_FILE, find_root
+from .paths import CONFIG_FILE
 from .yamlio import ENCODING, dump_yaml, read_yaml
 
 FIELD_LOCALE = "locale"
@@ -48,28 +52,28 @@ class Config:
     profile: Path
     default_branch: str
     workspaces: Path | None
-    active_order: tuple
-    render_exclude: tuple = ()
+    active_order: tuple[str, ...]
+    render_exclude: tuple[str, ...] = ()
     bindings: Path | None = None
     local_path: Path | None = None
     local_found: bool = False
     login: str | None = None
     email: str | None = None
-    approval_phrases: tuple = ()
+    approval_phrases: tuple[str, ...] = ()
     approval_window: int = DEFAULT_WINDOW_MINUTES
-    profile_config: dict = field(default_factory=dict)
+    profile_config: dict[str, Any] = field(default_factory=dict)
     workspace_gate: str | None = None
     main_checkout_read_only: bool = False
     update_check: bool = True
 
 
-def string_errors(path, data, keys):
+def string_errors(path: Path, data: dict[str, Any], keys: Iterable[str]) -> list[str]:
     """Errors for keys present in data whose value is not a non-empty string."""
     return [f"{path}: {key} must be a non-empty string" for key in keys
             if key in data and (not isinstance(data[key], str) or not data[key].strip())]
 
 
-def approval_errors(path, data):
+def approval_errors(path: Path, data: Any) -> list[str]:
     """Errors of the approval block: known keys, phrases as strings, a positive window."""
     if not isinstance(data, dict):
         return [f"{path}: {FIELD_APPROVAL} must be a mapping"]
@@ -84,7 +88,7 @@ def approval_errors(path, data):
     return errors
 
 
-def agent_context_errors(path, profile_config):
+def agent_context_errors(path: Path, profile_config: Any) -> list[str]:
     """Errors of profile_config.agent_context: a mapping of known keys with boolean values."""
     if not isinstance(profile_config, dict) or AGENT_CONTEXT not in profile_config:
         return []
@@ -93,12 +97,13 @@ def agent_context_errors(path, profile_config):
     if not isinstance(data, dict):
         return [f"{where} must be a mapping"]
     errors = [f"{where}: unknown key: {key}" for key in sorted(set(data) - AGENT_CONTEXT_FIELDS)]
-    errors += [f"{where}.{key} must be a boolean" for key in sorted(set(data) & AGENT_CONTEXT_FIELDS)
+    errors += [f"{where}.{key} must be a boolean"
+               for key in sorted(set(data) & AGENT_CONTEXT_FIELDS)
                if not isinstance(data[key], bool)]
     return errors
 
 
-def read_local(path):
+def read_local(path: Path) -> dict[str, Any]:
     """Validated local config mapping, empty when the file is absent."""
     if not path.is_file():
         return {}
@@ -117,7 +122,7 @@ def read_local(path):
     return data
 
 
-def load_config(root, local=True):
+def load_config(root: str | Path, local: bool = True) -> Config:
     """Read and validate the config file of the given store root.
 
     The local config named by local_config is read on top unless local is false: its
@@ -152,12 +157,13 @@ def load_config(root, local=True):
     if not profile.is_dir():
         raise LoadError([f"{path}: profile directory not found: {profile}"])
     local_path = root / data[FIELD_LOCAL_CONFIG] if data.get(FIELD_LOCAL_CONFIG) else None
-    own = read_local(local_path) if local and local_path is not None else {}
+    own: dict[str, Any] = read_local(local_path) if local and local_path is not None else {}
     workspaces = own.get(FIELD_WORKSPACES, data.get(FIELD_WORKSPACES))
     approval = data.get(FIELD_APPROVAL) or {}
+    store_locale: str = data[FIELD_LOCALE]
     return Config(
         root=root,
-        locale=own.get(FIELD_LOCALE, data[FIELD_LOCALE]),
+        locale=own.get(FIELD_LOCALE, store_locale),
         profile=profile.resolve(),
         default_branch=data.get(FIELD_DEFAULT_BRANCH, DEFAULT_BRANCH_FALLBACK),
         workspaces=(root / workspaces).resolve() if workspaces else None,
@@ -177,7 +183,7 @@ def load_config(root, local=True):
     )
 
 
-def write_local(path, values):
+def write_local(path: str | Path, values: dict[str, Any]) -> None:
     """Write the local config with the non-empty values, in the given order."""
     data = {key: value for key, value in values.items() if value}
     Path(path).write_text(dump_yaml(data), encoding=ENCODING)

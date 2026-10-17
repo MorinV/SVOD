@@ -1,30 +1,28 @@
 """EFF-4 S1 single native evaluation, privacy and text/exit parity."""
 import dataclasses
+import importlib
 import json
 import unittest
 from pathlib import Path
-
-from svod.pipeline import parse_pipeline
-from svod.position import position
-from svod.render import Report
-from svod.status import Collection, StatusItem
-from svod.status_json import to_json
+from unittest.mock import patch
 
 from support import StoreTestCase
-import importlib
+from test_position import change
+
+from svod.context import Context
+from svod.gates import Gate, unknown, verdict
+from svod.loader import load_runtime
+from svod.pipeline import parse_pipeline
+from svod.position import position
+from svod.render import Report, status_report
+from svod.resolve import Resolution
+from svod.status import Collection, StatusItem
+from svod.status_json import to_json
+from svod.subject import Subject
 
 
 def module(test, name):
     return importlib.import_module(name)
-
-from test_position import change
-from svod.context import Context
-from svod.gates import Gate, unknown, verdict
-from svod.loader import load_runtime
-from svod.render import status_report
-from svod.resolve import Resolution
-from svod.subject import Subject
-from unittest.mock import patch
 
 
 class CountingGate(Gate):
@@ -52,8 +50,10 @@ class StatusJsonContractTest(StoreTestCase):
         pipeline = self.runtime.pipeline("task")
         counter = CountingGate(verdict(False))
         step = pipeline.step("approve")
-        replaced = dataclasses.replace(step, gates=[dataclasses.replace(step.gates[0], impl=counter)])
-        pipeline = dataclasses.replace(pipeline, steps=[replaced if s.id == step.id else s for s in pipeline.steps])
+        replaced = dataclasses.replace(step,
+                                       gates=[dataclasses.replace(step.gates[0], impl=counter)])
+        pipeline = dataclasses.replace(
+            pipeline, steps=[replaced if s.id == step.id else s for s in pipeline.steps])
         collection = collector.collect_status(self.ctx, [pipeline], "tk-4")
         self.assertEqual(counter.calls, 1)
         data = serializer.to_json(collection)
@@ -64,7 +64,8 @@ class StatusJsonContractTest(StoreTestCase):
         self.assertEqual(data["query"], "tk-4")
         self.assertEqual(data["report"], {"ok": True, "refused": False, "exit_code": 0})
         self.assertEqual(data["positions"][0]["current"], "approve")
-        self.assertEqual(collection.report, status_report(self.ctx, [self.runtime.pipeline("task")], "tk-4"))
+        self.assertEqual(collection.report,
+                         status_report(self.ctx, [self.runtime.pipeline("task")], "tk-4"))
 
     def test_json_unknown_private_reason_facts_display_are_not_dumped(self):
         collector = module(self, "svod.status")
@@ -72,13 +73,17 @@ class StatusJsonContractTest(StoreTestCase):
         pipeline = self.runtime.pipeline("task")
         step = pipeline.step("approve")
         private = "PRIVATE_TOKEN_DO_NOT_SERIALIZE"
-        counter = CountingGate(dataclasses.replace(unknown(private, secret=private), display=private))
-        replaced = dataclasses.replace(step, gates=[dataclasses.replace(step.gates[0], impl=counter)])
-        pipeline = dataclasses.replace(pipeline, steps=[replaced if s.id == step.id else s for s in pipeline.steps])
+        counter = CountingGate(dataclasses.replace(unknown(private, secret=private),
+                                                   display=private))
+        replaced = dataclasses.replace(step,
+                                       gates=[dataclasses.replace(step.gates[0], impl=counter)])
+        pipeline = dataclasses.replace(
+            pipeline, steps=[replaced if s.id == step.id else s for s in pipeline.steps])
         collection = collector.collect_status(self.ctx, [pipeline], "tk-4")
         data = serializer.to_json(collection)
         self.assertNotIn(private, json.dumps(data))
-        outcome = next(s for s in data["positions"][0]["steps"] if s["id"] == "approve")["outcomes"][0]
+        outcome = next(s for s in data["positions"][0]["steps"]
+                       if s["id"] == "approve")["outcomes"][0]
         self.assertEqual(outcome["status"], "unknown")
         self.assertEqual(outcome["reason_code"], "unknown_detail")
         self.assertNotIn("secret", outcome["facts"])
@@ -143,7 +148,8 @@ class StatusJsonContractTest(StoreTestCase):
         missing_gate = CountingGate(verdict(False))
         absent = Subject("absent", None, exists=False)
         present = pipeline.subject.impl.resolve("tk-4", self.ctx)[0]
-        missing_pipeline = dataclasses.replace(pipeline, missing=dataclasses.replace(pipeline.missing, impl=missing_gate))
+        missing_pipeline = dataclasses.replace(
+            pipeline, missing=dataclasses.replace(pipeline.missing, impl=missing_gate))
         resolution = Resolution(matches=[(missing_pipeline, absent), (pipeline, present)])
         with patch.object(collector, "resolve", return_value=resolution):
             collection = collector.collect_status(self.ctx, [pipeline], "tk-4")
@@ -151,10 +157,12 @@ class StatusJsonContractTest(StoreTestCase):
         self.assertTrue(data["report"]["ok"])
         self.assertEqual(collection.report.err, [])
         self.assertTrue(data["positions"][0]["missing_suppressed"])
-        self.assertEqual([action["subject"]["id"] for action in data["next_action"]], [present.id])
+        self.assertEqual([action["subject"]["id"] for action in data["next_action"]],
+                         [present.id])
         self.assertEqual(data["positions"][0]["evaluation"], "not_evaluated")
         self.assertEqual(missing_gate.calls, 1)
-        with patch.object(collector, "resolve", return_value=dataclasses.replace(resolution, ambiguous=True)):
+        with patch.object(collector, "resolve",
+                          return_value=dataclasses.replace(resolution, ambiguous=True)):
             ambiguous = serializer.to_json(collector.collect_status(self.ctx, [pipeline], "tk-4"))
         self.assertEqual(ambiguous["positions"], [])
         self.assertEqual(ambiguous["report"]["exit_code"], 2)
@@ -162,9 +170,11 @@ class StatusJsonContractTest(StoreTestCase):
         done_counter = CountingGate(verdict(True))
         current_counter = CountingGate(verdict(False))
         step = pipeline.step("approve")
-        step = dataclasses.replace(step, entry=[dataclasses.replace(pipeline.entry[0], impl=current_counter)])
-        terminal = dataclasses.replace(pipeline, done=dataclasses.replace(pipeline.done, impl=done_counter),
-                                       steps=[step if s.id == step.id else s for s in pipeline.steps])
+        step = dataclasses.replace(
+            step, entry=[dataclasses.replace(pipeline.entry[0], impl=current_counter)])
+        terminal = dataclasses.replace(
+            pipeline, done=dataclasses.replace(pipeline.done, impl=done_counter),
+            steps=[step if s.id == step.id else s for s in pipeline.steps])
         final = collector.collect_status(self.ctx, [terminal], "tk-4")
         projected = serializer.to_json(final)["positions"][0]
         self.assertTrue(projected["done"])
@@ -184,12 +194,14 @@ class StatusJsonContractTest(StoreTestCase):
                 structured = self.sb.cli("status", query, "--format", "json")
                 self.assertEqual((native.returncode, native.stdout, native.stderr),
                                  (explicit.returncode, explicit.stdout, explicit.stderr))
-                self.assertEqual(json.loads(structured.stdout)["report"]["exit_code"], native.returncode)
+                self.assertEqual(json.loads(structured.stdout)["report"]["exit_code"],
+                                 native.returncode)
                 self.assertEqual(structured.stderr, "")
         pipeline = self.runtime.pipeline("task")
         subject = pipeline.subject.impl.resolve("tk-4", self.ctx)[0]
         other = dataclasses.replace(subject, checkout=self.sb.store)
-        with patch.object(collector, "resolve", return_value=Resolution(matches=[(pipeline, subject), (pipeline, other)])):
+        resolution = Resolution(matches=[(pipeline, subject), (pipeline, other)])
+        with patch.object(collector, "resolve", return_value=resolution):
             collection = collector.collect_status(self.ctx, [pipeline], "tk-4")
         with patch("svod.position.evaluate", side_effect=AssertionError("serializer evaluated")):
             data = serializer.to_json(collection)
@@ -201,11 +213,15 @@ class StatusJsonContractTest(StoreTestCase):
         serializer = module(self, "svod.status_json")
         pipeline = self.runtime.pipeline("task")
         step = pipeline.step("approve")
-        counter = CountingGate(dataclasses.replace(unknown("PRIVATE"), facts={"reason": "PRIVATE", "count": 123, "path": "../PRIVATE"}))
-        step = dataclasses.replace(step, gates=[dataclasses.replace(step.gates[0], impl=counter, gate="untrusted")])
-        pipeline = dataclasses.replace(pipeline, steps=[step if s.id == step.id else s for s in pipeline.steps])
+        counter = CountingGate(dataclasses.replace(
+            unknown("PRIVATE"), facts={"reason": "PRIVATE", "count": 123, "path": "../PRIVATE"}))
+        step = dataclasses.replace(
+            step, gates=[dataclasses.replace(step.gates[0], impl=counter, gate="untrusted")])
+        pipeline = dataclasses.replace(
+            pipeline, steps=[step if s.id == step.id else s for s in pipeline.steps])
         data = serializer.to_json(collector.collect_status(self.ctx, [pipeline], "tk-4"))
-        outcome = next(s for s in data["positions"][0]["steps"] if s["id"] == "approve")["outcomes"][0]
+        outcome = next(s for s in data["positions"][0]["steps"]
+                       if s["id"] == "approve")["outcomes"][0]
         self.assertEqual(outcome["facts"], {})
         self.assertNotIn("PRIVATE", json.dumps(data))
 
@@ -217,12 +233,14 @@ class StatusJsonContractTest(StoreTestCase):
         step = pipeline.step("approve")
         counter = CountingGate(verdict(False, reason="missing"))
         step = dataclasses.replace(step, gates=[dataclasses.replace(step.gates[0], impl=counter)])
-        pipeline = dataclasses.replace(pipeline, steps=[step if s.id == step.id else s for s in pipeline.steps])
+        pipeline = dataclasses.replace(
+            pipeline, steps=[step if s.id == step.id else s for s in pipeline.steps])
         base = step.gates[0].text or step.text
         with patch.dict(self.ctx.locale._strings, {base + "_missing": "Missing approval."}):
             collection = collector.collect_status(self.ctx, [pipeline], "tk-4")
         projected = serializer.to_json(collection)
-        self.assertEqual(projected["positions"][0]["instruction"]["variant_key"], base + "_missing")
+        self.assertEqual(projected["positions"][0]["instruction"]["variant_key"],
+                         base + "_missing")
         collection.report = Report(False, refused=True)
         self.assertEqual(serializer.to_json(collection)["report"]["exit_code"], 1)
         self.assertEqual(counter.calls, 1)
@@ -239,33 +257,44 @@ class NextActionTest(unittest.TestCase):
                  "gates": [{"gate": "artifact", "params": {"path": "never.md"}}]},
                 {"id": "outline", "role": "planner", "text": "step.outline",
                  "gates": [
-                     {"gate": "artifact", "purpose": "contract", "params": {"path": "contract.md"}},
-                     {"gate": "artifact", "when": "needs_extra", "params": {"path": "private.md"}}]},
+                     {"gate": "artifact", "purpose": "contract",
+                      "params": {"path": "contract.md"}},
+                     {"gate": "artifact", "when": "needs_extra",
+                      "params": {"path": "private.md"}}]},
                 {"id": "later", "text": "step.later",
                  "gates": [{"gate": "artifact", "params": {"path": "review/code.yaml"}}]},
             ]}, Path("synthetic.yaml"))
         self.assertEqual(errors, [])
         assert pipeline is not None
-        counter = CountingGate(result if result is not None else dataclasses.replace(verdict(False), reason="missing"))
+        counter = CountingGate(result if result is not None
+                               else dataclasses.replace(verdict(False), reason="missing"))
         for ref in pipeline.gate_refs():
             ref.impl = counter
         subject = Subject("feature/sample/tasks/task", None, keys=frozenset({"SAMPLE-1"}))
         pos = position(None, pipeline, subject)
-        item = StatusItem(pipeline, subject, None, position=pos, instruction_variant="step.outline_missing")
-        return Collection("SAMPLE-1", Resolution(matches=[(pipeline, subject)]), Report(True), [item]), counter
+        item = StatusItem(pipeline, subject, None, position=pos,
+                          instruction_variant="step.outline_missing")
+        collection = Collection("SAMPLE-1", Resolution(matches=[(pipeline, subject)]),
+                                Report(True), [item])
+        return collection, counter
 
     def test_early_planning_compact_action_preserves_v1_shape(self):
         collection, counter = self.capture()
         data = to_json(collection)
         self.assertEqual(data["version"], 1)
         self.assertEqual(data["positions"][0]["current"], "outline")
-        self.assertEqual(set(data) - {"next_action"}, {"version", "query", "resolution", "report", "positions"})
+        self.assertEqual(set(data) - {"next_action"},
+                         {"version", "query", "resolution", "report", "positions"})
         self.assertEqual(data.get("next_action"), [{
-            "pipeline": "synthetic", "subject": {"id": "feature/sample/tasks/task", "exists": True, "keys": ["SAMPLE-1"]},
+            "pipeline": "synthetic",
+            "subject": {"id": "feature/sample/tasks/task", "exists": True, "keys": ["SAMPLE-1"]},
             "checkout": None, "state": "live", "stage": "outline", "role": "planner",
-            "instruction": {"base_key": "step.outline", "variant_key": "step.outline_missing", "from_entry": False},
-            "inputs": [{"gate": "artifact", "purpose": "contract", "kind": "path", "ref": "contract.md"}],
-            "blocker": {"gate": "artifact", "status": "fail", "reason_code": "missing", "facts": {}, "severity": None},
+            "instruction": {"base_key": "step.outline", "variant_key": "step.outline_missing",
+                            "from_entry": False},
+            "inputs": [{"gate": "artifact", "purpose": "contract", "kind": "path",
+                        "ref": "contract.md"}],
+            "blocker": {"gate": "artifact", "status": "fail", "reason_code": "missing",
+                        "facts": {}, "severity": None},
             "version": {"value": None, "reason_code": "not_captured"},
         }])
         self.assertEqual(counter.calls, 2)
@@ -275,7 +304,8 @@ class NextActionTest(unittest.TestCase):
         ref = collection.items[0].position.current.outcomes[0].ref
         ref.params = {"path": "contract.md", "glob": "specs/**/spec.md",
                       "bind": ["contract.md", "specs/**/spec.md", "../escape", "/absolute",
-                               "bad\\path", "https://host/secret", "raw secret", *[f"inputs/{i}.md" for i in range(200)]],
+                               "bad\\path", "https://host/secret", "raw secret",
+                               *[f"inputs/{i}.md" for i in range(200)]],
                       "secret": "PRIVATE", "file": "PRIVATE"}
         action = to_json(collection)["next_action"][0]
         self.assertEqual(action["inputs"][:4], [
@@ -312,20 +342,23 @@ class NextActionTest(unittest.TestCase):
                 collection, counter = self.capture(result)
                 collection.items[0].subject.author_of = lambda: self.fail("author callback")
                 before = counter.calls
-                with patch("svod.position.evaluate", side_effect=AssertionError("gate evaluation")), \
-                     patch("svod.status.resolve", side_effect=AssertionError("resolution")), \
-                     patch("builtins.open", side_effect=AssertionError("file read")), \
-                     patch.object(Path, "read_text", side_effect=AssertionError("file read")), \
-                     patch.object(Path, "glob", side_effect=AssertionError("glob")), \
-                     patch("subprocess.run", side_effect=AssertionError("git/process")):
+                with (patch("svod.position.evaluate",
+                            side_effect=AssertionError("gate evaluation")),
+                      patch("svod.status.resolve", side_effect=AssertionError("resolution")),
+                      patch("builtins.open", side_effect=AssertionError("file read")),
+                      patch.object(Path, "read_text", side_effect=AssertionError("file read")),
+                      patch.object(Path, "glob", side_effect=AssertionError("glob")),
+                      patch("subprocess.run", side_effect=AssertionError("git/process"))):
                     first = to_json(collection)
                     self.assertEqual(first, to_json(collection))
                 action = first["next_action"][0]
                 self.assertEqual(action["blocker"]["status"], result.status.value)
-                self.assertEqual(action["blocker"]["reason_code"], "stale" if result.reason == "stale" else "unknown_detail")
+                self.assertEqual(action["blocker"]["reason_code"],
+                                 "stale" if result.reason == "stale" else "unknown_detail")
                 self.assertEqual(action["version"], {"value": None, "reason_code": "not_captured"})
                 self.assertNotIn("PRIVATE", json.dumps(first))
-                self.assertFalse({"permission", "capability", "execute", "ledger", "goal"} & action.keys())
+                self.assertFalse({"permission", "capability", "execute", "ledger", "goal"}
+                                 & action.keys())
                 self.assertEqual(counter.calls, before)
 
     def test_archived_history_has_no_action_or_live_evidence(self):
@@ -334,14 +367,16 @@ class NextActionTest(unittest.TestCase):
         collection, counter = self.capture()
         item = collection.items[0]
         item.subject.archived = True
-        item.pipeline.done = GateRef("archived", {}, "done", text="history.done", impl=ArchivedGate({}))
+        item.pipeline.done = GateRef("archived", {}, "done", text="history.done",
+                                     impl=ArchivedGate({}))
         item.position = position(None, item.pipeline, item.subject)
         action = to_json(collection)["next_action"][0]
         self.assertEqual(action["state"], "historical")
         for key in ("stage", "role", "instruction", "blocker"):
             self.assertIsNone(action[key])
         self.assertEqual(action["inputs"], [])
-        self.assertEqual((item.position.entries, item.position.steps, item.position.marks), ([], [], []))
+        self.assertEqual((item.position.entries, item.position.steps, item.position.marks),
+                         ([], [], []))
         self.assertEqual(counter.calls, 2)
 
     def test_completed_live_and_pending_done_preserve_captured_terminal_state(self):

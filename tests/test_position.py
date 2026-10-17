@@ -349,9 +349,9 @@ class ArchiveHistoryTest(unittest.TestCase):
         pipeline = self.pipeline(live)
         subject = Subject("history", None, archived=True)
         for entries in (pipeline.entry, []):
-            with self.subTest(entry=bool(entries)):
-                with patch.object(live, "evaluate", side_effect=AssertionError("live gate replay")):
-                    pos = position(None, dataclasses.replace(pipeline, entry=entries), subject)
+            with (self.subTest(entry=bool(entries)),
+                  patch.object(live, "evaluate", side_effect=AssertionError("live gate replay"))):
+                pos = position(None, dataclasses.replace(pipeline, entry=entries), subject)
         self.assertTrue(pos.done.passed)
         self.assertIs(pos.done, pos.done_outcome)
         self.assertIs(pos.done.ref, pipeline.done)

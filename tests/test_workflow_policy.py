@@ -61,7 +61,8 @@ def parse_case(test, data):
 def bind_case(test, data):
     """Bind only synthetic gate instances; no provider, store or network needed."""
     pipeline = parse_case(test, data)
-    registry = {"consent-alias": SyntheticApproval, "approval": ExistsGate, "artifact": ArtifactGate}
+    registry = {"consent-alias": SyntheticApproval, "approval": ExistsGate,
+                "artifact": ArtifactGate}
     for ref in pipeline.gate_refs():
         ref.impl = registry[ref.gate](ref.params)
     return pipeline
@@ -434,7 +435,7 @@ class ApplicabilityTest(unittest.TestCase):
         """)
         pipeline = parse_case(self, data)
         pipeline.steps[0].when = "needs_scope"
-        for step, exists in zip(pipeline.steps, (False, True, False)):
+        for step, exists in zip(pipeline.steps, (False, True, False), strict=False):
             # A separate real subject per evaluation makes fixed PASS/FAIL data,
             # without mocking position or requiring filesystem approval records.
             step.gates[0].impl = FixedExistence(exists)

@@ -3,7 +3,12 @@
 Without a fresh mark, --confirm asks the person at the terminal instead: the path for agents
 without a prompt hook, where the person, not the agent, answers.
 """
+from __future__ import annotations
+
+import datetime as dt
 import sys
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 from . import keys
 from .approval import (bound_files, consume_mark, digest, is_fresh, mark_keys, mark_time,
@@ -17,23 +22,30 @@ from .render import INDENT, KEYS_SEPARATOR, Report
 from .resolve import resolve
 from .workflow_policy import applicable_approvals
 
+if TYPE_CHECKING:
+    from .context import Context
+    from .pipeline import GateRef, Pipeline, Step
+    from .resolve import Resolution
+    from .subject import Subject
+
 SHA_SHOWN = 12
 NO_SHA = "-"
 YES_ANSWERS = frozenset({"y", "yes"})
-SAME_LINE = ""
 
 
-def selected_step(pipeline, step):
+def selected_step(pipeline: Pipeline, step: str | None) -> Step | None:
     """The explicitly named step, or None when the pipeline does not contain it."""
     return next((item for item in pipeline.steps if item.id == step), None)
 
 
-def approval_ref(pipeline, step=None, subject=None):
+def approval_ref(pipeline: Pipeline, step: str | None = None,
+                 subject: Subject | None = None) -> GateRef | None:
     """First applicable approval, optionally restricted to an explicitly named stage."""
     return next(iter(applicable_approvals(pipeline, subject, step)), None)
 
 
-def candidates(ctx, pipelines, query, step=None):
+def candidates(ctx: Context, pipelines: list[Pipeline], query: str,
+               step: str | None = None) -> tuple[list[tuple[Subject, GateRef]], Resolution]:
     """(subject, approval gate use) of every open subject the query names, and the resolution."""
     found = resolve(ctx, pipelines, query)
     pairs = []
@@ -50,12 +62,12 @@ def candidates(ctx, pipelines, query, step=None):
     return [(s, ref) for s, ref in pairs if ref is not None], found
 
 
-def refusal(ctx, key, **facts):
+def refusal(ctx: Context, key: str, **facts: Any) -> Report:
     """Report of a refused approval."""
     return Report(ok=False, err=[ctx.locale.text(key, **facts)], refused=True)
 
 
-def passed(ctx, refs, subject):
+def passed(ctx: Context, refs: list[GateRef], subject: Subject) -> bool:
     """Whether a nonempty group of gate refs passes in the subject's own checkout."""
     if not refs:
         return False
@@ -65,7 +77,8 @@ def passed(ctx, refs, subject):
         return False
 
 
-def pending_prerequisites(ctx, pipeline, subject, step):
+def pending_prerequisites(ctx: Context, pipeline: Pipeline, subject: Subject,
+                          step: str) -> list[str]:
     """Ids of preceding nonoptional steps and selected non-approval gates not yet passed."""
     own = subject_context(ctx, subject)
     selected = selected_step(pipeline, step)
@@ -87,7 +100,7 @@ def pending_prerequisites(ctx, pipeline, subject, step):
     return list(dict.fromkeys(pending))
 
 
-def changed_after_mark(base, bind, mark):
+def changed_after_mark(base: Path, bind: list[str], mark: dict[str, Any]) -> bool:
     """Whether exact bound evidence cannot be shown to predate the human approval mark."""
     left = mark_time(mark)
     if left is None:
@@ -99,7 +112,7 @@ def changed_after_mark(base, bind, mark):
         return True
 
 
-def at_terminal():
+def at_terminal() -> bool:
     """Whether stdin is a terminal a person types into, not a pipe or a file."""
     try:
         return sys.stdin is not None and sys.stdin.isatty()
@@ -107,12 +120,13 @@ def at_terminal():
         return False
 
 
-def subject_label(subject):
+def subject_label(subject: Subject) -> str:
     """Keys of the subject as one text, or its id when it has none."""
     return KEYS_SEPARATOR.join(sorted(subject.keys)) or subject.id
 
 
-def confirmed(ctx, subject, step, ref, files, sha):
+def confirmed(ctx: Context, subject: Subject, step: str | None, ref: GateRef,
+              files: list[Path], sha: str) -> bool:
     """Show what is approved on stderr and whether the person at the terminal answers yes.
 
     The binding shown is the subject, the step, the approval file and the bound files with
@@ -121,14 +135,15 @@ def confirmed(ctx, subject, step, ref, files, sha):
     locale = ctx.locale
     root = subject_context(ctx, subject).root
     label = subject_label(subject)
-    target = (subject.path / ref.params[PARAM_FILE]).relative_to(root).as_posix()
+    # Only existing subjects, which have a path, are approved.
+    target = (cast(Path, subject.path) / ref.params[PARAM_FILE]).relative_to(root).as_posix()
     print(locale.text(keys.APPROVE_CONFIRM_PLAN, subject=label, step=step,
                       marker=ref.params[PARAM_MARKER], file=target), file=sys.stderr)
     if files:
         print(locale.text(keys.APPROVE_CONFIRM_FILES, sha=sha[:SHA_SHOWN]), file=sys.stderr)
         for path in files:
             print(INDENT + path.relative_to(root).as_posix(), file=sys.stderr)
-    print(locale.text(keys.APPROVE_CONFIRM_QUESTION, subject=label), end=SAME_LINE,
+    print(locale.text(keys.APPROVE_CONFIRM_QUESTION, subject=label), end="",
           file=sys.stderr, flush=True)
     try:
         answer = input()
@@ -137,7 +152,8 @@ def confirmed(ctx, subject, step, ref, files, sha):
     return answer.strip().casefold() in YES_ANSWERS
 
 
-def approve(ctx, pipelines, query, at=None, step=None, confirm=False):
+def approve(ctx: Context, pipelines: list[Pipeline], query: str, at: dt.datetime | None = None,
+            step: str | None = None, confirm: bool = False) -> Report:
     """Write approval fields, then consume only this subject's named approval keys.
 
     With confirm and no fresh mark, the person at the terminal is asked instead; there is no
@@ -180,13 +196,16 @@ def approve(ctx, pipelines, query, at=None, step=None, confirm=False):
         return refusal(ctx, keys.APPROVE_FOREIGN_KEY, mark_keys=KEYS_SEPARATOR.join(sorted(named)),
                        keys=KEYS_SEPARATOR.join(sorted(subject.keys)))
     bind = ref.params.get(PARAM_BIND)
+    # Candidates are existing subjects, which have a path; a fresh mark is a mapping.
+    base = cast(Path, subject.path)
     try:
-        files = bound_files(subject.path, bind) if bind else []
+        files = bound_files(base, bind) if bind else []
         if bind and not files:
             return refusal(ctx, keys.APPROVE_NOT_READY, query=query, step=step, pending=step)
-        if marked and step is not None and bind and changed_after_mark(subject.path, bind, mark):
+        if (marked and step is not None and bind
+                and changed_after_mark(base, bind, cast("dict[str, Any]", mark))):
             return refusal(ctx, keys.APPROVE_CHANGED_AFTER_MARK, query=query, step=step)
-        sha = digest(subject.path, bind, ref.params.get(PARAM_IGNORE),
+        sha = digest(base, bind, ref.params.get(PARAM_IGNORE),
                      ref.params.get(PARAM_STRIP)) if bind else ""
     except OSError:
         return refusal(ctx, keys.APPROVE_CHANGED_AFTER_MARK, query=query, step=step)
@@ -197,7 +216,7 @@ def approve(ctx, pipelines, query, at=None, step=None, confirm=False):
         return refusal(ctx, keys.APPROVE_NOT_CONFIRMED, subject=subject_label(subject))
     marker = ref.params[PARAM_MARKER]
     date = (at or now()).date().isoformat()
-    path = subject.path / ref.params[PARAM_FILE]
+    path = base / ref.params[PARAM_FILE]
     write_fields(path, marker, date, who, sha)
     if marked:
         consume_mark(ctx.root, subject.keys, mark)

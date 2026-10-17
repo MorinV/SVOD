@@ -5,7 +5,7 @@ Built on pipeline declarations only: it imports neither position nor approve.
 from dataclasses import replace
 import json
 
-from .errors import ParamError
+from .errors import ParamError, PolicyError
 from .gates import ApprovalGate
 from .pipeline import applies, first_blocking, open_step, run_entries, step_applies
 
@@ -48,7 +48,7 @@ def subject_pipeline(ctx, subject):
     from .resolve import resolve
 
     if subject.path is None:
-        raise ValueError('subject has no path')
+        raise PolicyError("subject has no path")
     query = (subject.path.resolve().relative_to(ctx.root.resolve()).as_posix()
              if subject.path is not None else subject.id)
     resolution = resolve(ctx, list(ctx.pipelines.values()), query)
@@ -56,7 +56,7 @@ def subject_pipeline(ctx, subject):
                if found.exists and found.path is not None
                and found.path.resolve() == subject.path.resolve()]
     if resolution.ambiguous or len(matches) != 1:
-        raise ValueError('missing or ambiguous subject pipeline')
+        raise PolicyError("missing or ambiguous subject pipeline")
     return matches[0]
 
 
@@ -76,36 +76,36 @@ def contract_approval(ctx, subject):
             if not applies(ref, resolved):
                 continue
             if not isinstance(ref.impl, ApprovalGate):
-                artifacts.update(ref.params[key] for key in ('path', 'glob')
+                artifacts.update(ref.params[key] for key in ("path", "glob")
                                  if isinstance(ref.params.get(key), str))
                 continue
-            if ref.severity == 'warn' or (ref.purpose != 'contract' and not step.blocks_code):
+            if ref.severity == "warn" or (ref.purpose != "contract" and not step.blocks_code):
                 continue
             identity = json.dumps(ref.params, sort_keys=True)
             identity = (identity, ref.purpose)
             if identity not in seen:
                 seen.add(identity)
                 refs.append(ref)
-    tagged = [ref for ref in refs if ref.purpose == 'contract']
-    tagged_policy = approval_refs(pipeline, 'contract')
+    tagged = [ref for ref in refs if ref.purpose == "contract"]
+    tagged_policy = approval_refs(pipeline, "contract")
     if tagged_policy:
         candidates = tagged
     else:
         untagged = [ref for ref in refs if ref.purpose is None]
-        candidates = [ref for ref in untagged if ref.params.get('bind')]
+        candidates = [ref for ref in untagged if ref.params.get("bind")]
         if untagged and not candidates:
-            raise ValueError('missing bound contract approval')
+            raise PolicyError("missing bound contract approval")
         if len(candidates) > 1:
             from fnmatch import fnmatchcase
             candidates = [ref for ref in candidates if any(
                 artifact == pattern or fnmatchcase(artifact, pattern)
-                for artifact in artifacts for pattern in ref.params['bind'])]
+                for artifact in artifacts for pattern in ref.params["bind"])]
             if not candidates:
-                raise ValueError('missing or ambiguous bound contract approval')
+                raise PolicyError("missing or ambiguous bound contract approval")
     if not candidates:
         return None
-    if len(candidates) != 1 or not candidates[0].params.get('bind'):
-        raise ValueError('missing or ambiguous bound contract approval')
+    if len(candidates) != 1 or not candidates[0].params.get("bind"):
+        raise PolicyError("missing or ambiguous bound contract approval")
     return candidates[0]
 
 
@@ -123,19 +123,19 @@ def required_prerequisites(ctx, subject, *, exclude):
         return first_blocking(run_entries(ctx, [ref for ref in refs if not exclude(ref)],
                                           resolved))
 
-    pending = ['entry'] if blocked(pipeline.entry) else []
+    pending = ["entry"] if blocked(pipeline.entry) else []
     for step in pipeline.steps:
         if not step.required or step.optional or not step_applies(step, resolved):
             continue
         if blocked(step.entry) or open_step(ctx, step, resolved, exclude) is not None:
             pending.append(step.id)
     if pending:
-        raise ValueError('required prerequisites pending: ' + ', '.join(pending))
+        raise PolicyError("required prerequisites pending: " + ", ".join(pending))
 
 
 def binding_patterns(pipeline, purpose):
     """Copy selected bindings without exposing the declaration to caller mutation."""
-    return list(approval_ref(pipeline, purpose).params.get('bind', []))
+    return list(approval_ref(pipeline, purpose).params.get("bind", []))
 
 
 def same_approval(impl, ref):
@@ -147,18 +147,18 @@ def result_approval(ctx, subject):
     """Select applicable result consent, structurally bootstrapping untagged policy."""
     pipeline, resolved = subject_pipeline(ctx, subject)
     refs = applicable_approvals(pipeline, resolved)
-    tagged = [ref for ref in refs if ref.purpose == 'result']
+    tagged = [ref for ref in refs if ref.purpose == "result"]
     if tagged:
         candidates = tagged
     else:
         blockers = [ref for step in pipeline.steps if step.blocks_code
                     for ref in step.gates if isinstance(ref.impl, ApprovalGate)]
-        candidates = [ref for ref in refs if ref.purpose is None and ref.params.get('bind')
+        candidates = [ref for ref in refs if ref.purpose is None and ref.params.get("bind")
                       and not any(same_approval(ref.impl, blocker) for blocker in blockers)]
     if len(candidates) > 1:
-        raise ValueError('ambiguous bound result approval')
+        raise PolicyError("ambiguous bound result approval")
     if not candidates:
         return None
-    if not candidates[0].params.get('bind'):
-        raise ValueError('result approval must bind its inputs')
+    if not candidates[0].params.get("bind"):
+        raise PolicyError("result approval must bind its inputs")
     return candidates[0]

@@ -8,10 +8,11 @@ from support import (EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, TempStore, core_lead, c
                      make_profile)
 
 from svod import keys
-from svod.config import DEFAULT_BRANCH_FALLBACK, find_root, load_config
+from svod.config import DEFAULT_BRANCH_FALLBACK, load_config
 from svod.errors import LoadError, LocaleError
 from svod.loader import load_runtime
 from svod.locale import Locale, load_locale
+from svod.paths import find_root
 from svod.pipeline import parse_pipeline
 from svod.yamlio import parse_yaml, read_yaml
 
@@ -89,9 +90,11 @@ class ConfigTest(unittest.TestCase):
         """Each broken config yields a LoadError naming the problem."""
         profile = support.TEST_PROFILE
         cases = (
-            ("unknown key", f"locale: en\nprofile: {profile}\ncolour: red\n", "unknown key: colour"),
+            ("unknown key", f"locale: en\nprofile: {profile}\ncolour: red\n",
+             "unknown key: colour"),
             ("missing locale", f"profile: {profile}\n", "missing key: locale"),
-            ("missing profile dir", "locale: en\nprofile: nowhere\n", "profile directory not found"),
+            ("missing profile dir", "locale: en\nprofile: nowhere\n",
+             "profile directory not found"),
             ("not a mapping", "- a\n- b\n", "expected a mapping"),
             ("bad yaml", "locale: [\n", "invalid YAML"),
             ("duplicate key", f"locale: en\nlocale: ru\nprofile: {profile}\n",
@@ -172,7 +175,8 @@ class PipelineSchemaTest(unittest.TestCase):
              "steps[0].gates[0]: unknown key: x"),
             ("duplicate ids", pipeline_dict(steps=[step, step]), "duplicate step id: first"),
             ("bad id", pipeline_dict(steps=[dict(step, id="Bad.Id")]), "id must match"),
-            ("step without text", pipeline_dict(steps=[{"id": "first", "gates": [{"gate": "exists"}]}]),
+            ("step without text",
+             pipeline_dict(steps=[{"id": "first", "gates": [{"gate": "exists"}]}]),
              "text is required unless every gate has its own"),
             ("gateless step without text", pipeline_dict(steps=[{"id": "first"}]),
              "text is required"),
@@ -231,9 +235,8 @@ class LocaleTest(unittest.TestCase):
         """A missing key or fact is an error, not the raw key."""
         locale = Locale({"k": "n={count}"})
         for key, facts in (("absent", {}), ("k", {})):
-            with self.subTest(key=key):
-                with self.assertRaises(LocaleError):
-                    locale.text(key, **facts)
+            with self.subTest(key=key), self.assertRaises(LocaleError):
+                locale.text(key, **facts)
 
     def test_profile_overrides_core_and_required_keys(self):
         """Profile strings win over core ones; a required key missing fails the load."""

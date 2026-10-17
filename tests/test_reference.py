@@ -1,4 +1,4 @@
-"""The reference names every key the validator accepts, every core gate and provider with its params."""
+"""The reference names every key the validator accepts, every core gate and provider, its params."""
 import argparse
 import dataclasses
 import re
@@ -44,7 +44,8 @@ EXPECTED = (
     (PROVIDERS_SECTION, frozenset({ATTR_CONTAINER, ATTR_FRONTMATTER})),
     (LOCALE_SECTION, frozenset(keys.CORE_KEYS) | {LOCALE_ENV}),
     (RENDER_SECTION, frozenset({config.FIELD_RENDER_EXCLUDE})),
-    (CUSTOM_GATE_SECTION, frozenset({GATES_ATTR, PROVIDERS_ATTR}) | {f.name for f in dataclasses.fields(Result)}),
+    (CUSTOM_GATE_SECTION, frozenset({GATES_ATTR, PROVIDERS_ATTR})
+     | {f.name for f in dataclasses.fields(Result)}),
 )
 
 

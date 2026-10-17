@@ -1,6 +1,11 @@
 """The JSON both agents exchange with a hook: event names, fields, answers, paths of an event."""
+from __future__ import annotations
+
 import json
 from pathlib import Path
+from typing import Any
+
+Event = dict[str, Any]
 
 EVENT_SESSION_START = "session-start"
 EVENT_PROMPT = "prompt"
@@ -31,30 +36,30 @@ CONTENT_FIELD = "content"
 COMMAND_FIELD = "command"
 
 
-def context_output(event_name, text):
+def context_output(event_name: str, text: str) -> str:
     """Hook answer adding text to the context of the agent."""
     return json.dumps({OUTPUT: {EVENT_NAME: HOOK_EVENT_NAMES[event_name], CONTEXT: text}},
                       ensure_ascii=False)
 
 
-def deny_output(reason):
+def deny_output(reason: str) -> str:
     """Hook answer refusing the tool call with the reason."""
     return json.dumps({OUTPUT: {EVENT_NAME: HOOK_EVENT_NAMES[EVENT_PRE_TOOL], DECISION: DENY,
                                 DECISION_REASON: reason}}, ensure_ascii=False)
 
 
-def event_cwd(event):
+def event_cwd(event: Event) -> Path:
     """Working directory of the event, else of the process."""
     cwd = event.get(FIELD_CWD)
     return Path(cwd).expanduser() if isinstance(cwd, str) and cwd else Path.cwd()
 
 
-def absolute(event, raw):
+def absolute(event: Event, raw: str) -> Path:
     """Resolved path of a tool argument, relative ones taken from the event cwd."""
     path = Path(raw).expanduser()
     return (path if path.is_absolute() else event_cwd(event) / path).resolve()
 
 
-def command_of(data):
+def command_of(data: dict[str, Any]) -> str:
     """Command text of a Bash or apply_patch tool input."""
     return str(data.get(COMMAND_FIELD) or "")

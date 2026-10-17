@@ -5,7 +5,8 @@ from pathlib import PurePosixPath
 TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,255}$")
 HASH = re.compile(r"^[0-9a-f]{64}$")
 REASONS = frozenset({"missing", "legacy", "drift", "stale", "unsupported", "not_evaluated"})
-# Gate-specific primitives only; free values, approval authors/dates and error text are not telemetry.
+# Gate-specific primitives only; free values, approval authors/dates and error text are not
+# telemetry.
 FACT_FIELDS = {
     "exists": {"exists": "bool"}, "archived": {},
     "artifact": {"count": "count"}, "git_pushed": {"ahead": "count"},
@@ -14,10 +15,12 @@ FACT_FIELDS = {
 
 
 def token(value):
+    """The value when it is a short identifier-like string, else None."""
     return value if isinstance(value, str) and TOKEN.fullmatch(value) else None
 
 
 def safe_path(value):
+    """The value when it is a bounded plain relative POSIX path, else None."""
     if not isinstance(value, str) or len(value) > 512 or "\\" in value:
         return None
     path = PurePosixPath(value)
@@ -28,12 +31,12 @@ def safe_path(value):
 
 
 def facts(outcome):
+    """Allowlisted primitive facts of the outcome's gate."""
     result = {}
     for name, kind in FACT_FIELDS.get(outcome.ref.gate, {}).items():
         value = outcome.result.facts.get(name)
-        if kind == "bool" and type(value) is bool:
-            result[name] = value
-        elif kind == "count" and type(value) is int and 0 <= value <= 2**53 - 1:
+        if (kind == "bool" and type(value) is bool
+                or kind == "count" and type(value) is int and 0 <= value <= 2**53 - 1):
             result[name] = value
         elif kind == "reason" and isinstance(value, str) and value in REASONS:
             result["reason_code"] = value
@@ -41,6 +44,7 @@ def facts(outcome):
 
 
 def outcome_json(outcome):
+    """JSON of one gate outcome with a reason code instead of text; None without an outcome."""
     if outcome is None:
         return None
     reason = outcome.result.reason
@@ -52,6 +56,7 @@ def outcome_json(outcome):
 
 
 def subject_json(pipeline, subject):
+    """JSON of a subject of a pipeline: its id, existence, keys and checkout."""
     return {"pipeline": token(pipeline.name),
             "subject": {"id": safe_path(subject.id), "exists": subject.exists,
                         "keys": [token(k) for k in sorted(subject.keys)[:128] if token(k)]},
@@ -59,9 +64,11 @@ def subject_json(pipeline, subject):
 
 
 def position_json(item):
+    """JSON of the captured position of one status item."""
     pos = item.position
     result = subject_json(item.pipeline, item.subject)
-    result.update({"missing": outcome_json(item.missing), "missing_suppressed": item.missing_suppressed})
+    result.update({"missing": outcome_json(item.missing),
+                   "missing_suppressed": item.missing_suppressed})
     if pos is None:
         result["evaluation"] = "not_evaluated"
         return result
@@ -72,7 +79,8 @@ def position_json(item):
         "current_entries": [outcome_json(o) for o in pos.current_entries[:128]],
         "current_blocked": outcome_json(pos.current_blocked),
         "current_entry_evaluation": "evaluated" if pos.current else "not_evaluated",
-        "steps": [{"id": token(s.step.id), "optional": s.step.optional, "required": s.step.required,
+        "steps": [{"id": token(s.step.id), "optional": s.step.optional,
+                   "required": s.step.required,
                    "outcomes": [outcome_json(o) for o in s.outcomes[:128]],
                    "entry_evaluation": "evaluated" if s is pos.current else "not_evaluated"}
                   for s in pos.steps[:128]],
@@ -80,7 +88,8 @@ def position_json(item):
         "done_evaluation": "evaluated" if pos.done_outcome is not None else "not_evaluated",
         "warnings": [outcome_json(o) for o in pos.warnings[:128]],
         "unknown": [outcome_json(o) for o in pos.unknown[:128]],
-        "order": [{"later": token(v.later), "earlier": token(v.earlier)} for v in pos.violations[:128]],
+        "order": [{"later": token(v.later), "earlier": token(v.earlier)}
+                  for v in pos.violations[:128]],
         "freeze": {"active": pos.do_not_touch is not None, "from_entry": pos.frozen_by_entry,
                    "step": token(pos.do_not_touch.get("step")) if pos.do_not_touch else None},
         "marks": [{"step": token(step), "outcomes": [outcome_json(o) for o in marks[:128]]}
@@ -125,13 +134,16 @@ def next_action_json(item):
     pos = item.position
     current = pos.current if pos is not None else None
     blocker = (pos.blocked or pos.current_blocked or (current.first_open if current else None)
-               or (pos.done_outcome if pos.done_outcome and not pos.done_outcome.passed else None)) if pos else item.missing
+               or (pos.done_outcome if pos.done_outcome and not pos.done_outcome.passed
+                   else None)) if pos else item.missing
     terminal = item.subject.archived or (pos is not None and pos.done is not None)
-    selected = ([blocker] if blocker else []) + (current.outcomes[:128] + pos.current_entries[:128] if pos and current else [])
+    selected = (([blocker] if blocker else [])
+                + (current.outcomes[:128] + pos.current_entries[:128] if pos and current else []))
     inputs = declared_inputs(selected) if pos and not terminal else []
     result = subject_json(item.pipeline, item.subject)
     result.update({
-        "state": "historical" if item.subject.archived else "completed" if terminal else "live" if pos else "not_evaluated",
+        "state": ("historical" if item.subject.archived else "completed" if terminal
+                  else "live" if pos else "not_evaluated"),
         "stage": token(current.step.id) if current and not terminal else None,
         "role": token(current.step.role) if current and not terminal else None,
         "instruction": {"base_key": token(pos.text), "variant_key": token(item.instruction_variant),
@@ -143,6 +155,7 @@ def next_action_json(item):
 
 
 def report_json(report):
+    """JSON of a report: ok, refused and the exit code the command returns."""
     return {"ok": report.ok, "refused": report.refused,
             "exit_code": 0 if report.ok else 1 if report.refused else 2}
 
@@ -150,13 +163,15 @@ def report_json(report):
 def to_json(collection):
     """Pure repeatable projection of the already captured answer."""
     found = collection.resolution
+    kind = "ambiguous" if found.ambiguous else "matched" if found.matches else "not_found"
     return {"version": 1, "query": collection.query[:512],
-            "resolution": {"kind": "ambiguous" if found.ambiguous else "matched" if found.matches else "not_found",
+            "resolution": {"kind": kind,
                            "ambiguous": found.ambiguous,
                            "candidates": [subject_json(p, s) for p, s in found.matches[:128]]},
             "report": report_json(collection.report),
             "positions": [position_json(item) for item in collection.items[:128]],
-            "next_action": [next_action_json(item) for item in collection.items[:128] if not item.missing_suppressed]}
+            "next_action": [next_action_json(item) for item in collection.items[:128]
+                            if not item.missing_suppressed]}
 
 
 def error_json(code, query=None, exit_code=2):

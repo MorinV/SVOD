@@ -137,9 +137,8 @@ class CoreGateTest(StoreTestCase):
             ("git_pushed", {"repo": 1}),
         )
         for name, params in cases:
-            with self.subTest(gate=name, params=params):
-                with self.assertRaises(ParamError):
-                    CORE_GATES[name](params)
+            with self.subTest(gate=name, params=params), self.assertRaises(ParamError):
+                CORE_GATES[name](params)
 
 
 class BoundApprovalTest(StoreTestCase):
@@ -255,7 +254,8 @@ class IgnoredLinesApprovalTest(StoreTestCase):
         sha = digest(self.item, self.BIND, self.IGNORE)
         self.sb.write("items/one/meta.yaml",
                       f"approved: 2026-09-10\napproved_by: me\napproved_sha: {sha}\n")
-        result = CORE_GATES["approval"](params).evaluate(self.ctx, Subject(id="one", path=self.item))
+        result = CORE_GATES["approval"](params).evaluate(self.ctx,
+                                                         Subject(id="one", path=self.item))
         self.assertEqual((result.status, result.facts["reason"]), (FAIL, "drift"))
 
     def test_normalized(self):

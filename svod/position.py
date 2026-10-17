@@ -1,9 +1,17 @@
 """Position of a subject in a pipeline: entry, done, current step, violations, marks."""
+from __future__ import annotations
+
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from .gates import ArchivedGate, Status
-from .pipeline import (SEVERITY_WARN, VIOLATION_SEPARATOR, Outcome, applies, evaluate,
-                       first_blocking, open_step, run_entries, step_applies)
+from .pipeline import (SEVERITY_WARN, VIOLATION_SEPARATOR, OpenStep, Outcome, Pipeline, Step,
+                       applies, evaluate, first_blocking, open_step, run_entries, step_applies)
+
+if TYPE_CHECKING:
+    from .context import Context
+    from .subject import Subject
 
 FACT_STEP = "step"
 
@@ -12,11 +20,11 @@ FACT_STEP = "step"
 class StepState:
     """A step with the outcomes of its gates."""
 
-    step: object
-    outcomes: list
+    step: Step
+    outcomes: list[Outcome]
 
     @property
-    def passed(self):
+    def passed(self) -> bool:
         """A declared gate group passes when all applicable gates pass.
 
         A genuinely gateless stage stays manual; a conditional-only group with no
@@ -25,7 +33,7 @@ class StepState:
         return bool(self.step.gates) and all(o.passed for o in self.outcomes)
 
     @property
-    def first_open(self):
+    def first_open(self) -> Outcome | None:
         """First gate that did not pass, or None."""
         return next((o for o in self.outcomes if not o.passed), None)
 
@@ -43,41 +51,41 @@ class Violation:
 class Position:
     """Everything status and active need to say about one subject."""
 
-    pipeline: object
-    subject: object
-    entries: list = field(default_factory=list)
+    pipeline: Pipeline
+    subject: Subject
+    entries: list[Outcome] = field(default_factory=list)
     blocked: Outcome | None = None
-    warnings: list = field(default_factory=list)
+    warnings: list[Outcome] = field(default_factory=list)
     done: Outcome | None = None
-    steps: list = field(default_factory=list)
+    steps: list[StepState] = field(default_factory=list)
     current: StepState | None = None
     text: str | None = None
-    facts: dict = field(default_factory=dict)
+    facts: dict[str, Any] = field(default_factory=dict)
     text_from_entry: bool = False
-    do_not_touch: dict | None = None
+    do_not_touch: dict[str, Any] | None = None
     frozen_by_entry: bool = False
-    violations: list = field(default_factory=list)
-    unknown: list = field(default_factory=list)
-    marks: list = field(default_factory=list)
-    current_entries: list = field(default_factory=list)
+    violations: list[Violation] = field(default_factory=list)
+    unknown: list[Outcome] = field(default_factory=list)
+    marks: list[tuple[str, list[Outcome]]] = field(default_factory=list)
+    current_entries: list[Outcome] = field(default_factory=list)
     current_blocked: Outcome | None = None
     done_outcome: Outcome | None = None
 
 
-def failed_warnings(outcomes):
+def failed_warnings(outcomes: Iterable[Outcome]) -> list[Outcome]:
     """Warn-severity entries that failed; an UNKNOWN one is reported as unknown instead."""
     return [o for o in outcomes
             if o.ref.severity == SEVERITY_WARN and o.result.status is Status.FAIL]
 
 
-def entry_text(outcome):
+def entry_text(outcome: Outcome) -> tuple[str | None, dict[str, Any]]:
     """Text and facts of a blocking entry; none when it could not be checked."""
     if outcome.result.status is Status.UNKNOWN:
         return None, {}
     return outcome.ref.text, outcome.result.facts
 
 
-def violations_of(pipeline, states):
+def violations_of(pipeline: Pipeline, states: list[StepState]) -> list[Violation]:
     """Order violations among non-optional steps."""
     found = []
     for i, later in enumerate(states):
@@ -91,7 +99,7 @@ def violations_of(pipeline, states):
     return found
 
 
-def do_not_touch_facts(states, start):
+def do_not_touch_facts(states: list[StepState], start: int) -> dict[str, Any] | None:
     """Facts for the code freeze when a blocks_code step lies at or after start."""
     step = next((s for s in states[start:] if s.step.blocks_code), None)
     if step is None:
@@ -100,7 +108,7 @@ def do_not_touch_facts(states, start):
     return {**(gate.result.facts if gate else {}), FACT_STEP: step.step.id}
 
 
-def freeze(ctx, pipeline, subject):
+def freeze(ctx: Context, pipeline: Pipeline, subject: Subject) -> OpenStep | None:
     """What keeps the code frozen: the first applicable blocks_code step that has not passed.
 
     Returns an OpenStep (step, text key, facts, and gate and reason for an UNKNOWN gate) or
@@ -116,7 +124,7 @@ def freeze(ctx, pipeline, subject):
     return None
 
 
-def position(ctx, pipeline, subject):
+def position(ctx: Context, pipeline: Pipeline, subject: Subject) -> Position:
     """Position of the subject; the single computation behind status and active.
 
     A subject the provider did not find gets neither order violations nor the code freeze.
