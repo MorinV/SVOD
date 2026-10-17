@@ -1,0 +1,17 @@
+locale: en
+profile: profile
+default_branch: origin/main
+workspaces: ..
+active_order: [project, feature, task, research]
+bindings: profile/bindings.yaml
+local_config: .svod-local.yaml
+approval:
+  phrases: [Approved, Одобряю]
+  window_minutes: 10
+# Service repositories next to the store, name -> checkout; profile/actions/*.sh read them.
+# services:                                                     # svod 0.5
+#   app: ../app                                                 # svod 0.5
+# autonomy: {task: supervised, hotfix: autonomous, feature: supervised, project: guided, research: supervised}  # svod 0.5
+# external_effects: [push, merge, deploy]                       # svod 0.5
+# evidence: {commit: true}                                      # svod 0.5
+# knowledge: {dir: knowledge}                                   # svod 0.5

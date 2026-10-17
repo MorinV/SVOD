@@ -74,7 +74,7 @@ def build_parser() -> StatusParser:
     commands = parser.add_subparsers(dest="command", required=True)
     new = commands.add_parser(CMD_NEW, help="create a new store from packaged templates")
     new.add_argument("directory", help="new destination directory; must not exist")
-    new.add_argument("--template", choices=("local", "task"), default="local")
+    new.add_argument("--template", choices=("local", "task", "standard"), default="local")
     local = commands.add_parser(CMD_LOCAL, help="run the compact local workflow")
     local.add_argument("action", choices=("prepare", "checks", "verify", "deliver"))
     local.add_argument("query", help="exact task path, name or supported key")

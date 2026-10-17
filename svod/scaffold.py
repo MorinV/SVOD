@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 
 
-TEMPLATES = ('local', 'task')
+TEMPLATES = ('local', 'task', 'standard')
 
 
 def scaffold(destination, template='local'):
