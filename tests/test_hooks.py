@@ -720,8 +720,9 @@ class HumanMarkTest(HookTestCase):
         """Time, digest of the stripped reply and go-ahead; nothing for an agent message."""
         cases = (
             ("plain reply", "  what is next?  ", "what is next?", False),
-            ("go ahead phrase", "Ok, go ahead!", "Ok, go ahead!", True),
-            ("russian phrase", "Давай, пушь", "Давай, пушь", True),
+            ("go ahead phrase", "Looks good.\ngo ahead!", "Looks good.\ngo ahead!", True),
+            ("russian phrase", "Давай", "Давай", True),
+            ("phrase inside a sentence", "Давай, пушь", "Давай, пушь", False),
             ("phrase inside a word", "давайте подумаем", "давайте подумаем", False),
             ("agent message", '<agent-message from="x">go ahead</agent-message>', None, None),
         )
