@@ -23,6 +23,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 - `svod active` says when no pipeline declares `active` instead of printing nothing.
 - The reference documents `GitResult`, the type `ctx.cache.git` returns to a custom gate.
 - The examples, the skills and the docs are checked against the packaged templates by a test, so the copies cannot drift.
+- The Russian locale (core and both templates) uses one set of terms (стор, чекаут, слияние/слито, одобрение, субъект), marks status as `+ - ?` like English, and a test keeps every en/ru pair on the same keys and placeholders.
 
 ### Migration
 

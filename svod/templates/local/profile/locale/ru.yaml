@@ -1,9 +1,9 @@
 gate.current_process: 'Локальный процесс: {phase}'
-local.contract: Подготовить компактный contract.md и testing/plan.yaml с чистым чекаутом исходников.
-local.contract_process_contract: 'Подготовить компактный contract.md и testing/plan.yaml с чистым чекаутом исходников: {detail}.'
+local.contract: Подготовить компактные contract.md и testing/plan.yaml, где указан чистый чекаут исходного кода.
+local.contract_process_contract: 'Подготовить компактные contract.md и testing/plan.yaml, где указан чистый чекаут исходного кода: {detail}.'
 local.approve: Показать contract.md и testing/plan.yaml человеку и дождаться его одобрения в чате; затем svod approve tasks/<name> --step initial_approve.
-local.approve_legacy: У одобрения нет автора или версии; показать contract.md и testing/plan.yaml заново, дождаться нового одобрения в чате, затем svod approve tasks/<name> --step initial_approve.
-local.approve_drift: contract.md или testing/plan.yaml изменились после одобрения; показать текущую версию, дождаться нового одобрения в чате, затем svod approve tasks/<name> --step initial_approve.
+local.approve_legacy: У одобрения нет одобрившего или версии; показать contract.md и testing/plan.yaml снова, дождаться свежего одобрения в чате, затем svod approve tasks/<name> --step initial_approve.
+local.approve_drift: contract.md или testing/plan.yaml изменились после одобрения; показать текущую версию, дождаться свежего одобрения в чате, затем svod approve tasks/<name> --step initial_approve.
 local.result: Выполнить выбранную команду один раз на чистом закоммиченном чекауте через svod local checks tasks/<name>, затем svod local deliver tasks/<name>.
 local.result_process_contract: 'Выполнить выбранную команду один раз на чистом закоммиченном чекауте через svod local checks tasks/<name>, затем svod local deliver tasks/<name>: {detail}.'
-local.done: Локальная готовность записана; merge, push и deploy не выполнялись.
+local.done: Локальное завершение записано; слияние, push и развёртывание этим не подразумеваются.
