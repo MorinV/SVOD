@@ -1,6 +1,7 @@
 """Text output of the status command."""
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -101,6 +102,19 @@ def step_skills(ctx: Context, pos: Position) -> Skills | None:
     return resolve_role(ctx, ctx.bindings, pos.current.step.role, pos.subject)
 
 
+def run_line(locale: Locale, pos: Position) -> str | None:
+    """The command running the action of the current step, or None when it declares none.
+
+    A step held by its own blocking entry has no next step to take, and a subject that does not
+    exist has nothing to run for, so no action is offered then.
+    """
+    if pos.current is None or not pos.current.step.action or pos.text_from_entry \
+            or not pos.subject.exists:
+        return None
+    return locale.text(keys.STATUS_RUN, action=pos.current.step.action,
+                       query=shlex.quote(pos.subject.id))
+
+
 def skill_line(locale: Locale, role: str | None, skills: Skills) -> str:
     """One skill for every directory, a skill per directory, or not assigned."""
     distinct = {skill for _, skill in skills}
@@ -165,6 +179,9 @@ def render_position(locale: Locale, pos: Position, skills: Skills | None = None)
     if skills:
         # Skills come from step_skills, which offers them only with a current step.
         body.append(skill_line(locale, pos.current.step.role, skills))  # type: ignore[union-attr]
+    run = run_line(locale, pos)
+    if run:
+        body.append(run)
     if pos.do_not_touch is not None:
         freeze = (keys.STATUS_DO_NOT_TOUCH_BLOCKED if pos.frozen_by_entry
                   else keys.STATUS_DO_NOT_TOUCH)

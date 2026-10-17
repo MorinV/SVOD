@@ -21,6 +21,7 @@ status:
   not_found: "Nothing matches the query: {query}"
   ambiguous: "Several subjects match:"
   candidate: "{id}"
+  run: "Run: svod do {action} {query}"
   mark:
     pass: "+ {label}"
     fail: "- {label}"
@@ -65,6 +66,14 @@ answer:
   no_file: "No questions file {file}: write the questions first"
   no_question: "{file} has no question {number}: it has {count}"
   empty: "The answer is empty: copy the person's answer from the chat"
+do:
+  usage: "Name the action and the subject: svod do <action> <query>; the actions: svod do --list"
+  unknown: "Unknown action: {name}, no script {script}. The actions: svod do --list"
+  failed: "Action {name} could not start: {reason}"
+  timeout: "Action {name} ran longer than {seconds} s and was stopped"
+  list_item: "{name} - {description}"
+  list_no_description: "no description"
+  list_none: "The profile has no actions: add scripts to {dir}"
 update:
   exists: "The store already has its copy of the engine (.svod): run svod update"
   missing: "The store has no copy of the engine (.svod): run svod install"

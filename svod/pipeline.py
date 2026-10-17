@@ -47,6 +47,7 @@ FIELD_ROLE = "role"
 FIELD_TITLE = "title"
 FIELD_PENDING = "pending"
 FIELD_PURPOSE = "purpose"
+FIELD_ACTION = "action"
 
 PIPELINE_FIELDS = frozenset({FIELD_PIPELINE, FIELD_SUBJECT, FIELD_ACTIVE, FIELD_ENTRY,
                              FIELD_DONE, FIELD_MISSING, FIELD_STEPS, FIELD_VIOLATIONS,
@@ -61,7 +62,8 @@ DONE_FIELDS = frozenset({FIELD_GATE, FIELD_PARAMS, FIELD_TEXT, FIELD_PENDING})
 DONE_REQUIRED = (FIELD_GATE, FIELD_TEXT)
 MISSING_FIELDS = frozenset({FIELD_GATE, FIELD_PARAMS, FIELD_TEXT})
 STEP_FIELDS = frozenset({FIELD_ID, FIELD_TEXT, FIELD_REQUIRED, FIELD_OPTIONAL, FIELD_BLOCKS_CODE,
-                         FIELD_ROLE, FIELD_GATES, FIELD_ENTRY, FIELD_TITLE, FIELD_WHEN})
+                         FIELD_ROLE, FIELD_GATES, FIELD_ENTRY, FIELD_TITLE, FIELD_WHEN,
+                         FIELD_ACTION})
 STEP_GATE_FIELDS = frozenset({FIELD_GATE, FIELD_PARAMS, FIELD_LABEL, FIELD_TEXT,
                               FIELD_PURPOSE, FIELD_WHEN})
 
@@ -112,6 +114,8 @@ class Step:
     entry: list[GateRef]
     title: str | None = None
     when: str | None = None
+    # Name of a script <profile>/actions/<action>.sh offered as the way to take the step.
+    action: str | None = None
 
 
 @dataclass
@@ -364,6 +368,7 @@ class _Parser:
             entry=self.entry_list(data, f"{where}."),
             title=self.string(data, FIELD_TITLE, where),
             when=self.token(data, FIELD_WHEN, where),
+            action=self.token(data, FIELD_ACTION, where),
         )
         if step.optional and (step.required or step.blocks_code):
             self.error(where, f"{FIELD_OPTIONAL} excludes {FIELD_REQUIRED} and {FIELD_BLOCKS_CODE}")

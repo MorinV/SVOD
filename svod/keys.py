@@ -20,6 +20,7 @@ STATUS_VIOLATION = "status.violation"
 STATUS_NOT_FOUND = "status.not_found"
 STATUS_AMBIGUOUS = "status.ambiguous"
 STATUS_CANDIDATE = "status.candidate"
+STATUS_RUN = "status.run"
 MARK_PASS = "status.mark.pass"
 MARK_FAIL = "status.mark.fail"
 MARK_UNKNOWN = "status.mark.unknown"
@@ -59,6 +60,13 @@ ANSWER_NO_MARK = "answer.no_mark"
 ANSWER_NO_FILE = "answer.no_file"
 ANSWER_NO_QUESTION = "answer.no_question"
 ANSWER_EMPTY = "answer.empty"
+DO_USAGE = "do.usage"
+DO_UNKNOWN = "do.unknown"
+DO_FAILED = "do.failed"
+DO_TIMEOUT = "do.timeout"
+DO_LIST_ITEM = "do.list_item"
+DO_LIST_NO_DESCRIPTION = "do.list_no_description"
+DO_LIST_NONE = "do.list_none"
 
 UPDATE_EXISTS = "update.exists"
 UPDATE_MISSING = "update.missing"
@@ -170,6 +178,7 @@ CORE_KEYS = (
     STATUS_NOT_FOUND,
     STATUS_AMBIGUOUS,
     STATUS_CANDIDATE,
+    STATUS_RUN,
     MARK_PASS,
     MARK_FAIL,
     MARK_UNKNOWN,
@@ -209,6 +218,13 @@ CORE_KEYS = (
     ANSWER_NO_FILE,
     ANSWER_NO_QUESTION,
     ANSWER_EMPTY,
+    DO_USAGE,
+    DO_UNKNOWN,
+    DO_FAILED,
+    DO_TIMEOUT,
+    DO_LIST_ITEM,
+    DO_LIST_NO_DESCRIPTION,
+    DO_LIST_NONE,
     UPDATE_EXISTS,
     UPDATE_MISSING,
     UPDATE_FETCH_FAILED,
