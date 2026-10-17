@@ -663,4 +663,3 @@ Versions are semantic; before 1.0 a minor release may break a store. `svod/migra
 ### Update notice
 
 With `update_check` on (the default) and a copy in the store, `hook session-start` and `active --hook` run `git ls-remote --tags <source>` (timeout 3 s) at most once a day and, when a tag is newer than `version` of `.svod/VERSION`, start the summary with `update.available`. The time and the newest release are cached in `svod-update-check.json` in the git common directory of the store, never committed; a failed check is cached too and says nothing. A store outside git is not checked.
-

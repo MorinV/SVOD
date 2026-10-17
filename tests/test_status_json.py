@@ -376,4 +376,3 @@ class NextActionTest(unittest.TestCase):
         self.assertIsNone(action["instruction"])
         self.assertEqual(action["blocker"]["status"], "fail")
         self.assertEqual(action["inputs"], [])
-
