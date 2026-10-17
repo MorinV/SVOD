@@ -28,6 +28,13 @@ FACT_PIPELINE = "pipeline"
 FACT_REASON = "reason"
 VARIANT_SEPARATOR = "_"
 ELLIPSIS = "..."
+RUN_COMMAND = "svod do {action} {query}"
+NEXT_ID = "id"
+NEXT_STEP = "step"
+NEXT_TEXT = "text"
+NEXT_SKILL = "skill"
+NEXT_ACTION = "action"
+NEXT_RUN = "run"
 MARK_KEYS = {Status.PASS: keys.MARK_PASS, Status.FAIL: keys.MARK_FAIL,
              Status.UNKNOWN: keys.MARK_UNKNOWN}
 
@@ -102,8 +109,8 @@ def step_skills(ctx: Context, pos: Position) -> Skills | None:
     return resolve_role(ctx, ctx.bindings, pos.current.step.role, pos.subject)
 
 
-def run_line(locale: Locale, pos: Position) -> str | None:
-    """The command running the action of the current step, or None when it declares none.
+def run_action(pos: Position) -> str | None:
+    """The action of the current step to run, or None when it declares none.
 
     A step held by its own blocking entry has no next step to take, and a subject that does not
     exist has nothing to run for, so no action is offered then.
@@ -111,22 +118,45 @@ def run_line(locale: Locale, pos: Position) -> str | None:
     if pos.current is None or not pos.current.step.action or pos.text_from_entry \
             or not pos.subject.exists:
         return None
-    return locale.text(keys.STATUS_RUN, action=pos.current.step.action,
-                       query=shlex.quote(pos.subject.id))
+    return pos.current.step.action
+
+
+def run_command(pos: Position) -> str | None:
+    """The command running the action of the current step, or None (see run_action)."""
+    action = run_action(pos)
+    if action is None:
+        return None
+    return RUN_COMMAND.format(action=action, query=shlex.quote(pos.subject.id))
+
+
+def run_line(locale: Locale, pos: Position) -> str | None:
+    """The status line running the action of the current step, or None (see run_action)."""
+    action = run_action(pos)
+    if action is None:
+        return None
+    return locale.text(keys.STATUS_RUN, action=action, query=shlex.quote(pos.subject.id))
+
+
+def skill_names(locale: Locale, skills: Skills | None) -> str | None:
+    """One skill for every directory, a skill per directory, or None when none is assigned."""
+    distinct = {skill for _, skill in skills or []}
+    if not distinct or distinct == {None}:
+        return None
+    if len(distinct) == 1:
+        return distinct.pop()
+    none = locale.text(keys.STATUS_SKILL_NONE)
+    items = list(dict.fromkeys(skills or []))
+    return SKILLS_SEPARATOR.join(
+        locale.text(keys.STATUS_SKILL_ITEM, dir=label, skill=skill or none)
+        for label, skill in items)
 
 
 def skill_line(locale: Locale, role: str | None, skills: Skills) -> str:
     """One skill for every directory, a skill per directory, or not assigned."""
-    distinct = {skill for _, skill in skills}
-    if distinct == {None}:
+    names = skill_names(locale, skills)
+    if names is None:
         return locale.text(keys.STATUS_SKILL_UNASSIGNED, role=role)
-    if len(distinct) == 1:
-        return locale.text(keys.STATUS_SKILL, skill=distinct.pop())
-    none = locale.text(keys.STATUS_SKILL_NONE)
-    items = list(dict.fromkeys(skills))
-    return locale.text(keys.STATUS_SKILL, skill=SKILLS_SEPARATOR.join(
-        locale.text(keys.STATUS_SKILL_ITEM, dir=label, skill=skill or none)
-        for label, skill in items))
+    return locale.text(keys.STATUS_SKILL, skill=names)
 
 
 def step_status(state: StepState) -> Status:
@@ -180,6 +210,38 @@ def children_lines(locale: Locale, children: list[Position] | None) -> list[str]
 def sentence(text: str) -> str:
     """The text without its final period, for a template that ends the sentence itself."""
     return text[:-1] if text.endswith(".") and not text.endswith(ELLIPSIS) else text
+
+
+def next_fields(locale: Locale, pos: Position, skills: Skills | None = None) -> dict[str, Any]:
+    """The next action of a position as status renders it: id, step, text, skill, action, run.
+
+    text is the next-step text of status (an entry's text as it is, a step text without its final
+    period), None when status prints none; step is the current step, None when done or held
+    before the steps; skill the step skill, None when none is assigned; action and run the action
+    of the current step and the command running it, None when status prints no run line.
+    """
+    text = step_text(locale, pos)
+    return {NEXT_ID: pos.subject.id,
+            NEXT_STEP: pos.current.step.id if pos.current is not None else None,
+            NEXT_TEXT: sentence(text) if text else None,
+            NEXT_SKILL: skill_names(locale, skills),
+            NEXT_ACTION: run_action(pos),
+            NEXT_RUN: run_command(pos)}
+
+
+def one_line(locale: Locale, pos: Position, skills: Skills | None = None) -> str:
+    """The position in one line: <id>: <run the command, else the next step> (skill <name>).
+
+    The fields come from next_fields over the position status renders, never computed again.
+    """
+    fields = next_fields(locale, pos, skills)
+    run = fields[NEXT_RUN]
+    text = (locale.text(keys.NEXT_RUN, command=run) if run
+            else fields[NEXT_TEXT] or locale.text(keys.NEXT_NONE))
+    if fields[NEXT_SKILL]:
+        return locale.text(keys.NEXT_LINE_SKILL, id=pos.subject.id, text=text,
+                           skill=fields[NEXT_SKILL])
+    return locale.text(keys.NEXT_LINE, id=pos.subject.id, text=text)
 
 
 def render_position(locale: Locale, pos: Position, skills: Skills | None = None,

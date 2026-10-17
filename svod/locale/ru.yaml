@@ -88,6 +88,18 @@ do:
   list_none: "В профиле нет действий: добавить скрипты в {dir}"
   not_current: "Действие {name} относится к шагу {step}, до которого {id} ещё не дошёл (текущий шаг: {current}); выполняется только с --force"
   no_current: "нет, держит условие входа"
+next:
+  line: "{id}: {text}"
+  line_skill: "{id}: {text} (скилл {skill})"
+  run: "запустить {command}"
+  none: "делать нечего"
+record:
+  created: "Создано {path}: {files}. Дальше: svod next {path}"
+  exists: "{path} уже есть: выбрать другое имя или продолжить её: svod next {path}"
+  unknown_pipeline: "Неизвестный пайплайн: {name}; пайплайны: {names}"
+  bad_name: "Не имя записи: {name}. Нужно одно имя каталога, без /, пробелов и точки в начале"
+  no_root: "У пайплайна {name} нет каталога записей: провайдер субъектов не называет roots"
+  no_skeleton: "Нет заготовок для пайплайна {name}: положить файлы новой записи в {dir}"
 wizard:
   not_tty: "svod init --wizard спрашивает в терминале; без него ответы даются флагами: --login <логин>, --email <почта>, --service <имя>=<путь>, --autonomy <пайплайн>=<уровень>, --checks <сервис>=\"<команда>\", --hooks project|global|none"
   prompt_login: "Логин [{default}]: "

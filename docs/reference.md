@@ -646,6 +646,7 @@ echo "started: $note"
 
 - **The record.** The first argument not starting with `--` is the record, the others are options. Under `svod do` (no record argument) the `SVOD_` variables are used. A record argument naming another record than `SVOD_ID`, or a `SVOD_ROOT` other than the working directory, makes the inherited variables stale: `SVOD_ACTION`, `SVOD_ROOT`, `SVOD_ID`, `SVOD_KEY`, `SVOD_KIND`, `SVOD_PIPELINE`, `SVOD_SERVICES`, `SVOD_SUBJECT_PATH`, `SVOD_SERVICE_*` and `SVOD_FM_*` are dropped and found again from the argument, `card.md` and `svod.yaml`. So `checks.sh` running a test suite that runs these scripts on another store acts on the record it was given there, never on the outer one.
 - **Names.** The worktree of service `<service>` for the record `work/<kind>/<name>` of pipeline `<pipeline>` is `<directory holding the service checkout>/<service>-<pipeline>-<name>`, on the branch `<pipeline>/<name>`. The checkout is the absolute path of the service (`SVOD_SERVICE_<NAME>`, else `services.<name>` of `svod.yaml`, else `../<name>`), so a store inside its service gets the worktree next to the checkout. `<pipeline>` is `SVOD_PIPELINE`, else `<kind>` without its final `s`. `work.yaml` lists `<service>: <path relative to the store root>` (`app: ../app-task-login`) and can be committed.
+- **`start-task.sh`.** Without `card.md` it runs `svod record new <pipeline> <name>` (the `svod` on `PATH`, else `python3 -m svod.cli`) with `--kind`, `--services` and `--key` from `SVOD_KIND`, `SVOD_SERVICES` and `SVOD_KEY`, then makes the worktrees; with `card.md` it only makes the missing worktrees, so it runs again safely. A record directory holding other files but no `card.md` is refused by `record new`: write the card by hand then.
 - **`checks.sh --check`.** Writes nothing: it runs the checks of every service again (in the worktree of `work.yaml`, else the checkout) with their output on stdout and exits 0 when all pass. A record naming no services exits 0 printing `no services declared ...`; a record without `checks.md` exits 1 without running anything (`not checked yet ...`), which keeps the gate cheap before the first real run. The task step `checks` and the feature step `integration` use it next to `checks.md`:
 
 ```yaml
@@ -792,6 +793,16 @@ Core keys (all required in every core locale file):
 | `ask.empty`, `ask.conflict` | — |
 | `ask.misread` | `{context}` |
 | `ask.has_questions` | `{file}`, `{count}` |
+| `next.line` | `{id}`, `{text}` |
+| `next.line_skill` | `{id}`, `{text}`, `{skill}` |
+| `next.run` | `{command}` |
+| `next.none` | — |
+| `record.created` | `{path}`, `{files}` |
+| `record.exists` | `{path}` |
+| `record.unknown_pipeline` | `{name}`, `{names}` |
+| `record.bad_name` | `{name}` |
+| `record.no_root` | `{name}` |
+| `record.no_skeleton` | `{name}`, `{dir}` |
 | `update.exists`, `update.missing`, `update.manual`, `update.manual_none`, `update.invalid`, `update.next` | — |
 | `update.fetch_failed` | `{source}`, `{reason}` |
 | `update.no_tags` | `{source}` |
@@ -917,6 +928,8 @@ gate:
 |---|---|---|---|
 | `validate` | — | loads config, pipelines, gates, providers, locale, descriptions and bindings, and checks the [copy of the engine](#vendored-copy) against its `MANIFEST`; prints every error | 0 valid, 1 errors |
 | `status <query>` | `--format text\|json` | position of every subject the query resolves to; JSON v1 projects captured native outcomes without re-evaluating gates, with bounded allowlisted facts and advisory `next_action`; no free-form logs, approval identity or exception text | 0 found, 2 not found, ambiguous, or only such missing subjects |
+| `next <query>` | `--format text\|json` | the position `status` shows, one line per subject it resolves to: `<id>: <next step> (skill <name>)`, or `<id>: run svod do <action> <id> (skill <name>)` when the current step names an [action](#actions) (`next.line`, `next.line_skill`, `next.run`; `next.none` when status shows no next step); the text is the next-step text of `status` without its final period, the skill part is left out when none is assigned. `--format json` prints one object per subject with `id`, `step` (the current step, `null` when done or held by an entry before the steps), `text`, `skill`, `action` and `run` (the command, `null` without an action to run). Rendered from the very collection `status` renders (`svod.render.one_line`), never evaluated again | 0 found, 2 not found, ambiguous, or only such missing subjects |
+| `record new <pipeline> <name>` | `--services a,b`, `--parent <id>`, `--kind <kind>`, `--tags a,b`, `--key <key>` | creates the [record](#records) `<root>/<name>/` from the skeletons `<profile>/records/<pipeline>/`; prints `record.created` with the path and the files | 0 created, 1 the record exists, 2 unknown pipeline, a bad name, no record directory or no skeletons |
 | `active` | `--all`, `--hook` | summary of open work, including subjects changed in other checkouts of the store repository; `--all` expands `theirs`; `--hook` prints SessionStart hook JSON (`hookSpecificOutput.additionalContext`, with the [update notice](#update-notice) first and `active.hook_tail` appended); prints nothing when there is neither | 0 |
 | `render <pipeline>` | `--write` | prints the documentation block, or writes it between the markers | 0, 1 no markers, 2 unknown pipeline |
 | `approve <query>` | `--step <id>`, `--confirm` | records the ready selected applicable approval with date, approver and digest, consuming this subject's mark keys; refuses changed-after-answer inputs; with `--confirm` and no fresh mark asks the person at a terminal, see [Approval by a person](#approval-by-a-person); nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
@@ -936,6 +949,24 @@ gate:
 | `migrate` | `--since <version>` | applies the [migrations](#migrations) of the versions after `<version>` up to the running engine and prints what they changed; `update` runs it in the new copy | 0 done, 1 a migration failed, 2 not a version |
 
 `init`, `install`, `update` and `migrate` read `svod.yaml` at most for the locale (`init --wizard` reads and edits it, and asks for the pipelines only when the store loads), `knowledge` reads only `svod.yaml`, `doctor` reports a store that does not load as one failed check, so they work while the store does not load. Every other command except `validate` and `hook` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. PyYAML is a dependency of the package: without it the engine does not import, so neither the CLI nor `hook` answers.
+
+### Records
+
+`svod record new <pipeline> <name>` makes a new subject of a pipeline whose provider reads directories ([`container`](#container) and providers built on it, such as `work` of the standard template). The record is `<root>/<name>/`, `<root>` being the first of the provider's `roots`: the provider is the one place that says where the subjects of a pipeline live, so `svod.yaml` keeps no second mapping, and a pipeline whose provider names no `roots` has no records to make (`record.no_root`). `<name>` is one directory name: no `/`, `\`, spaces or leading dot (`record.bad_name`).
+
+Every file under `<profile>/records/<pipeline>/` is copied, with these placeholders replaced (any other brace is kept as written); a line holding one loses its trailing spaces, so an empty value leaves `key:`:
+
+| placeholder | value |
+|---|---|
+| `{name}` | the name |
+| `{kind}` | `--kind`, else the pipeline name |
+| `{key}` | `--key`, else empty |
+| `{services}` | `--services` as a YAML flow list, `[]` without it |
+| `{parent}` | `--parent`, else empty |
+| `{tags}` | `--tags` as a YAML flow list, `[]` without it |
+| `{date}` | today, ISO |
+
+A value YAML would read differently is written as a quoted string. A record whose directory holds anything is refused with `record.exists` (exit 1) and nothing is written; an empty directory is filled. No skeleton files: `record.no_skeleton`. Nothing is committed. The standard template ships `profile/records/{task,feature,project,research}/`: `card.md` (`type: card`, `kind`, `key`, `services`, `parent`, `tags`, `status: open`; the research card also `outcome:`), `questions.md` saying `none`, and the artifact of the first step: `contract.md` (task), `brief.md` (feature), `vision.md` (project), `question.md` (research). An artifact gate counts a skeleton as written: the status of a new record moves on to the step after it, whose text says to show the files to the person.
 
 ### The wizard
 

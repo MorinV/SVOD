@@ -6,6 +6,11 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Added
+
+- `svod next <query> [--format json]`: the position `svod status` shows, in one line (`<id>: <next step> (skill <name>)`, or `run svod do <action> <id>` for a step with an action) or as JSON `{id, step, text, skill, action, run}`; rendered by `svod.render.one_line` from the same collection, never computed again; new core keys `next.*`.
+- `svod record new <pipeline> <name> [--services] [--parent] [--kind] [--tags] [--key]` (`svod.records`): copies `<profile>/records/<pipeline>/` into the first root of the pipeline's subject provider with `{name}`, `{kind}`, `{key}`, `{services}`, `{parent}`, `{tags}`, `{date}` filled, refusing a record that exists; the standard template ships skeletons for task, feature, project and research and `start-task.sh` uses the command instead of writing `card.md` itself; new core keys `record.*`. A standard store made before copies `profile/records/` from the template (`svod new --template standard` into a scratch directory) to use it; its own `start-task.sh` keeps working as it is.
+
 ### Changed
 
 - The sources hold no store any more: the work on Svod is recorded in the instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd), a standard-template store next to a clone of this repository, as every user's instance is.

@@ -1,4 +1,4 @@
-# Start a task: card.md when missing, then a git worktree per service on branch <pipeline>/<name>, listed in work.yaml.
+# Start a task: the record (svod record new) when card.md is missing, then a git worktree per service on branch <pipeline>/<name>, listed in work.yaml.
 # Usage: bash profile/actions/start-task.sh work/tasks/<name>. Idempotent: existing files and worktrees are kept.
 # The worktree of service <service> is <service>-<pipeline>-<name> in the directory holding the service
 # checkout (its absolute path, so a store inside the service gets it next to the checkout, never inside);
@@ -6,27 +6,14 @@
 # shellcheck source-path=SCRIPTDIR source=_env.sh
 . "$(dirname "$0")/_env.sh"
 
-mkdir -p "$SVOD_SUBJECT_PATH"
 if [ ! -f "$CARD" ]; then
-  list="${SVOD_SERVICES// /, }"
-  cat > "$CARD" <<EOF
----
-type: card
-kind: ${SVOD_KIND:-task}
-key: ${SVOD_KEY}
-services: [${list}]
-parent:
-tags: []
-status: open
----
-
-# ${SLUG}
-
-## Description
-
-## Acceptance
-EOF
-  echo "wrote ${CARD#"$SVOD_ROOT"/}"
+  # The record from the skeletons of profile/records/<pipeline>/: card.md, questions.md, contract.md.
+  svod_cli --root "$SVOD_ROOT" record new "$SVOD_PIPELINE" "$SLUG" --kind "$SVOD_KIND" \
+    --services "${SVOD_SERVICES// /,}" --key "$SVOD_KEY"
+  if [ ! -f "$CARD" ]; then
+    echo "no ${CARD#"$SVOD_ROOT"/}: write it like work/tasks/example/card.md" >&2
+    exit 1
+  fi
 fi
 
 if [ -z "$SVOD_SERVICES" ]; then

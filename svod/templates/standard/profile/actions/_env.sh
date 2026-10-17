@@ -67,6 +67,11 @@ card_field() {
         gsub(/^[ \t]+|[ \t]+$/, "", v); gsub(/[ \t]+/, " ", v); print v; exit } }' "$CARD"
 }
 
+# svod_cli <args>: the svod command on PATH, else the engine Python imports.
+svod_cli() {
+  if command -v svod >/dev/null 2>&1; then svod "$@"; else python3 -m svod.cli "$@"; fi
+}
+
 # abs <path>: the path itself when absolute, else relative to the store root.
 abs() {
   case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s\n' "$SVOD_ROOT/$1" ;; esac
