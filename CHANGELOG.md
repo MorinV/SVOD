@@ -6,6 +6,10 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Added
+
+- `svod update` merges the profile three ways after replacing the engine: `svod.yaml`, `AGENTS.md`, `profile/` and `skills/` of the store against the templates of the old and new engines (`git merge-file`); clean merges are written, conflicts get git markers and are listed; `--no-profile` skips it, `--template <name>` names the template. `.svod/VERSION` records `template` and `template_version` (`svod install` identifies the template by the profile), `svod validate` names every file left with a conflict marker first, and `svod doctor` warns (`template`) when the profile follows an older template than the engine's.
+
 ### Changed
 
 - The sources hold no store any more: the work on Svod is recorded in the instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd), a standard-template store next to a clone of this repository, as every user's instance is.

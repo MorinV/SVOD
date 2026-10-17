@@ -401,7 +401,7 @@ class DeliveryTest(SourceTestCase):
         self.assertIn(core_text(keys.UPDATE_INSTALLED, new=OLD, ref=OLD_TAG,
                                 path=vendor.VENDOR_DIR), out.stdout)
         stamp = vendor.read_stamp(self.sb.store)
-        self.assertEqual(stamp, vendor.Stamp(OLD, str(self.source.resolve()), OLD_TAG))
+        self.assertEqual(stamp, vendor.Stamp(OLD, str(self.source.resolve()), OLD_TAG, "task", OLD))
         self.assertTrue((package_dir(self.sb.store) / "locale" / "en.yaml").is_file())
         self.assertTrue((vendor_dir(self.sb.store) / "skills" / SKILL / "SKILL.md").is_file())
         self.assertFalse((vendor_dir(self.sb.store) / "integrations").exists())

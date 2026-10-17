@@ -119,6 +119,9 @@ DOCTOR_COPY_OK = "doctor.copy_ok"
 DOCTOR_VERSION_OK = "doctor.version_ok"
 DOCTOR_VERSION_NEWER = "doctor.version_newer"
 DOCTOR_VERSION_UNCHECKED = "doctor.version_unchecked"
+DOCTOR_TEMPLATE_OK = "doctor.template_ok"
+DOCTOR_TEMPLATE_UNKNOWN = "doctor.template_unknown"
+DOCTOR_TEMPLATE_OLDER = "doctor.template_older"
 DOCTOR_EVIDENCE_OK = "doctor.evidence_ok"
 DOCTOR_EVIDENCE_OFF = "doctor.evidence_off"
 DOCTOR_EVIDENCE_FAIL = "doctor.evidence_fail"
@@ -144,6 +147,19 @@ UPDATE_MANUAL_NONE = "update.manual_none"
 UPDATE_INVALID = "update.invalid"
 UPDATE_NEXT = "update.next"
 UPDATE_AVAILABLE = "update.available"
+UPDATE_PROFILE_OFF = "update.profile_off"
+UPDATE_PROFILE_UNKNOWN = "update.profile_unknown"
+UPDATE_PROFILE_LAGS = "update.profile_lags"
+UPDATE_PROFILE_NO_TEMPLATE = "update.profile_no_template"
+UPDATE_PROFILE_FAILED = "update.profile_failed"
+UPDATE_PROFILE_MERGED = "update.profile_merged"
+UPDATE_PROFILE_UPDATED = "update.profile_updated"
+UPDATE_PROFILE_ADDED = "update.profile_added"
+UPDATE_PROFILE_REMOVED = "update.profile_removed"
+UPDATE_PROFILE_MERGED_FILE = "update.profile_merged_file"
+UPDATE_PROFILE_CONFLICT = "update.profile_conflict"
+UPDATE_PROFILE_KEPT = "update.profile_kept"
+UPDATE_PROFILE_RESOLVE = "update.profile_resolve"
 MIGRATE_VERSION = "migrate.version"
 MIGRATE_NONE = "migrate.none"
 MIGRATE_FAILED = "migrate.failed"
@@ -366,6 +382,9 @@ CORE_KEYS = (
     DOCTOR_VERSION_OK,
     DOCTOR_VERSION_NEWER,
     DOCTOR_VERSION_UNCHECKED,
+    DOCTOR_TEMPLATE_OK,
+    DOCTOR_TEMPLATE_UNKNOWN,
+    DOCTOR_TEMPLATE_OLDER,
     DOCTOR_EVIDENCE_OK,
     DOCTOR_EVIDENCE_OFF,
     DOCTOR_EVIDENCE_FAIL,
@@ -390,6 +409,19 @@ CORE_KEYS = (
     UPDATE_INVALID,
     UPDATE_NEXT,
     UPDATE_AVAILABLE,
+    UPDATE_PROFILE_OFF,
+    UPDATE_PROFILE_UNKNOWN,
+    UPDATE_PROFILE_LAGS,
+    UPDATE_PROFILE_NO_TEMPLATE,
+    UPDATE_PROFILE_FAILED,
+    UPDATE_PROFILE_MERGED,
+    UPDATE_PROFILE_UPDATED,
+    UPDATE_PROFILE_ADDED,
+    UPDATE_PROFILE_REMOVED,
+    UPDATE_PROFILE_MERGED_FILE,
+    UPDATE_PROFILE_CONFLICT,
+    UPDATE_PROFILE_KEPT,
+    UPDATE_PROFILE_RESOLVE,
     MIGRATE_VERSION,
     MIGRATE_NONE,
     MIGRATE_FAILED,
