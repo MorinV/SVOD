@@ -113,6 +113,8 @@ def build_parser() -> StatusParser:
     status = commands.add_parser(CMD_STATUS, help="position of a task or container")
     status.add_argument("query", help="tracker key or container name")
     status.add_argument("--format", choices=("text", "json"), default="text")
+    status.add_argument("--fresh", action="store_true",
+                        help="run the command gates of every step, not only of the current one")
     active = commands.add_parser(CMD_ACTIVE, help="summary of open work")
     active.add_argument("--all", action="store_true", help="expand the team's work")
     active.add_argument(HOOK_FLAG, action="store_true", help="SessionStart hook JSON")
@@ -563,13 +565,15 @@ def run(args: argparse.Namespace) -> int:
         print(runtime.locale.text(keys.VALIDATE_OK, count=len(runtime.pipelines)))
         return EXIT_OK
     if args.command == CMD_STATUS:
-        if getattr(args, "format", "text") == "json":
-            from svod.status import collect_status
-            from svod.status_json import to_json
-            data = to_json(collect_status(ctx, runtime.pipelines, args.query))
-            print(json.dumps(data, ensure_ascii=False, allow_nan=False))
-            return data["report"]["exit_code"]
-        return emit(status_report(ctx, runtime.pipelines, args.query))
+        from svod.command_gate import fresh_commands
+        with fresh_commands(args.fresh):
+            if getattr(args, "format", "text") == "json":
+                from svod.status import collect_status
+                from svod.status_json import to_json
+                data = to_json(collect_status(ctx, runtime.pipelines, args.query))
+                print(json.dumps(data, ensure_ascii=False, allow_nan=False))
+                return data["report"]["exit_code"]
+            return emit(status_report(ctx, runtime.pipelines, args.query))
     if args.command == CMD_RENDER:
         return render(ctx, runtime.pipelines, args)
     if args.command == CMD_DO:

@@ -30,6 +30,8 @@ STATUS_CHILD_OPEN = "status.child_open"
 MARK_PASS = "status.mark.pass"
 MARK_FAIL = "status.mark.fail"
 MARK_UNKNOWN = "status.mark.unknown"
+MARK_STALE = "status.mark.stale"
+MARK_NOT_RUN = "status.mark.not_run"
 ACTIVE_MINE_ACTIVE = "active.mine_active"
 ACTIVE_MINE_IDLE = "active.mine_idle"
 ACTIVE_THEIRS = "active.theirs"
@@ -278,6 +280,8 @@ CORE_KEYS = (
     MARK_PASS,
     MARK_FAIL,
     MARK_UNKNOWN,
+    MARK_STALE,
+    MARK_NOT_RUN,
     ACTIVE_MINE_ACTIVE,
     ACTIVE_MINE_IDLE,
     ACTIVE_THEIRS,

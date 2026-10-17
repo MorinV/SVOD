@@ -182,13 +182,14 @@ class CommandGateTest(StoreTestCase):
         self.assertEqual(self.runs(), 3)
 
     def test_command_writing_into_the_source_is_not_stored(self):
-        """A result is not stored when the command changed what git sees."""
+        """A result is not stored when the command changed what git sees; the last one is."""
         script = "import pathlib, uuid; pathlib.Path('src', uuid.uuid4().hex).write_text('x')"
         params = {"argv": [PY, "-c", script]}
         self.assertFalse(self.evaluate(params).facts["cached"])
         self.assertFalse(self.evaluate(params).facts["cached"])
         common = self.sb.store / ".git" / command_cache.CACHE_DIR
-        self.assertFalse(common.exists() and any(common.iterdir()))
+        self.assertEqual(list(common.glob("*.json")), [])
+        self.assertEqual(len(list((common / command_cache.LAST_DIR).glob("*.json"))), 1)
 
     def test_entry_lives_in_git_common_dir(self):
         """The record is a JSON file in the cache directory of the git common dir."""
@@ -248,7 +249,7 @@ class CommandGateTest(StoreTestCase):
         gate = CommandGate({"argv": [PY, "-c", script], "cache": False})
         config = ServicesConfig(load_config(self.sb.store), {SERVICE: f"../{SERVICE}"})
         config.profile_config = {"checks": {SERVICE: ["make", "test"]}}
-        pipelines = {"p": SimpleNamespace(name="p", gate_refs=lambda: [SimpleNamespace(
+        pipelines = {"p": SimpleNamespace(name="p", steps=[], gate_refs=lambda: [SimpleNamespace(
             impl=gate)])}
         subject = Subject(id="one", path=self.sb.store,
                           attrs={"frontmatter": {"services": [SERVICE]}})

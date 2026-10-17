@@ -25,6 +25,7 @@ FIELD_WORKSPACE_GATE = "workspace_gate"
 FIELD_MAIN_READ_ONLY = "main_checkout_read_only"
 FIELD_UPDATE_CHECK = "update_check"
 FIELD_SERVICES = "services"
+FIELD_CACHE_IGNORE = "cache_ignore"
 APPROVAL_PHRASES = "phrases"
 APPROVAL_WINDOW = "window_minutes"
 APPROVAL_FIELDS = frozenset({APPROVAL_PHRASES, APPROVAL_WINDOW})
@@ -58,7 +59,8 @@ LOCAL_FIELDS = (LOCAL_LOGIN, LOCAL_EMAIL, FIELD_WORKSPACES, FIELD_LOCALE)
 LOCAL_MAPPINGS = (FIELD_PROFILE_CONFIG,)
 FIELD_AUTONOMY = "autonomy"
 FIELD_EXTERNAL_EFFECTS = "external_effects"
-KNOWN_FIELDS = KNOWN_FIELDS | {FIELD_AUTONOMY, FIELD_EXTERNAL_EFFECTS}
+KNOWN_FIELDS = KNOWN_FIELDS | {FIELD_AUTONOMY, FIELD_EXTERNAL_EFFECTS, FIELD_CACHE_IGNORE}
+PARENT_PART = ".."
 AUTONOMY_GUIDED = "guided"
 AUTONOMY_SUPERVISED = "supervised"
 AUTONOMY_AUTONOMOUS = "autonomous"
@@ -104,6 +106,7 @@ class Config:
     external_deny: tuple[str, ...] = ()
     external_allow: tuple[str, ...] = ()
     external_phrases: tuple[str, ...] = DEFAULT_EXTERNAL_PHRASES
+    cache_ignore: tuple[str, ...] = ()
 
 
 def string_errors(path: Path, data: dict[str, Any], keys: Iterable[str]) -> list[str]:
@@ -221,6 +224,16 @@ def external_errors(path: Path, data: Any) -> list[str]:
     return errors
 
 
+def cache_ignore_errors(path: Path, data: Any) -> list[str]:
+    """Errors of cache_ignore: a list of relative paths or globs, none leaving the directory."""
+    where = f"{path}: {FIELD_CACHE_IGNORE}"
+    error = strings_error(where, data)
+    if error:
+        return [error]
+    return [f"{where}: {pattern} must be relative, without {PARENT_PART}" for pattern in data
+            if pattern.startswith("/") or PARENT_PART in pattern.split("/")]
+
+
 def read_local(path: Path) -> dict[str, Any]:
     """Validated local config mapping, empty when the file is absent."""
     if not path.is_file():
@@ -276,6 +289,8 @@ def load_config(root: str | Path, local: bool = True) -> Config:
             errors.append(f"{path}: {key} must be a list of strings")
     errors += autonomy_errors(path, data.get(FIELD_AUTONOMY, {}))
     errors += external_errors(path, data.get(FIELD_EXTERNAL_EFFECTS, {}))
+    if FIELD_CACHE_IGNORE in data:
+        errors += cache_ignore_errors(path, data[FIELD_CACHE_IGNORE])
     if errors:
         raise LoadError(errors)
     profile = root / data[FIELD_PROFILE]
@@ -312,6 +327,7 @@ def load_config(root: str | Path, local: bool = True) -> Config:
         knowledge_limit=knowledge.get(KNOWLEDGE_LIMIT, DEFAULT_KNOWLEDGE_LIMIT),
         evidence_enabled=(data.get(FIELD_EVIDENCE) or {}).get(EVIDENCE_ENABLED, True),
         evidence_commit=(data.get(FIELD_EVIDENCE) or {}).get(EVIDENCE_COMMIT, True),
+        cache_ignore=tuple(data.get(FIELD_CACHE_IGNORE) or ()),
         **policy_settings(data),
     )
 
