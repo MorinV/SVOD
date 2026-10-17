@@ -623,7 +623,7 @@ gate:
 | `update` | `--from`, `--to` | replaces the copy in `.svod/`, migrates the store, validates it with the new engine, prints the changelog between the versions and the migration notes; refuses without `.svod/` | as `install` |
 | `migrate` | `--since <version>` | applies the [migrations](#migrations) of the versions after `<version>` up to the running engine and prints what they changed; `update` runs it in the new copy | 0 done, 1 a migration failed, 2 not a version |
 
-`init`, `install`, `update` and `migrate` read `svod.yaml` at most for the locale, so they work while the store does not load. Every other command except `validate` and `hook` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. Without PyYAML the CLI exits with 2, or silently with 0 when `--hook` is given; `hook` then answers `session-start` and `prompt` with one line about the missing PyYAML and stays silent on `pre-tool`.
+`init`, `install`, `update` and `migrate` read `svod.yaml` at most for the locale, so they work while the store does not load. Every other command except `validate` and `hook` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. PyYAML is a dependency of the package: without it the engine does not import, so neither the CLI nor `hook` answers.
 
 ## Hooks
 

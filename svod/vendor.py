@@ -6,9 +6,9 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
-
+from .errors import LoadError
 from .paths import LIB_DIR, PACKAGE_DIR, VENDOR_DIR, package_dir, vendor_dir
+from .yamlio import dump_yaml, read_yaml
 
 SKILLS_DIR = "skills"
 SKILLS_SOURCE = Path(PACKAGE_DIR) / "templates" / "local" / SKILLS_DIR
@@ -50,8 +50,8 @@ def has_copy(root):
 def read_stamp(root):
     """VERSION of the copy, with empty fields when absent or unreadable."""
     try:
-        data = yaml.safe_load((vendor_dir(root) / VERSION_FILE).read_text(encoding=ENCODING))
-    except (OSError, yaml.YAMLError):
+        data = read_yaml(vendor_dir(root) / VERSION_FILE)
+    except (OSError, LoadError):
         data = None
     data = data if isinstance(data, dict) else {}
     values = [data.get(f) for f in (FIELD_VERSION, FIELD_SOURCE, FIELD_REF)]
@@ -61,8 +61,7 @@ def read_stamp(root):
 def write_stamp(directory, stamp):
     """Write VERSION into a copy directory."""
     data = {FIELD_VERSION: stamp.version, FIELD_SOURCE: stamp.source, FIELD_REF: stamp.ref}
-    (Path(directory) / VERSION_FILE).write_text(
-        yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding=ENCODING)
+    (Path(directory) / VERSION_FILE).write_text(dump_yaml(data), encoding=ENCODING)
 
 
 def ignored(path):

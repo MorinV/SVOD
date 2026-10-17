@@ -19,6 +19,11 @@ from svod.loader import load_runtime
 from svod.position import position
 from svod import local_runner as local
 
+# A child that only has to be alive when it is stopped; the stop comes within milliseconds.
+HOLD_SECONDS = 2
+# The runner's command timeout in the test that lets it expire.
+SHORT_TIMEOUT = .2
+
 
 class LocalWorkflowTest(unittest.TestCase):
     def setUp(self):
@@ -408,7 +413,7 @@ class LocalWorkflowTest(unittest.TestCase):
             local.prepare(self.root, 'demo-task')
 
     def test_cleanup_permission_failure_still_reaps_direct_child(self):
-        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'],
+        child = subprocess.Popen([sys.executable, '-c', f'import time; time.sleep({HOLD_SECONDS})'],
                                  start_new_session=True)
         self.addCleanup(lambda: child.kill() if child.poll() is None else None)
         with patch.object(local.os, 'killpg', side_effect=PermissionError('group denied')):
@@ -417,11 +422,11 @@ class LocalWorkflowTest(unittest.TestCase):
         self.assertIsNotNone(child.poll())
 
     def test_timeout_retains_actual_failure_log(self):
-        self.plan['command'] = [sys.executable, '-c',
-                                'import time; print("started", flush=True); time.sleep(30)']
+        self.plan['command'] = [sys.executable, '-c', 'import time; print("started", flush=True); '
+                                f'time.sleep({HOLD_SECONDS})']
         self.save_plan()
         self.consent()
-        with patch.object(local, 'COMMAND_TIMEOUT', .2):
+        with patch.object(local, 'COMMAND_TIMEOUT', SHORT_TIMEOUT):
             result = local.checks(self.root, 'demo-task')
         self.assertFalse(result['passed'])
         self.assertEqual(-1, result['exit_code'])
@@ -429,9 +434,13 @@ class LocalWorkflowTest(unittest.TestCase):
 
     def test_descendants_are_stopped_even_after_leader_exits(self):
         marker = self.base / 'descendant-stopped'
-        child_code = ('import signal, time; from pathlib import Path; '
-            f'signal.signal(signal.SIGTERM, lambda *_: (Path({str(marker)!r}).touch(), exit(0))); '
-            'print("ready", flush=True); time.sleep(30)')
+        # The orphaned descendant leaves the owned group once it has acknowledged SIGTERM: its
+        # zombie belongs to PID 1, and a container init that reaps slowly would otherwise hold
+        # the runner in its grace period for seconds after the descendant has already stopped.
+        child_code = ('import os, signal, time; from pathlib import Path; '
+            f'signal.signal(signal.SIGTERM, lambda *_: (Path({str(marker)!r}).touch(), '
+            'os.setpgid(0, 0), exit(0))); '
+            f'print("ready", flush=True); time.sleep({HOLD_SECONDS})')
         parent_code = ('import subprocess, sys; '
             f'p = subprocess.Popen([sys.executable, "-c", {child_code!r}], stdout=subprocess.PIPE); '
             'assert p.stdout.readline() == b"ready\\n"; print("leader exited")')

@@ -14,6 +14,9 @@ from svod.locale import load_locale
 EN = "en"
 PROFILE_DIR = "profile"
 NO_KEY = None
+SIBLINGS_WITHOUT_REMOTE = ("alpha", "beta")
+MERGED_NOWHERE = "merged in: -"
+MERGED_IN_SERVICE = f"merged in: {te.SERVICE};"
 
 
 class ExampleTaskTest(unittest.TestCase):
@@ -99,6 +102,24 @@ class ExampleTaskTest(unittest.TestCase):
             with self.subTest(stage=name):
                 frozen_line = core_lead(keys.STATUS_DO_NOT_TOUCH)
                 self.assertEqual(frozen, frozen_line in out.stdout, out.stdout)
+
+    def test_merged_skips_repositories_without_remote(self):
+        """Without work directories, a sibling repository with no remote default branch is left
+        out of the merge check silently; one with a pushed task commit makes the work merged."""
+        te.propose(self.sb)
+        for name in SIBLINGS_WITHOUT_REMOTE:
+            self.sb.init_git(self.sb.parent / name, remote=False)
+        unknown = core_lead(keys.STATUS_UNKNOWN)
+        out = self.sb.cli("status", te.KEY)
+        self.assertEqual(EXIT_OK, out.returncode, out.stderr)
+        self.assertNotIn(unknown, out.stdout)
+        self.assertIn(MERGED_NOWHERE, out.stdout)
+        service = te.service(self.sb)
+        self.sb.commit(service, f"{te.KEY}: print hello")
+        self.sb.push(service)
+        out = self.sb.cli("status", te.KEY)
+        self.assertNotIn(unknown, out.stdout)
+        self.assertIn(MERGED_IN_SERVICE, out.stdout)
 
 
 class TaskKeyGateTest(unittest.TestCase):

@@ -259,7 +259,8 @@ class MergedGate(Gate):
     and a known repository has a commit naming the task in that branch.
 
     Known repositories are those of the work directories; without any, every repository in the
-    workspaces except the store.
+    workspaces except the store that has a remote default branch: one without it cannot hold the
+    merged task, so it is left out silently rather than reported as unchecked.
     """
 
     name = "merged"
@@ -298,14 +299,15 @@ class MergedGate(Gate):
 
     @staticmethod
     def repositories(ctx):
-        """Main checkouts in the workspaces, never the store."""
+        """Main checkouts in the workspaces with a remote default branch, never the store."""
         base = ctx.config.workspaces
         if base is None or not base.is_dir():
             return []
         store = common_dir(ctx, ctx.root)
-        return [p for p in sorted(base.iterdir())
-                if (p / DOT_GIT).is_dir() and p.resolve() != ctx.root
-                and (store is None or (p / DOT_GIT).resolve() != store)]
+        checkouts = [p for p in sorted(base.iterdir())
+                     if (p / DOT_GIT).is_dir() and p.resolve() != ctx.root
+                     and (store is None or (p / DOT_GIT).resolve() != store)]
+        return [p for p in checkouts if remote_default(ctx, p)[0] is not None]
 
     @staticmethod
     def failure(known, opened, merged, reasons):

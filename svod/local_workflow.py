@@ -2,14 +2,12 @@
 from pathlib import Path
 import subprocess
 
-import yaml
-
 from . import local_evidence as evidence
-from .errors import ParamError
+from .errors import LoadError, ParamError
 from .gates import Gate, verdict
 
 DELIVERY = 'delivery/process.yaml'
-ERRORS = (OSError, ValueError, KeyError, TypeError, yaml.YAMLError, subprocess.SubprocessError)
+ERRORS = (OSError, ValueError, KeyError, TypeError, LoadError, subprocess.SubprocessError)
 
 
 def policy(ctx, subject, *, recorded=False):

@@ -1,9 +1,8 @@
 """Frontmatter of markdown documents."""
 import datetime as dt
 
-import yaml
-
-from .yamlio import ENCODING
+from .errors import LoadError
+from .yamlio import ENCODING, parse_yaml
 
 FENCE = "---"
 OPENING = f"{FENCE}\n"
@@ -31,8 +30,8 @@ def read_frontmatter(path):
     if end == -1:
         return None
     try:
-        data = yaml.safe_load(text[len(OPENING):end])
-    except yaml.YAMLError:
+        data = parse_yaml(text[len(OPENING):end], path)
+    except LoadError:
         return None
     if not isinstance(data, dict):
         return None
