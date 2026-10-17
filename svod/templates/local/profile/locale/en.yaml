@@ -1,5 +1,6 @@
 gate.current_process: 'Local process: {phase}'
 local.contract: Prepare a compact contract.md and testing/plan.yaml naming a clean source checkout.
+local.contract_process_contract: 'Prepare a compact contract.md and testing/plan.yaml naming a clean source checkout: {detail}.'
 local.approve: Show contract.md and testing/plan.yaml to the person and wait for their approval in the chat; then svod approve tasks/<name> --step initial_approve.
 local.approve_legacy: The approval has no approver or version; show contract.md and testing/plan.yaml again, wait for a fresh approval in the chat, then svod approve tasks/<name> --step initial_approve.
 local.approve_drift: contract.md or testing/plan.yaml changed after the approval; show the current version, wait for a fresh approval in the chat, then svod approve tasks/<name> --step initial_approve.
