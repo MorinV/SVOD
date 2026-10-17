@@ -150,6 +150,9 @@ def knowledge_errors(path: Path, data: Any) -> list[str]:
     limit = data.get(KNOWLEDGE_LIMIT, DEFAULT_KNOWLEDGE_LIMIT)
     if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
         errors.append(f"{where}.{KNOWLEDGE_LIMIT} must be a positive integer")
+    return errors
+
+
 def evidence_errors(path: Path, data: Any) -> list[str]:
     """Errors of the evidence block: a mapping of known keys with boolean values."""
     if not isinstance(data, dict):
