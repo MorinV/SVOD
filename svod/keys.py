@@ -102,6 +102,7 @@ HOOK_ENGINE_BROKEN = "hook.engine_broken"
 HOOK_POSITION_HEAD = "hook.position_head"
 HOOK_POSITION_TAIL = "hook.position_tail"
 HOOK_APPROVAL_MARKED = "hook.approval_marked"
+HOOK_APPROVAL_MARKED_UNNAMED = "hook.approval_marked_unnamed"
 HOOK_APPROVAL_JOINERS = "hook.approval_joiners"
 HOOK_DENY_APPROVAL = "hook.deny_approval"
 HOOK_DENY_PLAN = "hook.deny_plan"
@@ -234,6 +235,7 @@ CORE_KEYS = (
     HOOK_POSITION_HEAD,
     HOOK_POSITION_TAIL,
     HOOK_APPROVAL_MARKED,
+    HOOK_APPROVAL_MARKED_UNNAMED,
     HOOK_APPROVAL_JOINERS,
     HOOK_DENY_APPROVAL,
     HOOK_DENY_PLAN,
