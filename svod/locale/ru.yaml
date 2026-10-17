@@ -59,6 +59,12 @@ approve:
   confirm_files: "Связанные файлы, версия {sha}:"
   confirm_question: "Одобрить {subject}? [y/N] "
   not_confirmed: "Одобрение {subject} не подтверждено в терминале: ничего не записано"
+answer:
+  done: "Ответ {number} записан в {file} ({question}), ответил {by}, реплика {sha}. Ничего не закоммичено."
+  no_mark: "Нет свежей реплики человека в чате: задать вопрос и дождаться ответа"
+  no_file: "Нет файла вопросов {file}: сначала записать вопросы"
+  no_question: "В {file} нет вопроса {number}: их {count}"
+  empty: "Ответ пуст: переписать ответ человека из чата"
 update:
   exists: "В сторе уже есть копия движка (.svod): выполнить svod update"
   missing: "В сторе нет копии движка (.svod): выполнить svod install"
@@ -144,3 +150,7 @@ gate:
   git_pushed: "у стора нет коммитов впереди origin"
   git_pushed_repo: "у {repo} нет коммитов впереди origin"
   command: "{argv} в {where} завершается с кодом 0"
+  children_done: "все субъекты {pipelines}, у которых {field} указывает на этот, завершены, и есть хотя бы один"
+  has_children: "есть субъект {pipelines}, у которого {field} указывает на этот"
+  ref_exists: "{field} указывает на субъект {pipelines}"
+  questions_answered: "у каждого вопроса в {file} есть ответ, или там none"

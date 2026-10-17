@@ -59,6 +59,12 @@ approve:
   confirm_files: "Bound files, version {sha}:"
   confirm_question: "Approve {subject}? [y/N] "
   not_confirmed: "The approval of {subject} is not confirmed at the terminal: nothing is recorded"
+answer:
+  done: "Answer {number} recorded in {file} ({question}), by {by}, prompt {sha}. Nothing is committed."
+  no_mark: "No fresh message of a person in the chat: ask the question and wait for the answer"
+  no_file: "No questions file {file}: write the questions first"
+  no_question: "{file} has no question {number}: it has {count}"
+  empty: "The answer is empty: copy the person's answer from the chat"
 update:
   exists: "The store already has its copy of the engine (.svod): run svod update"
   missing: "The store has no copy of the engine (.svod): run svod install"
@@ -141,3 +147,7 @@ gate:
   git_pushed: "the store has no commits ahead of origin"
   git_pushed_repo: "{repo} has no commits ahead of origin"
   command: "{argv} exits with 0 in {where}"
+  children_done: "every subject of {pipelines} whose {field} names this one is done, at least one"
+  has_children: "some subject of {pipelines} names this one in {field}"
+  ref_exists: "{field} names a subject of {pipelines}"
+  questions_answered: "every question in {file} has an answer, or it says none"

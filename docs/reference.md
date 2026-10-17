@@ -31,6 +31,7 @@ Its presence marks the store root: the CLI walks up from the working directory t
 | `workspace_gate` | no | string / none | name of a gate with a `worktrees(ctx, keys)` method (see [Writing a custom gate](#writing-a-custom-gate)); it tells the `pre-tool` hook which directories are work directories of a subject; without it that check is off |
 | `main_checkout_read_only` | no | bool / `false` | the `pre-tool` hook refuses edits in the main checkout of the store repository, except paths git ignores; work goes into worktrees |
 | `update_check` | no | bool / `true` | with a [copy of the engine](#vendored-copy) in the store, the session start summary says when a newer release is out, checked at most once a day; `false` turns the check off |
+| `services` | no | mapping / `{}` | service repositories the works of the store are about: name to a directory relative to the root (`{app: ../app}`); an absolute path, a non-string value or a directory that does not exist is a load error naming the service; resolved and exposed as `ctx.config.services` (name to `Path`); the core does not read it, profile gates may |
 
 ```yaml
 locale: en
@@ -47,6 +48,7 @@ approval:
 workspace_gate: worktree
 main_checkout_read_only: true
 update_check: false
+services: { app: ../app, api: ../api }
 profile_config:
   publishing: { mode: review }
 ```
@@ -63,6 +65,8 @@ An approval is two acts: a person writes a phrase in the chat, then the agent re
 The mark is `svod-approval.json` in the git common directory of the store (so every worktree of the store shares it, and it is never committed): `{"at": "<ISO time with offset>", "keys": [<keys named in the prompt>]}`. The prompt hook writes it from a real human answer. `approve` requires a fresh mark for the subject, ready preceding nonoptional stages and bound files not modified after the answer. It consumes only this subject's named keys, preserving other keys and the original timestamp; an unnamed mark is single-use. Do not call the internal mark writer to manufacture human consent. `approve --step <id>` selects a specific applicable approval stage; otherwise the first unsatisfied applicable approval is selected.
 
 Agents without a prompt hook (Cursor, Aider, a plain terminal) have no mark to leave. For them `approve <query> --confirm` asks the person at the terminal instead: with no fresh mark and stdin a terminal, it prints on stderr what is approved (`approve.confirm_plan`: the keys of the subject, the step, the approval file; `approve.confirm_files`: the bound files and the version to record) and asks `approve.confirm_question`; only `y` or `yes` (letter case ignored) records the approval, with the approver from the local config or git as usual, and any other answer or end of input refuses with `approve.not_confirmed` and writes nothing. The person answers in the terminal, not the agent: input from a pipe or a file is not a terminal, so it refuses with `approve.no_mark` as without `--confirm`. A fresh mark, when there is one, is used as without the flag. Like the hooks, this keeps a careless agent from approving its own plan, not a determined one that can fake a terminal.
+
+**The human mark.** `svod-human.json`, next to the approval mark in the git common directory, says that a person has just written in the chat: `{"at": "<ISO time with offset>", "sha": "<sha256 hex of the prompt text>"}`. The prompt hook writes it for a real human prompt (`svod.questions.write_human_mark`); it is fresh for `window_minutes`, like the approval mark. [`answer`](#questions-before-work) refuses without a fresh one whose `sha` is 64 lowercase hex digits, and does not consume it: one message may answer several questions. The mark shows that the person spoke, not what they said: the agent copies the answer from the chat.
 
 ### Local config
 
@@ -322,6 +326,67 @@ The command runs as the local runner runs it: argv without a shell, stdout and s
 **Cache.** `status` and the hooks show the result without running the command again while its source is unchanged. When the directory is in a git repository, the result is kept in `<git common dir>/svod-command-cache/<key>.json` (code, tail of the output, UTC start time, duration), shared by every worktree of the repository; the directory can be removed at any time. The key is sha256 over `argv`, `env`, the directory's path inside its repository, `HEAD`, `git status --porcelain --untracked-files=all`, the content of every file that differs from `HEAD` or is untracked and not ignored, and the content of the `watch` files. Files are hashed by content up to 1000 files and 8 MiB together, beyond that by size and modification time. A new commit, a changed, added or removed file, another argv or env each make a new key, and the command runs again. Outside git nothing is cached and `cached` is always `false`.
 
 The command must be idempotent and must not write into its source: a result is stored only when git sees the directory after the run as before it, so a command that writes there runs again on every `status`. Output for tools goes outside the repository or into ignored paths. A long command makes the first `status` after each change as slow as itself: give it a `timeout` that fits a hook.
+### `has_children`
+
+| param | req | type / default | meaning |
+|---|---|---|---|
+| `pipelines` | yes | non-empty list of pipeline names | pipelines whose subjects may be children |
+| `field` | no | string / `parent` | frontmatter field of a child naming its parent |
+
+A child is an existing subject of one of `pipelines` (read through `ctx.pipelines` and the pipeline's provider, once per run) whose `field` in `attrs.frontmatter` equals the `id` of the subject. The value is compared after stripping whitespace, a leading `./` and trailing `/`: with the `container` provider and `head_type`, `parent: work/features/login` names the container `work/features/login`. PASS with at least one child, else FAIL. UNKNOWN when a pipeline name is not loaded. Facts: `total`.
+
+### `children_done`
+
+| param | req | type / default | meaning |
+|---|---|---|---|
+| `pipelines` | yes | non-empty list of pipeline names | pipelines whose subjects may be children |
+| `field` | no | string / `parent` | frontmatter field of a child naming its parent |
+
+Children as in `has_children`. Each child's [position](#position-rules) is computed in its own pipeline (`svod.position.position`); a child is done when its `done` gate passes, or, for a pipeline without `done`, when no entry blocks and every non-optional step passed. PASS when there is at least one child and every child is done. FAIL carries the fact `reason`: `none` (no children) or `open`. UNKNOWN when a pipeline name is not loaded, or on a cycle: the `field` leads from the subject through subjects of any pipeline back to itself (reason `cycle: <id> -> … -> <id>`); a cycle met while the positions of children are computed is UNKNOWN in that child. Facts: `done`, `total`, `open` (ids of the children not done, joined by `, `), `reason` on FAIL. A parent pipeline uses it as `done`, `has_children` as a step:
+
+```yaml
+pipeline: feature
+subject: { provider: container, params: { roots: [work/features], head_type: work } }
+done: { gate: children_done, params: { pipelines: [task] }, text: feature.done }
+steps:
+  - id: split
+    text: feature.step.split
+    gates: [ { gate: has_children, params: { pipelines: [task] } } ]
+```
+
+### `ref_exists`
+
+| param | req | type | meaning |
+|---|---|---|---|
+| `field` | yes | string | frontmatter field holding the id of another subject (`cause`, `leads_to`, `parent`) |
+| `pipelines` | yes | non-empty list of pipeline names | pipelines the subject must belong to |
+
+The value is read as in `has_children`. PASS when an existing subject of one of `pipelines` has that `id`. FAIL carries the fact `reason`: `missing` (the field is empty or absent) or `unknown` (no such subject). UNKNOWN when a pipeline name is not loaded. Facts: `value`, `pipeline` (where it was found) on PASS, `reason` on FAIL.
+
+### `questions_answered`
+
+| param | req | type / default | meaning |
+|---|---|---|---|
+| `file` | no | string / `questions.md` | questions file under the subject directory |
+
+PASS when every question of the file has a non-empty answer, or the file is the single line `none`. FAIL carries the fact `reason`: `missing` (no file, or the subject is not a directory), `empty` (neither questions nor `none`), `unanswered`. Facts: `total` (questions), `count` (questions without an answer), `reason` on FAIL. The format and `answer` are in [Questions before work](#questions-before-work).
+
+### Questions before work
+
+Questions the agent has before the work starts go into the questions file of the subject:
+
+```markdown
+## Q: Which database?
+Context of the question, optional.
+A: Postgres 16
+  by: someone, at: 2026-10-17, prompt: 3f2a9c01b7de
+
+## Q: Who owns the API?
+```
+
+A question is a line `## Q: <question>`; its section runs to the next heading of level one or two. Its answer is the first line of the section starting with `A:`, stripped; an empty one does not count. A file holding only `none` (letter case and surrounding whitespace ignored) says there is nothing to ask.
+
+`svod answer <query> --q <n> <text>` writes the person's answer under question `n` (from 1) of the subject's file — the `file` of the first `questions_answered` gate use of its pipeline, else `questions.md` — as `A: <text>` (whitespace runs joined into one line) followed by `  by: <approver>, at: <date>, prompt: <first 12 hex digits of the mark's sha>`; the approver is found as for `approve` (local login, else email, else git `user.email`). An existing answer of the question is replaced with its `by` lines; otherwise the lines go after the last non-blank line of the section. It refuses (exit 1) without a fresh [human mark](#approval-by-a-person) (`answer.no_mark`), without the file (`answer.no_file`), for a number with no question (`answer.no_question`), for an empty text (`answer.empty`) and without an approver (`approve.no_approver`). Nothing is committed. The agent copies the answer from the chat; the mark proves only that the person has just written there.
 
 ## Subject providers
 
@@ -529,6 +594,12 @@ Core keys (all required in every core locale file):
 | `gate.doc_type`, `gate.doc_type_container` | `{type}` |
 | `gate.git_pushed_repo` | `{repo}` |
 | `gate.command` | `{argv}` (the argv as a shell would quote it), `{where}` (`service`, `cwd` or `.`) |
+| `gate.children_done`, `gate.has_children`, `gate.ref_exists` | `{pipelines}`, `{field}` |
+| `gate.questions_answered` | `{file}` |
+| `answer.done` | `{file}`, `{number}`, `{question}`, `{by}`, `{sha}` |
+| `answer.no_mark`, `answer.empty` | — |
+| `answer.no_file` | `{file}` |
+| `answer.no_question` | `{file}`, `{number}`, `{count}` |
 | `update.exists`, `update.missing`, `update.manual`, `update.manual_none`, `update.invalid`, `update.next` | — |
 | `update.fetch_failed` | `{source}`, `{reason}` |
 | `update.no_tags` | `{source}` |
@@ -636,6 +707,7 @@ gate:
 | `active` | `--all`, `--hook` | summary of open work, including subjects changed in other checkouts of the store repository; `--all` expands `theirs`; `--hook` prints SessionStart hook JSON (`hookSpecificOutput.additionalContext`, with the [update notice](#update-notice) first and `active.hook_tail` appended); prints nothing when there is neither | 0 |
 | `render <pipeline>` | `--write` | prints the documentation block, or writes it between the markers | 0, 1 no markers, 2 unknown pipeline |
 | `approve <query>` | `--step <id>`, `--confirm` | records the ready selected applicable approval with date, approver and digest, consuming this subject's mark keys; refuses changed-after-answer inputs; with `--confirm` and no fresh mark asks the person at a terminal, see [Approval by a person](#approval-by-a-person); nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
+| `answer <query>` | `--q <n>`, `<text>` | writes the person's answer under question `n` of the subject's questions file with the approver, the date and the prompt digest of a fresh human mark; see [Questions before work](#questions-before-work); nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
 | `new <directory>` | `--template local\|task` | creates an absent directory from installed templates without a pre-existing store; default local, never merges or overwrites | 0 created, 1 refused |
 | `local <action> <query>` | — | `prepare` diagnoses readiness, `checks` runs the chosen argv, `verify` validates the live result, `deliver` records and reads back local completion; see [local-workflow.md](local-workflow.md) | 0 success, 1 failed/refused, 2 invalid root/load/arguments |
 | `hook <event>` | — | answers one agent hook event, `session-start`, `prompt` or `pre-tool`, read as JSON on stdin; see [Hooks](#hooks) | 0 always |

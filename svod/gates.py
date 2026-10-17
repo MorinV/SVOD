@@ -4,13 +4,15 @@ from __future__ import annotations
 import datetime as dt
 import importlib.util
 import re
+from collections.abc import Iterator
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
-from .approval import bound_files, digest_matches, read_fields
+from .approval import bound_files, digest_matches, read_fields, text_of
 from .errors import LoadError, ParamError
 from .frontmatter import documents, read_frontmatter
 from .keys import (
@@ -19,14 +21,19 @@ from .keys import (
     DESCRIBE_FIELD_PRESENT, DESCRIBE_FIELD_ABSENT, DESCRIBE_FIELD_DATE_NOT_PAST,
     DESCRIBE_FIELD_DATE_PAST,
     DESCRIBE_DOC_TYPE, DESCRIBE_DOC_TYPE_CONTAINER, DESCRIBE_ARCHIVED, DESCRIBE_GIT_PUSHED,
-    DESCRIBE_GIT_PUSHED_REPO,
+    DESCRIBE_GIT_PUSHED_REPO, DESCRIBE_CHILDREN_DONE, DESCRIBE_HAS_CHILDREN, DESCRIBE_REF_EXISTS,
+    DESCRIBE_QUESTIONS_ANSWERED,
 )
 from .params import Configurable
+from .questions import DEFAULT_FILE as DEFAULT_QUESTIONS_FILE, parse_questions
 from .subject import ATTR_CONTAINER, ATTR_FRONTMATTER
+from .yamlio import ENCODING
 
 if TYPE_CHECKING:
     from .context import Context
     from .locale import Locale
+    from .pipeline import Pipeline
+    from .position import Position
     from .providers import Provider
     from .subject import Subject
 
@@ -46,6 +53,8 @@ PARAM_REPO = "repo"
 PARAM_BIND = "bind"
 PARAM_IGNORE = "ignore"
 PARAM_STRIP = "strip"
+PARAM_PIPELINES = "pipelines"
+PARAM_FIELD = "field"
 LINE_RULES = (PARAM_IGNORE, PARAM_STRIP)
 FACT_REASON = "reason"
 FACT_VALUE = "value"
@@ -55,6 +64,22 @@ FACT_DATE = "date"
 REASON_MISSING = "missing"
 REASON_LEGACY = "legacy"
 REASON_DRIFT = "drift"
+REASON_UNKNOWN = "unknown"
+REASON_NONE = "none"
+REASON_OPEN = "open"
+REASON_UNANSWERED = "unanswered"
+REASON_EMPTY = "empty"
+FACT_DONE = "done"
+FACT_TOTAL = "total"
+FACT_OPEN = "open"
+FACT_COUNT = "count"
+FACT_PIPELINE = "pipeline"
+DEFAULT_RELATION_FIELD = "parent"
+IDS_SEPARATOR = ", "
+CHAIN_SEPARATOR = " -> "
+REF_PREFIX = "./"
+REF_SUFFIX = "/"
+SUBJECT_INDEX = "relation_subjects"
 BIND_SEPARATOR = ", "
 SCOPE_SUBJECT = "subject"
 SCOPE_CONTAINER = "container"
@@ -401,8 +426,232 @@ class GitPushedGate(Gate):
         return locale.text(DESCRIBE_GIT_PUSHED)
 
 
+def ref_text(value: Any) -> str:
+    """A reference to a subject as written in a field: stripped, without ./ and a trailing /."""
+    return text_of(value).removeprefix(REF_PREFIX).rstrip(REF_SUFFIX)
+
+
+def relation_field(subject: Subject, name: str) -> str:
+    """Reference held by a frontmatter field of the subject, or empty."""
+    return ref_text((subject.attrs.get(ATTR_FRONTMATTER) or {}).get(name))
+
+
+def pipeline_subjects(ctx: Context, pipeline: Pipeline) -> list[Subject]:
+    """Every subject of the pipeline, enumerated once per run and root."""
+    return ctx.cache.value((SUBJECT_INDEX, str(ctx.root), pipeline.name),
+                           lambda: pipeline.subject.impl.enumerate(ctx))
+
+
+def named_pipelines(ctx: Context, names: list[str]) -> list[Pipeline]:
+    """Pipelines of the names from ctx.pipelines; KeyError names the first unknown one."""
+    return [ctx.pipelines[name] for name in names]
+
+
+def find_subject(ctx: Context, pipelines: list[Pipeline],
+                 ref: str) -> tuple[Pipeline, Subject] | None:
+    """First (pipeline, subject) among the pipelines whose existing subject has the id ref."""
+    for pipeline in pipelines:
+        for found in pipeline_subjects(ctx, pipeline):
+            if found.exists and found.id == ref:
+                return pipeline, found
+    return None
+
+
+def ancestors(ctx: Context, subject: Subject, name: str) -> Iterator[str]:
+    """Ids the field leads to from the subject upward, through every pipeline of ctx.
+
+    Stops at an empty field, an id of no subject, or after the first id met again.
+    """
+    every = list(ctx.pipelines.values())
+    seen = {subject.id}
+    ref = relation_field(subject, name)
+    while ref:
+        yield ref
+        if ref in seen:
+            return
+        seen.add(ref)
+        found = find_subject(ctx, every, ref)
+        ref = relation_field(found[1], name) if found else ""
+
+
+def is_done(pos: Position) -> bool:
+    """Whether a position is done: its done gate passed; without done, every step passed."""
+    if pos.done is not None:
+        return True
+    return (pos.pipeline.done is None and pos.subject.exists and pos.blocked is None
+            and pos.current is None)
+
+
+EVALUATING: ContextVar[frozenset[str]] = ContextVar("svod_children_evaluating",
+                                                    default=frozenset())
+
+
+def unknown_pipeline(exc: KeyError, **facts: Any) -> Result:
+    """UNKNOWN for a pipeline name ctx.pipelines does not hold."""
+    return unknown(f"unknown pipeline: {exc.args[0]}", **facts)
+
+
+def check_pipelines(gate: Gate) -> None:
+    """Raise ParamError unless the pipelines param is a non-empty list of names."""
+    if not non_empty_strings(gate.params[PARAM_PIPELINES]):
+        raise ParamError(f"{gate.name}: {PARAM_PIPELINES} must be a non-empty list of "
+                         "pipeline names")
+
+
+class RelationGate(Gate):
+    """Base of the gates over children: subjects of the pipelines whose field names this one."""
+
+    PARAMS = frozenset({PARAM_PIPELINES, PARAM_FIELD})
+    REQUIRED = frozenset({PARAM_PIPELINES})
+    DESCRIBE = ""
+
+    def check(self) -> None:
+        """Pipelines is a non-empty list of names; field is a string."""
+        check_pipelines(self)
+        self.require_type(PARAM_FIELD, str, "a string")
+
+    @property
+    def field(self) -> str:
+        """Frontmatter field of a child naming its parent."""
+        return str(self.params.get(PARAM_FIELD, DEFAULT_RELATION_FIELD))
+
+    def children(self, ctx: Context, subject: Subject) -> list[tuple[Pipeline, Subject]]:
+        """(pipeline, child) of every existing subject whose field names the subject.
+
+        KeyError when a pipeline name is not loaded.
+        """
+        return [(pipeline, child)
+                for pipeline in named_pipelines(ctx, self.params[PARAM_PIPELINES])
+                for child in pipeline_subjects(ctx, pipeline)
+                if child.exists and relation_field(child, self.field) == subject.id]
+
+    def describe(self, params: dict[str, Any], locale: Locale) -> str:
+        """Children in the pipelines by the field."""
+        return locale.text(self.DESCRIBE, pipelines=IDS_SEPARATOR.join(params[PARAM_PIPELINES]),
+                           field=params.get(PARAM_FIELD, DEFAULT_RELATION_FIELD))
+
+
+class HasChildrenGate(RelationGate):
+    """Passes when at least one subject of the pipelines names this one in the field."""
+
+    name = "has_children"
+    DESCRIBE = DESCRIBE_HAS_CHILDREN
+
+    def evaluate(self, ctx: Context, subject: Subject) -> Result:
+        """Count the children; facts.total. An unknown pipeline is UNKNOWN."""
+        try:
+            total = len(self.children(ctx, subject))
+        except KeyError as exc:
+            return unknown_pipeline(exc)
+        return verdict(total > 0, total=total)
+
+
+class ChildrenDoneGate(RelationGate):
+    """Passes when the subject has children and every one is done in its own pipeline."""
+
+    name = "children_done"
+    DESCRIBE = DESCRIBE_CHILDREN_DONE
+
+    def evaluate(self, ctx: Context, subject: Subject) -> Result:
+        """Positions of the children; facts done, total, open and reason on FAIL.
+
+        A subject the field leads back to from itself is in a cycle: UNKNOWN.
+        """
+        from .position import position
+        chain = list(ancestors(ctx, subject, self.field))
+        if subject.id in chain:
+            cycle = [subject.id, *chain[:chain.index(subject.id) + 1]]
+            return unknown(f"cycle: {CHAIN_SEPARATOR.join(cycle)}")
+        evaluating = EVALUATING.get()
+        if subject.id in evaluating:
+            return unknown(f"cycle: {subject.id}")
+        try:
+            children = self.children(ctx, subject)
+        except KeyError as exc:
+            return unknown_pipeline(exc)
+        token = EVALUATING.set(evaluating | {subject.id})
+        try:
+            done = {child.id for pipeline, child in children
+                    if is_done(position(ctx, pipeline, child))}
+        finally:
+            EVALUATING.reset(token)
+        still = [child.id for _, child in children if child.id not in done]
+        facts = {FACT_DONE: len(children) - len(still), FACT_TOTAL: len(children),
+                 FACT_OPEN: IDS_SEPARATOR.join(still)}
+        if not children:
+            return Result(Status.FAIL, {**facts, FACT_REASON: REASON_NONE})
+        if still:
+            return Result(Status.FAIL, {**facts, FACT_REASON: REASON_OPEN})
+        return Result(Status.PASS, facts)
+
+
+class RefExistsGate(Gate):
+    """Passes when a frontmatter field names an existing subject of one of the pipelines."""
+
+    name = "ref_exists"
+    PARAMS = frozenset({PARAM_FIELD, PARAM_PIPELINES})
+    REQUIRED = frozenset({PARAM_FIELD, PARAM_PIPELINES})
+
+    def check(self) -> None:
+        """Field is a string; pipelines is a non-empty list of names."""
+        self.require_type(PARAM_FIELD, str, "a string")
+        check_pipelines(self)
+
+    def evaluate(self, ctx: Context, subject: Subject) -> Result:
+        """Look the reference up; facts value, pipeline on PASS, reason on FAIL."""
+        value = relation_field(subject, self.params[PARAM_FIELD])
+        if not value:
+            return Result(Status.FAIL, {FACT_VALUE: value, FACT_REASON: REASON_MISSING})
+        try:
+            found = find_subject(ctx, named_pipelines(ctx, self.params[PARAM_PIPELINES]), value)
+        except KeyError as exc:
+            return unknown_pipeline(exc, value=value)
+        if found is None:
+            return Result(Status.FAIL, {FACT_VALUE: value, FACT_REASON: REASON_UNKNOWN})
+        return Result(Status.PASS, {FACT_VALUE: value, FACT_PIPELINE: found[0].name})
+
+    def describe(self, params: dict[str, Any], locale: Locale) -> str:
+        """The field names a subject of the pipelines."""
+        return locale.text(DESCRIBE_REF_EXISTS, field=params[PARAM_FIELD],
+                           pipelines=IDS_SEPARATOR.join(params[PARAM_PIPELINES]))
+
+
+class QuestionsAnsweredGate(Gate):
+    """Passes when every question of the questions file has an answer, or the file says none."""
+
+    name = "questions_answered"
+    PARAMS = frozenset({PARAM_FILE})
+
+    def check(self) -> None:
+        """File is a string."""
+        self.require_type(PARAM_FILE, str, "a string")
+
+    def evaluate(self, ctx: Context, subject: Subject) -> Result:
+        """Read the file under the subject; facts total, count (unanswered), reason on FAIL."""
+        base = subject_dir(subject)
+        path = base / self.params.get(PARAM_FILE, DEFAULT_QUESTIONS_FILE) if base else None
+        if path is None or not path.is_file():
+            return Result(Status.FAIL, {FACT_TOTAL: 0, FACT_COUNT: 0,
+                                        FACT_REASON: REASON_MISSING})
+        found = parse_questions(path.read_text(encoding=ENCODING))
+        facts = {FACT_TOTAL: len(found.items), FACT_COUNT: len(found.unanswered)}
+        if found.none:
+            return Result(Status.PASS, facts)
+        if not found.items:
+            return Result(Status.FAIL, {**facts, FACT_REASON: REASON_EMPTY})
+        if found.unanswered:
+            return Result(Status.FAIL, {**facts, FACT_REASON: REASON_UNANSWERED})
+        return Result(Status.PASS, facts)
+
+    def describe(self, params: dict[str, Any], locale: Locale) -> str:
+        """Every question in the file is answered, or the file says none."""
+        return locale.text(DESCRIBE_QUESTIONS_ANSWERED,
+                           file=params.get(PARAM_FILE, DEFAULT_QUESTIONS_FILE))
+
+
 CORE_GATES = {cls.name: cls for cls in (
     ExistsGate, ArtifactGate, ApprovalGate, FieldGate, DocTypeGate, ArchivedGate, GitPushedGate,
+    ChildrenDoneGate, HasChildrenGate, RefExistsGate, QuestionsAnsweredGate,
 )}
 
 

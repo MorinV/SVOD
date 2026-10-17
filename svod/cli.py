@@ -30,6 +30,7 @@ CMD_ACTIVE = "active"
 CMD_RENDER = "render"
 CMD_INIT = "init"
 CMD_APPROVE = "approve"
+CMD_ANSWER = "answer"
 CMD_HOOK = "hook"
 CMD_INSTALL = "install"
 CMD_UPDATE = "update"
@@ -88,6 +89,12 @@ def build_parser() -> StatusParser:
     approve.add_argument("--step", help="approval step id; first pending approval by default")
     approve.add_argument("--confirm", action="store_true",
                          help="without a fresh mark, ask the person at the terminal to confirm")
+    answer = commands.add_parser(CMD_ANSWER,
+                                 help="record a person's answer to a question before work")
+    answer.add_argument("query", help="tracker key or subject name")
+    answer.add_argument("--q", dest="number", type=int, required=True,
+                        help="number of the question in the questions file, from 1")
+    answer.add_argument("text", nargs="+", help="the answer as the person gave it in the chat")
     hook = commands.add_parser(CMD_HOOK, help="answer an agent hook event read as JSON on stdin")
     hook.add_argument("event", choices=EVENTS, help="hook event")
     init = commands.add_parser(CMD_INIT, help="create the local config named in svod.yaml")
@@ -305,6 +312,9 @@ def run(args: argparse.Namespace) -> int:
         from svod.approve import approve
         return emit(approve(ctx, runtime.pipelines, args.query, step=args.step,
                             confirm=args.confirm))
+    if args.command == CMD_ANSWER:
+        from svod.questions import answer
+        return emit(answer(ctx, runtime.pipelines, args.query, args.number, " ".join(args.text)))
     lines = summarize(ctx, runtime.pipelines, args.all)
     if not args.hook and not any(p.active for p in runtime.pipelines):
         lines.append(runtime.locale.text(keys.ACTIVE_NONE))
