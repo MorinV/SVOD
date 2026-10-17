@@ -103,6 +103,13 @@ WIZARD_HOOKS_MANUAL = "wizard.hooks_manual"
 WIZARD_HOOKS_FAILED = "wizard.hooks_failed"
 WIZARD_ABORTED = "wizard.aborted"
 WIZARD_NEXT = "wizard.next"
+SETUP_NO_SOURCE = "setup.no_source"
+SETUP_PROMPT_SOURCE = "setup.prompt_source"
+SETUP_NOT_TTY = "setup.not_tty"
+SETUP_GIT_FAILED = "setup.git_failed"
+SETUP_COMMITTED = "setup.committed"
+SETUP_STOPPED = "setup.stopped"
+SETUP_DONE = "setup.done"
 DOCTOR_CONFIG_OK = "doctor.config_ok"
 DOCTOR_CONFIG_FAIL = "doctor.config_fail"
 DOCTOR_SERVICES_NONE = "doctor.services_none"
@@ -350,6 +357,13 @@ CORE_KEYS = (
     WIZARD_HOOKS_FAILED,
     WIZARD_ABORTED,
     WIZARD_NEXT,
+    SETUP_NO_SOURCE,
+    SETUP_PROMPT_SOURCE,
+    SETUP_NOT_TTY,
+    SETUP_GIT_FAILED,
+    SETUP_COMMITTED,
+    SETUP_STOPPED,
+    SETUP_DONE,
     DOCTOR_CONFIG_OK,
     DOCTOR_CONFIG_FAIL,
     DOCTOR_SERVICES_NONE,
