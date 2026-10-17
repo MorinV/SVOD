@@ -4,7 +4,7 @@ kind: feature
 services: [svod]
 parent:
 tags: [release, engine, template-standard]
-status: open
+status: done
 ---
 
 # Release Svod 0.5

@@ -7,3 +7,5 @@
 {"at": "2026-10-17T14:12:37+00:00", "event": "step_passed", "subject": "work/features/0.5-release", "pipeline": "feature", "step": "approve", "facts": {}}
 {"at": "2026-10-17T14:12:37+00:00", "event": "step_passed", "subject": "work/features/0.5-release", "pipeline": "feature", "step": "children", "facts": {}}
 {"at": "2026-10-17T14:12:37+00:00", "event": "position_changed", "subject": "work/features/0.5-release", "pipeline": "feature", "step": "integration", "facts": {"from": "approve", "to": "integration"}}
+{"at": "2026-10-17T14:14:07+00:00", "event": "action_run", "subject": "work/features/0.5-release", "pipeline": "feature", "step": null, "facts": {"action": "checks", "code": 0, "seconds": 84.436}}
+{"at": "2026-10-17T14:14:13+00:00", "event": "position_changed", "subject": "work/features/0.5-release", "pipeline": "feature", "step": null, "facts": {"from": "integration", "to": null}}
