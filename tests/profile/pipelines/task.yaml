@@ -40,6 +40,7 @@ steps:
     gates: [ { gate: approval, params: { marker: approved, file: .openspec.yaml }, label: mark.approved } ]
   - id: build
     role: builder
+    action: start-task
     text: task.step.build
     gates: [ { gate: progress, label: mark.progress } ]
   - id: verify

@@ -36,6 +36,7 @@ CMD_UPDATE = "update"
 CMD_MIGRATE = "migrate"
 CMD_NEW = "new"
 CMD_LOCAL = "local"
+CMD_DO = "do"
 DELIVERY_COMMANDS = (CMD_INSTALL, CMD_UPDATE)
 ERROR_INDENT = "  "
 
@@ -71,6 +72,12 @@ def build_parser() -> StatusParser:
     local = commands.add_parser(CMD_LOCAL, help="run the compact local workflow")
     local.add_argument("action", choices=("prepare", "checks", "verify", "deliver"))
     local.add_argument("query", help="exact task path, name or supported key")
+    do = commands.add_parser(CMD_DO, help="run an action script of the profile for a subject")
+    do.add_argument("name", nargs="?", metavar="action",
+                    help="action name: <profile>/actions/<name>.sh")
+    do.add_argument("query", nargs="?", help="tracker key or subject name, as for status")
+    do.add_argument("extra", nargs="*", help="arguments passed to the script, after --")
+    do.add_argument("--list", action="store_true", help="list the actions of the profile")
     commands.add_parser(CMD_VALIDATE, help="check declarations, locale keys and registries")
     status = commands.add_parser(CMD_STATUS, help="position of a task or container")
     status.add_argument("query", help="tracker key or container name")
@@ -146,6 +153,58 @@ def render(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace) ->
         key = keys.RENDER_WRITTEN if changed else keys.RENDER_CURRENT
         print(ctx.locale.text(key, path=relative_or_absolute(ctx.root, path)))
     return EXIT_OK
+
+
+def do_action(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace) -> int:
+    """List the actions, or run one for the one existing subject the query resolves to.
+
+    Returns the exit code of the script; 2 for an unknown action, a query matching no subject
+    or several, and a script that could not start.
+    """
+    from svod import keys
+    from svod.actions import (ACTION_SUFFIX, ACTION_TIMEOUT, actions_dir, list_actions,
+                              run_action, script_path)
+    from svod.document import relative_or_absolute
+    from svod.resolve import resolve
+
+    locale = ctx.locale
+    if args.list:
+        actions = list_actions(ctx)
+        if not actions:
+            print(locale.text(keys.DO_LIST_NONE,
+                              dir=relative_or_absolute(ctx.root, actions_dir(ctx))))
+        for action in actions:
+            print(locale.text(keys.DO_LIST_ITEM, name=action.name, description=action.description
+                              or locale.text(keys.DO_LIST_NO_DESCRIPTION)))
+        return EXIT_OK
+    if not args.name or not args.query:
+        print(locale.text(keys.DO_USAGE), file=sys.stderr)
+        return EXIT_USAGE
+    if script_path(ctx, args.name) is None:
+        script = actions_dir(ctx) / f"{args.name}{ACTION_SUFFIX}"
+        print(locale.text(keys.DO_UNKNOWN, name=args.name,
+                          script=relative_or_absolute(ctx.root, script)), file=sys.stderr)
+        return EXIT_USAGE
+    found = resolve(ctx, pipelines, args.query)
+    matches = [(p, s) for p, s in found.matches if s.exists]
+    if not matches:
+        print(locale.text(keys.STATUS_NOT_FOUND, query=args.query), file=sys.stderr)
+        return EXIT_USAGE
+    if len(matches) > 1:
+        print_errors(locale.text(keys.STATUS_AMBIGUOUS),
+                     [locale.text(keys.STATUS_CANDIDATE, id=s.id) for _, s in matches])
+        return EXIT_USAGE
+    pipeline, subject = matches[0]
+    try:
+        run = run_action(ctx, args.name, pipeline, subject, args.extra)
+    except OSError as exc:
+        print(locale.text(keys.DO_FAILED, name=args.name, reason=f"{type(exc).__name__}: {exc}"),
+              file=sys.stderr)
+        return EXIT_USAGE
+    if run.timed_out:
+        print(locale.text(keys.DO_TIMEOUT, name=args.name, seconds=ACTION_TIMEOUT),
+              file=sys.stderr)
+    return run.code
 
 
 def ask(prompt: str) -> str:
@@ -282,15 +341,17 @@ def run(args: argparse.Namespace) -> int:
         print_errors(locale.text(keys.ERROR_LOAD), exc.errors)
         return EXIT_USAGE
 
+    ctx = Context(runtime.config, runtime.locale, bindings=runtime.bindings,
+                  pipelines=runtime.by_name())
     if args.command == CMD_VALIDATE:
+        from svod.actions import action_errors
+        copy_errors += action_errors(ctx, runtime.pipelines)
         if copy_errors:
             print_errors(runtime.locale.text(keys.VALIDATE_FAILED, count=len(copy_errors)),
                          copy_errors)
             return EXIT_FINDINGS
         print(runtime.locale.text(keys.VALIDATE_OK, count=len(runtime.pipelines)))
         return EXIT_OK
-    ctx = Context(runtime.config, runtime.locale, bindings=runtime.bindings,
-                  pipelines=runtime.by_name())
     if args.command == CMD_STATUS:
         if getattr(args, "format", "text") == "json":
             from svod.status import collect_status
@@ -301,6 +362,8 @@ def run(args: argparse.Namespace) -> int:
         return emit(status_report(ctx, runtime.pipelines, args.query))
     if args.command == CMD_RENDER:
         return render(ctx, runtime.pipelines, args)
+    if args.command == CMD_DO:
+        return do_action(ctx, runtime.pipelines, args)
     if args.command == CMD_APPROVE:
         from svod.approve import approve
         return emit(approve(ctx, runtime.pipelines, args.query, step=args.step,

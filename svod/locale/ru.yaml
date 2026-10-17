@@ -21,6 +21,7 @@ status:
   not_found: "По запросу ничего не найдено: {query}"
   ambiguous: "Под запрос подходят несколько субъектов:"
   candidate: "{id}"
+  run: "Запустить: svod do {action} {query}"
   mark:
     pass: "+ {label}"
     fail: "- {label}"
@@ -59,6 +60,14 @@ approve:
   confirm_files: "Связанные файлы, версия {sha}:"
   confirm_question: "Одобрить {subject}? [y/N] "
   not_confirmed: "Одобрение {subject} не подтверждено в терминале: ничего не записано"
+do:
+  usage: "Нужны действие и субъект: svod do <действие> <запрос>; список действий: svod do --list"
+  unknown: "Неизвестное действие: {name}, нет скрипта {script}. Список действий: svod do --list"
+  failed: "Действие {name} не запустилось: {reason}"
+  timeout: "Действие {name} шло дольше {seconds} с и остановлено"
+  list_item: "{name} — {description}"
+  list_no_description: "без описания"
+  list_none: "В профиле нет действий: добавить скрипты в {dir}"
 update:
   exists: "В сторе уже есть копия движка (.svod): выполнить svod update"
   missing: "В сторе нет копии движка (.svod): выполнить svod install"

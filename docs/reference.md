@@ -8,6 +8,7 @@
 - A **store** is the directory tree rooted at `svod.yaml`, usually a git repository.
 - A **subject** is one instance the pipeline is evaluated for (a change, a container directory, a document), supplied by a **provider**.
 - A **position** is the result of evaluating a pipeline for one subject: marks, the next step, the code freeze, warnings, order violations.
+- An **action** is a bash script of the profile that `svod do` runs for one subject with its facts in the environment, see [Actions](#actions).
 - The engine reads `svod.yaml` at the store root, loads a **profile** (pipelines, own gates, texts) and answers `status`, `active`, `render` and `validate`; as [hooks](#hooks) of a coding agent it brings the summary and positions into the session and guards the approval and frozen code.
 
 How to read this: every table lists the keys the validator accepts; "req" means the key is required. Anything not listed is rejected with `unknown key`. The code in `svod/` is the source of truth; `tests/profile/` is a complete working profile to copy from.
@@ -151,6 +152,7 @@ violations:
 | `blocks_code` | no | bool / `false` | while the position is at or before this step, `status` prints the code freeze line |
 | `role` | no | string | who does the step; resolved to a skill by the [bindings file](#bindings-file) |
 | `when` | no | identifier matching the step-id syntax | apply the entire step only when `subject.attrs[when]` is truthy; missing means false |
+| `action` | no | identifier matching the step-id syntax | name of a script `<profile>/actions/<action>.sh` that takes the step; while the step is the position of an existing subject, `status` prints `status.run` (`svod do <action> <id>`) after the next step and its skill; `validate` checks that the script exists, see [Actions](#actions) |
 
 Constraints:
 
@@ -165,6 +167,11 @@ Constraints:
   blocks_code: true
   text: task.step.approve
   gates: [ { gate: approval, params: { marker: approved, file: meta.yaml }, label: mark.approved } ]
+- id: build
+  role: builder
+  action: start-task
+  text: task.step.build
+  gates: [ { gate: progress, label: mark.progress } ]
 - id: close
   role: closer
   text: project.step.close
@@ -432,6 +439,44 @@ roles:
     - { skill: ext-check, external: true }
 ```
 
+## Actions
+
+An action is routine work of a step written once as a bash script of the profile, so the agent runs one command (`svod do start-task PROJ-1`) instead of reasoning through the same five steps every time. Actions run on Linux and macOS.
+
+- **Format.** `<profile>/actions/<name>.sh`, where `<name>` matches the step-id syntax `^[a-z][a-z0-9_-]*$`. The executable bit is not needed: the script is run as the argv `bash <script> [extra args]`, without a shell around it. The first non-empty line after the shebang, when it is a comment, is its description in `svod do --list`.
+- **Run.** `svod do <action> <query> [-- extra args]` resolves the query as `status` does (exact name, then tracker key, then substring, in the store and its other checkouts) and needs exactly one existing subject. The working directory is the store root; the output goes to the terminal as it is, not captured; the exit code of the script is the exit code of `svod do`. A script running longer than 600 s is stopped with its process group, `do.timeout` is printed and the exit code is 124. The run is meant for the evidence journal (`svod.actions.record_run`), a no-op until it lands.
+- **Step.** A step may name its action with `action: <name>` (see [Step](#step)): `svod status` then prints `status.run` with the command for the subject, and `validate` reports a step whose script does not exist.
+
+Environment of the script: the environment of `svod`, without inherited `SVOD_SERVICE_*` and `SVOD_FM_*`, plus:
+
+| variable | value |
+|---|---|
+| `SVOD_ROOT` | absolute path of the store root |
+| `SVOD_ID` | id of the subject (what `status` prints in its header) |
+| `SVOD_KEY` | the first tracker key of the subject in sorted order, or empty |
+| `SVOD_PIPELINE` | name of the subject's pipeline |
+| `SVOD_KIND` | frontmatter field `kind` of the subject, or empty |
+| `SVOD_SERVICES` | frontmatter field `services` (a list or a comma separated string), joined by commas, or empty |
+| `SVOD_SERVICE_<NAME>` | absolute path of every service declared in `svod.yaml` `services` (a path, or a mapping with `path`), the name in upper case with every sign other than a letter, digit or `_` as `_` |
+| `SVOD_SUBJECT_PATH` | absolute path of the subject (in the checkout that holds its version), or empty |
+| `SVOD_LOCALE` | the locale of the store |
+| `SVOD_FM_<NAME>` | every other scalar frontmatter field (strings, numbers, `true`/`false`, dates as ISO, empty for `null`), named as services are; lists and mappings are left out |
+
+**Idempotence is the script's job.** The engine does not remember that an action ran; the position comes from files and git. Every script first checks whether its work is already done (the branch exists, the file is written, the directory is created) and then says so and exits 0, so running it twice, or after a session that stopped half way, is safe. Exit non-zero only for a real failure, with a message on stderr saying what to do.
+
+```bash
+# profile/actions/start-task.sh
+# Start the work on a task: write its work note once.
+set -eu
+note="$SVOD_SUBJECT_PATH/work.md"
+if [ -f "$note" ]; then
+  echo "already started: $note"
+  exit 0
+fi
+printf '# Work on %s (%s)\n' "$SVOD_ID" "${SVOD_KEY:-no key}" > "$note"
+echo "started: $note"
+```
+
 ## Locale
 
 - Core strings: `svod/locale/<locale>.yaml` inside the package (`en`, `ru`). Profile strings: `<profile>/locale/<locale>.yaml`.
@@ -461,6 +506,7 @@ Core keys (all required in every core locale file):
 | `status.violation` | `{later}`, `{earlier}` |
 | `status.not_found` | `{query}` |
 | `status.candidate` | `{id}` |
+| `status.run` | `{action}`, `{query}` (the subject id, quoted for the shell when needed) |
 | `status.mark.pass`, `status.mark.fail`, `status.mark.unknown` | `{label}` |
 | `active.mine_active`, `active.mine_idle`, `active.theirs`, `active.no_keys`, `active.hook_tail`, `active.no_identity` | — |
 | `active.no_local_config` | `{file}` |
@@ -499,6 +545,12 @@ Core keys (all required in every core locale file):
 | `approve.confirm_plan` | `{subject}`, `{step}`, `{marker}`, `{file}` |
 | `approve.confirm_files` | `{sha}` |
 | `approve.confirm_question`, `approve.not_confirmed` | `{subject}` |
+| `do.usage`, `do.list_no_description` | — |
+| `do.unknown` | `{name}`, `{script}` |
+| `do.failed` | `{name}`, `{reason}` |
+| `do.timeout` | `{name}`, `{seconds}` |
+| `do.list_item` | `{name}`, `{description}` |
+| `do.list_none` | `{dir}` |
 | `gate.exists`, `gate.archived`, `gate.git_pushed` | — |
 | `gate.artifact_path` | `{path}` |
 | `gate.artifact_glob` | `{glob}`, `{min}` |
@@ -616,6 +668,7 @@ gate:
 | `render <pipeline>` | `--write` | prints the documentation block, or writes it between the markers | 0, 1 no markers, 2 unknown pipeline |
 | `approve <query>` | `--step <id>`, `--confirm` | records the ready selected applicable approval with date, approver and digest, consuming this subject's mark keys; refuses changed-after-answer inputs; with `--confirm` and no fresh mark asks the person at a terminal, see [Approval by a person](#approval-by-a-person); nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
 | `new <directory>` | `--template local\|task` | creates an absent directory from installed templates without a pre-existing store; default local, never merges or overwrites | 0 created, 1 refused |
+| `do <action> <query> [-- args]` | `--list` | runs the [action](#actions) script `<profile>/actions/<action>.sh` for the one existing subject the query resolves to, in the store root, with the output not captured; extra args after `--` go to the script; `--list` prints every action with its description | the exit code of the script (124 after the timeout); 2 unknown action, missing arguments, not found, ambiguous or the script did not start |
 | `local <action> <query>` | — | `prepare` diagnoses readiness, `checks` runs the chosen argv, `verify` validates the live result, `deliver` records and reads back local completion; see [local-workflow.md](local-workflow.md) | 0 success, 1 failed/refused, 2 invalid root/load/arguments |
 | `hook <event>` | — | answers one agent hook event, `session-start`, `prompt` or `pre-tool`, read as JSON on stdin; see [Hooks](#hooks) | 0 always |
 | `init` | `--login`, `--email`, `--force` | writes the local config; without `--login` asks at a terminal, and fails without one; the email defaults to `git config user.email`; an existing file is kept unless `--force` | 0 written, 1 exists, 2 no login or no `local_config` |

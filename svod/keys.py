@@ -20,6 +20,7 @@ STATUS_VIOLATION = "status.violation"
 STATUS_NOT_FOUND = "status.not_found"
 STATUS_AMBIGUOUS = "status.ambiguous"
 STATUS_CANDIDATE = "status.candidate"
+STATUS_RUN = "status.run"
 MARK_PASS = "status.mark.pass"
 MARK_FAIL = "status.mark.fail"
 MARK_UNKNOWN = "status.mark.unknown"
@@ -54,6 +55,13 @@ APPROVE_CONFIRM_PLAN = "approve.confirm_plan"
 APPROVE_CONFIRM_FILES = "approve.confirm_files"
 APPROVE_CONFIRM_QUESTION = "approve.confirm_question"
 APPROVE_NOT_CONFIRMED = "approve.not_confirmed"
+DO_USAGE = "do.usage"
+DO_UNKNOWN = "do.unknown"
+DO_FAILED = "do.failed"
+DO_TIMEOUT = "do.timeout"
+DO_LIST_ITEM = "do.list_item"
+DO_LIST_NO_DESCRIPTION = "do.list_no_description"
+DO_LIST_NONE = "do.list_none"
 
 UPDATE_EXISTS = "update.exists"
 UPDATE_MISSING = "update.missing"
@@ -160,6 +168,7 @@ CORE_KEYS = (
     STATUS_NOT_FOUND,
     STATUS_AMBIGUOUS,
     STATUS_CANDIDATE,
+    STATUS_RUN,
     MARK_PASS,
     MARK_FAIL,
     MARK_UNKNOWN,
@@ -194,6 +203,13 @@ CORE_KEYS = (
     APPROVE_CONFIRM_FILES,
     APPROVE_CONFIRM_QUESTION,
     APPROVE_NOT_CONFIRMED,
+    DO_USAGE,
+    DO_UNKNOWN,
+    DO_FAILED,
+    DO_TIMEOUT,
+    DO_LIST_ITEM,
+    DO_LIST_NO_DESCRIPTION,
+    DO_LIST_NONE,
     UPDATE_EXISTS,
     UPDATE_MISSING,
     UPDATE_FETCH_FAILED,

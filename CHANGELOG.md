@@ -8,6 +8,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ### Added
 
+- Actions: `svod do <action> <query> [-- args]` runs the bash script `<profile>/actions/<action>.sh` for one subject in the store root with `SVOD_*` variables (id, key, pipeline, kind, services, frontmatter, service paths), `svod do --list` lists them, a step may declare `action:` (checked by `validate`, offered by `status` as `status.run`); new core keys `status.run` and `do.*`.
 - `svod approve <query> --confirm` records an approval that a person confirms with y at a terminal when there is no fresh mark, for agents without a prompt hook; all YAML is read by one loader that refuses repeated keys, and the approval fields are read and written only through `svod.approval.read_fields` and `write_fields`.
 
 ### Changed
