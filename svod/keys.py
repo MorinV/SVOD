@@ -68,6 +68,55 @@ DO_TIMEOUT = "do.timeout"
 DO_LIST_ITEM = "do.list_item"
 DO_LIST_NO_DESCRIPTION = "do.list_no_description"
 DO_LIST_NONE = "do.list_none"
+WIZARD_NOT_TTY = "wizard.not_tty"
+WIZARD_PROMPT_LOGIN = "wizard.prompt_login"
+WIZARD_SERVICES_CURRENT = "wizard.services_current"
+WIZARD_PROMPT_SERVICE = "wizard.prompt_service"
+WIZARD_PROMPT_PATH = "wizard.prompt_path"
+WIZARD_BAD_SERVICE = "wizard.bad_service"
+WIZARD_BAD_PAIR = "wizard.bad_pair"
+WIZARD_PROMPT_AUTONOMY = "wizard.prompt_autonomy"
+WIZARD_BAD_LEVEL = "wizard.bad_level"
+WIZARD_UNKNOWN_PIPELINE = "wizard.unknown_pipeline"
+WIZARD_PROMPT_CHECKS = "wizard.prompt_checks"
+WIZARD_CHECKS_AUTO = "wizard.checks_auto"
+WIZARD_BAD_CHECKS = "wizard.bad_checks"
+WIZARD_UNKNOWN_SERVICE = "wizard.unknown_service"
+WIZARD_PROMPT_HOOKS = "wizard.prompt_hooks"
+WIZARD_BAD_HOOKS = "wizard.bad_hooks"
+WIZARD_WRITTEN = "wizard.written"
+WIZARD_UNCHANGED = "wizard.unchanged"
+WIZARD_WRITE_FAILED = "wizard.write_failed"
+WIZARD_HOOKS_MANUAL = "wizard.hooks_manual"
+WIZARD_HOOKS_FAILED = "wizard.hooks_failed"
+WIZARD_ABORTED = "wizard.aborted"
+WIZARD_NEXT = "wizard.next"
+DOCTOR_CONFIG_OK = "doctor.config_ok"
+DOCTOR_CONFIG_FAIL = "doctor.config_fail"
+DOCTOR_SERVICES_NONE = "doctor.services_none"
+DOCTOR_SERVICE_OK = "doctor.service_ok"
+DOCTOR_SERVICE_MISSING = "doctor.service_missing"
+DOCTOR_SERVICE_NOT_GIT = "doctor.service_not_git"
+DOCTOR_HOOKS_OK = "doctor.hooks_ok"
+DOCTOR_HOOKS_NONE = "doctor.hooks_none"
+DOCTOR_HOOKS_PARTIAL = "doctor.hooks_partial"
+DOCTOR_HOOKS_PYTHON = "doctor.hooks_python"
+DOCTOR_HOOKS_UNREADABLE = "doctor.hooks_unreadable"
+DOCTOR_COPY_NONE = "doctor.copy_none"
+DOCTOR_COPY_OK = "doctor.copy_ok"
+DOCTOR_VERSION_OK = "doctor.version_ok"
+DOCTOR_VERSION_NEWER = "doctor.version_newer"
+DOCTOR_VERSION_UNCHECKED = "doctor.version_unchecked"
+DOCTOR_EVIDENCE_OK = "doctor.evidence_ok"
+DOCTOR_EVIDENCE_OFF = "doctor.evidence_off"
+DOCTOR_EVIDENCE_FAIL = "doctor.evidence_fail"
+DOCTOR_KNOWLEDGE_OK = "doctor.knowledge_ok"
+DOCTOR_KNOWLEDGE_NONE = "doctor.knowledge_none"
+DOCTOR_KNOWLEDGE_STALE = "doctor.knowledge_stale"
+DOCTOR_LOCAL_OK = "doctor.local_ok"
+DOCTOR_LOCAL_MISSING = "doctor.local_missing"
+DOCTOR_LOCAL_INVALID = "doctor.local_invalid"
+DOCTOR_LOCAL_NOT_CONFIGURED = "doctor.local_not_configured"
 
 UPDATE_EXISTS = "update.exists"
 UPDATE_MISSING = "update.missing"
@@ -236,6 +285,55 @@ CORE_KEYS = (
     DO_LIST_ITEM,
     DO_LIST_NO_DESCRIPTION,
     DO_LIST_NONE,
+    WIZARD_NOT_TTY,
+    WIZARD_PROMPT_LOGIN,
+    WIZARD_SERVICES_CURRENT,
+    WIZARD_PROMPT_SERVICE,
+    WIZARD_PROMPT_PATH,
+    WIZARD_BAD_SERVICE,
+    WIZARD_BAD_PAIR,
+    WIZARD_PROMPT_AUTONOMY,
+    WIZARD_BAD_LEVEL,
+    WIZARD_UNKNOWN_PIPELINE,
+    WIZARD_PROMPT_CHECKS,
+    WIZARD_CHECKS_AUTO,
+    WIZARD_BAD_CHECKS,
+    WIZARD_UNKNOWN_SERVICE,
+    WIZARD_PROMPT_HOOKS,
+    WIZARD_BAD_HOOKS,
+    WIZARD_WRITTEN,
+    WIZARD_UNCHANGED,
+    WIZARD_WRITE_FAILED,
+    WIZARD_HOOKS_MANUAL,
+    WIZARD_HOOKS_FAILED,
+    WIZARD_ABORTED,
+    WIZARD_NEXT,
+    DOCTOR_CONFIG_OK,
+    DOCTOR_CONFIG_FAIL,
+    DOCTOR_SERVICES_NONE,
+    DOCTOR_SERVICE_OK,
+    DOCTOR_SERVICE_MISSING,
+    DOCTOR_SERVICE_NOT_GIT,
+    DOCTOR_HOOKS_OK,
+    DOCTOR_HOOKS_NONE,
+    DOCTOR_HOOKS_PARTIAL,
+    DOCTOR_HOOKS_PYTHON,
+    DOCTOR_HOOKS_UNREADABLE,
+    DOCTOR_COPY_NONE,
+    DOCTOR_COPY_OK,
+    DOCTOR_VERSION_OK,
+    DOCTOR_VERSION_NEWER,
+    DOCTOR_VERSION_UNCHECKED,
+    DOCTOR_EVIDENCE_OK,
+    DOCTOR_EVIDENCE_OFF,
+    DOCTOR_EVIDENCE_FAIL,
+    DOCTOR_KNOWLEDGE_OK,
+    DOCTOR_KNOWLEDGE_NONE,
+    DOCTOR_KNOWLEDGE_STALE,
+    DOCTOR_LOCAL_OK,
+    DOCTOR_LOCAL_MISSING,
+    DOCTOR_LOCAL_INVALID,
+    DOCTOR_LOCAL_NOT_CONFIGURED,
     UPDATE_EXISTS,
     UPDATE_MISSING,
     UPDATE_FETCH_FAILED,

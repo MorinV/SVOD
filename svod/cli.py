@@ -39,6 +39,7 @@ CMD_NEW = "new"
 CMD_LOCAL = "local"
 CMD_DO = "do"
 CMD_KNOWLEDGE = "knowledge"
+CMD_DOCTOR = "doctor"
 KNOWLEDGE_INDEX = "index"
 KNOWLEDGE_ADD = "add"
 KNOWLEDGE_NOTE = "note"
@@ -113,6 +114,9 @@ def build_parser() -> StatusParser:
     init.add_argument("--login", help="login of the person")
     init.add_argument("--email", help="email of the person, git user.email by default")
     init.add_argument("--force", action="store_true", help="overwrite an existing local config")
+    add_wizard_arguments(init)
+    doctor = commands.add_parser(CMD_DOCTOR, help="check that the store is ready to work in")
+    doctor.add_argument("--format", choices=("text", "json"), default="text")
     for name, text in ((CMD_INSTALL, "put a copy of the engine into the store (.svod)"),
                        (CMD_UPDATE, "replace the copy of the engine in the store")):
         delivery = commands.add_parser(name, help=text)
@@ -125,6 +129,21 @@ def build_parser() -> StatusParser:
     migrate.add_argument("--since", required=True, help="version the store was used with")
     add_knowledge_parser(commands)
     return parser
+
+
+def add_wizard_arguments(init: argparse.ArgumentParser) -> None:
+    """The flags of svod init --wizard; any of them runs the wizard without a terminal."""
+    from svod.wizard import HOOKS_CHOICES
+    init.add_argument("--wizard", action="store_true",
+                      help="ask for the services, autonomy, checks and hooks too")
+    init.add_argument("--service", dest="services", action="append", metavar="NAME=PATH",
+                      help="a service repository next to the store; repeatable")
+    init.add_argument("--autonomy", action="append", metavar="PIPELINE=LEVEL",
+                      help="guided, supervised or autonomous for a pipeline; repeatable")
+    init.add_argument("--checks", action="append", metavar="SERVICE=COMMAND",
+                      help="the check command of a service; repeatable")
+    init.add_argument("--hooks", choices=HOOKS_CHOICES,
+                      help="register the Claude Code hooks for the project, globally, or not")
 
 
 def add_knowledge_parser(commands: argparse._SubParsersAction) -> None:
@@ -248,13 +267,19 @@ def ask(prompt: str) -> str:
 
 
 def init_local(root: Path, args: argparse.Namespace) -> int:
-    """Create the local config from the arguments, asking at a terminal when no login is given."""
+    """Create the local config from the arguments, asking at a terminal when no login is given.
+
+    --wizard, or any flag of the wizard, runs svod.wizard instead.
+    """
     from svod import keys
     from svod.config import FIELD_LOCAL_CONFIG, LOCAL_EMAIL, LOCAL_LOGIN, load_config, write_local
     from svod.context import Context
     from svod.errors import LoadError
     from svod.identity import git_email
 
+    from svod.wizard import WIZARD_FLAGS, wizard
+    if args.wizard or any(getattr(args, name) for name in WIZARD_FLAGS):
+        return wizard(root, args)
     locale = error_locale(root)
     try:
         config = load_config(root, local=False)
@@ -382,6 +407,9 @@ def run(args: argparse.Namespace) -> int:
         return EXIT_USAGE
     if args.command == CMD_INIT:
         return init_local(root, args)
+    if args.command == CMD_DOCTOR:
+        from svod.doctor import doctor
+        return doctor(root, args.format)
     if args.command in DELIVERY_COMMANDS:
         from svod.update import deliver
         return deliver(root, error_locale(root), args.command == CMD_INSTALL, args.source,
