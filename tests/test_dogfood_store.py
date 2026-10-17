@@ -79,7 +79,7 @@ class DogfoodStoreTest(unittest.TestCase):
             card = (self.store / record / "card.md").read_text(encoding="utf-8")
             listed = f"- {record} - " in done.stdout
             self.assertEqual(listed, "status: done" not in card, record)
-        self.assertIn("Features:", done.stdout)
+        self.assertIn("Research:", done.stdout)
 
     def test_no_absolute_paths(self):
         """No committed file of the store holds an absolute path of this machine."""
