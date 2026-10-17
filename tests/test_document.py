@@ -3,11 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import (EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, StoreTestCase, TempStore,
+from support import (EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, StoreTestCase, TempStore, core_text,
                      make_profile)
 
+from svod import keys
 from svod.context import Context
-from svod.document import block, stale_blocks
+from svod.document import MARKER_BEGIN, RENDER_COMMAND, block, stale_blocks
 from svod.errors import LoadError
 from svod.gates import CORE_GATES
 from svod.loader import load_runtime
@@ -68,8 +69,9 @@ class RenderTest(StoreTestCase):
         """Markers, generated note, flowchart with styles, legend and step table."""
         lines = self.lines("task")
         self.assertEqual((lines[0], lines[-1]), (BEGIN, END))
-        self.assertIn("pipelines/task.yaml: edit it there, then run svod render task --write",
-                      lines[1])
+        for token in ("pipelines/task.yaml", RENDER_COMMAND.format(name="task")):
+            with self.subTest(token=token):
+                self.assertIn(token, lines[1])
         for line in FLOW_LINES + TASK_ROWS:
             with self.subTest(line=line):
                 self.assertIn(line, lines)
@@ -83,7 +85,7 @@ class RenderTest(StoreTestCase):
         self.assertEqual(out.stdout.rstrip("\n").split("\n"), self.lines("task"))
         unknown = self.sb.cli("render", "ghost")
         self.assertEqual(unknown.returncode, EXIT_USAGE)
-        self.assertIn("Unknown pipeline: ghost", unknown.stderr)
+        self.assertIn(core_text(keys.RENDER_UNKNOWN, name="ghost"), unknown.stderr)
 
     def test_write(self):
         """--write replaces the content between markers only, skipping excluded and hidden trees."""
@@ -91,7 +93,7 @@ class RenderTest(StoreTestCase):
             self.sb.write(rel, marked("stale\n"))
         out = self.sb.cli("render", "task", "--write")
         self.assertEqual(out.returncode, EXIT_OK, out.stderr)
-        self.assertEqual(out.stdout, f"Updated: {DOC}\n")
+        self.assertEqual(out.stdout, core_text(keys.RENDER_WRITTEN, path=DOC) + "\n")
         body = "\n".join(self.lines("task")[1:-1]) + "\n"
         self.assertEqual((self.sb.store / DOC).read_text(encoding="utf-8"), marked(body))
         for rel in (EXCLUDED, HIDDEN):
@@ -99,10 +101,10 @@ class RenderTest(StoreTestCase):
                 self.assertEqual((self.sb.store / rel).read_text(encoding="utf-8"),
                                  marked("stale\n"))
         again = self.sb.cli("render", "task", "--write")
-        self.assertEqual(again.stdout, f"Up to date: {DOC}\n")
+        self.assertEqual(again.stdout, core_text(keys.RENDER_CURRENT, path=DOC) + "\n")
         none = self.sb.cli("render", "note", "--write")
         self.assertEqual(none.returncode, EXIT_FINDINGS)
-        self.assertIn("<!-- pipeline:note:begin -->", none.stderr)
+        self.assertIn(MARKER_BEGIN.format(name="note"), none.stderr)
 
     def test_stale_blocks(self):
         """A block differing from the rendering and a block of an unknown pipeline are stale."""

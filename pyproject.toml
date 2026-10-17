@@ -20,3 +20,6 @@ include = ["svod*"]
 
 [tool.setuptools.package-data]
 svod = ["locale/*.yaml", "templates/**/*", "templates/**/.gitignore"]
+
+[tool.coverage.run]
+source = ["svod"]

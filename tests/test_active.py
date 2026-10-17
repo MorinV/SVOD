@@ -3,27 +3,35 @@ import json
 import unittest
 from pathlib import Path
 
-from support import (EXIT_OK, EXIT_USAGE, MAIN_BRANCH, OTHER_PEER, PEER, REMOTE,
+from support import (EXIT_OK, EXIT_USAGE, MAIN_BRANCH, OTHER_PEER, PEER, REMOTE, TEST_PROFILE,
                      SharedStoreTestCase, StoreTestCase, doc)
 
+from svod import keys
 from svod.active import summarize
 from svod.context import Context
 from svod.loader import load_runtime
+from svod.locale import FALLBACK_LOCALE, load_locale
 from svod.position import position
-from svod.render import render_position
+from svod.render import INDENT, KEYS_SEPARATOR, render_position
 from svod.providers.openspec_change import DEFAULT_ARCHIVE, DEFAULT_ROOT, METADATA_FILE
 
 CHANGES = Path(DEFAULT_ROOT)
 ORDER = "active_order"
-HDR_ACTIVE = "Your work in progress:"
-HDR_IDLE = "Your work without progress:"
-HDR_TEAM = "In progress for the team:"
-HDR_NOTES = "Your open notes:"
-HDR_TEAM_NOTES = "Team notes:"
-STEP_BUILD = "start building in a workspace"
-STEP_VERIFY = "run the mandatory cases, report in the change"
-STEP_REVIEW = "decide whether to continue"
-HDR_WORKTREE = "In progress in the checkout {dir}:"
+TEXTS = load_locale(FALLBACK_LOCALE, TEST_PROFILE)
+HDR_ACTIVE = TEXTS.text(keys.ACTIVE_MINE_ACTIVE)
+HDR_IDLE = TEXTS.text(keys.ACTIVE_MINE_IDLE)
+HDR_TEAM = TEXTS.text(keys.ACTIVE_THEIRS)
+HDR_NOTES = TEXTS.text("note.active.mine")
+STEP_BUILD = TEXTS.text("task.step.build")
+STEP_VERIFY = TEXTS.text("task.step.verify")
+STEP_APPROVE = TEXTS.text("task.step.approve")
+STEP_REVIEW = TEXTS.text("note.step.review")
+NO_KEY = TEXTS.text(keys.ACTIVE_NO_KEYS)
+HDR_WORKTREE = TEXTS.text_template(keys.ACTIVE_WORKTREE)
+HDR_TEAM_NOTES = TEXTS.text("note.active.theirs")
+STEP_PREFIX, STEP_SUFFIX = TEXTS.text_template(keys.STATUS_NEXT_STEP).split("{step}")
+CLOSED_NOTE = "Closed"
+ARCHIVED_NOTE = "Archived"
 
 
 def change(sb, name, key=None, progress=None, approved=True, archived=False):
@@ -37,9 +45,21 @@ def change(sb, name, key=None, progress=None, approved=True, archived=False):
         sb.write(root / "progress.txt", progress)
 
 
-def line(name, keys, step):
+def line(name, task_keys, step):
     """Summary line of a task."""
-    return f"  - {name} ({keys}) - {step}"
+    return INDENT + TEXTS.text(keys.ACTIVE_ITEM, id=name, keys=task_keys, step=step)
+
+
+def note_line(name, step):
+    """Summary line of a note."""
+    return INDENT + TEXTS.text("note.active.item", id=name, step=step)
+
+
+def collapsed(key, *authors):
+    """Collapsed team line of a pipeline: (author, count) pairs in the order printed."""
+    who = KEYS_SEPARATOR.join(TEXTS.text(keys.ACTIVE_AUTHOR_COUNT, author=a, count=n)
+                              for a, n in authors)
+    return TEXTS.text(key, count=sum(n for _, n in authors), who=who)
 
 
 def section(lines, header):
@@ -92,14 +112,14 @@ class ActiveSummaryTest(SharedStoreTestCase):
         ])
         self.assertEqual(section(self.lines, HDR_IDLE), [
             line("c-2", "tk-2", STEP_VERIFY),
-            line("c-3", "no key", "get the plan approved"),
+            line("c-3", NO_KEY, STEP_APPROVE),
         ])
         self.assertNotIn("c-9", self.out.stdout)
 
     def test_team_collapsed_and_expanded(self):
         """Team work is one line per pipeline by default, expanded with --all."""
-        self.assertIn("In progress for the team: 3 (Another Peer - 1, Peer Person - 2)"
-                      " · expand: svod active --all", self.lines)
+        self.assertIn(collapsed(keys.ACTIVE_THEIRS_COLLAPSED, (OTHER_PEER[1], 1), (PEER[1], 2)),
+                      self.lines)
         self.assertNotIn("c-4", self.out.stdout)
         self.assertEqual(section(self.lines_all, HDR_TEAM), [
             line("c-4", "tk-4", STEP_BUILD),
@@ -109,13 +129,13 @@ class ActiveSummaryTest(SharedStoreTestCase):
 
     def test_pipeline_headings_item_and_order(self):
         """The note pipeline uses its own headings and item, after the task pipeline."""
-        self.assertEqual(section(self.lines, HDR_NOTES), [f"  - 001 Mine: {STEP_REVIEW}"])
-        self.assertIn("Team notes: 1 (Peer Person - 1)", self.lines)
+        self.assertEqual(section(self.lines, HDR_NOTES), [note_line("001 Mine", STEP_REVIEW)])
+        self.assertIn(collapsed("note.active.theirs_collapsed", (PEER[1], 1)), self.lines)
         self.assertEqual(section(self.lines_all, HDR_TEAM_NOTES),
-                         [f"  - 004 Theirs: {STEP_REVIEW}"])
+                         [note_line("004 Theirs", STEP_REVIEW)])
         self.assertLess(self.lines.index(HDR_ACTIVE), self.lines.index(HDR_NOTES))
-        self.assertNotIn("Closed", self.out.stdout)
-        self.assertNotIn("Archived", self.out.stdout)
+        self.assertNotIn(CLOSED_NOTE, self.out.stdout)
+        self.assertNotIn(ARCHIVED_NOTE, self.out.stdout)
 
     def test_hook(self):
         """--hook wraps the same text in SessionStart JSON with the status hint."""
@@ -125,7 +145,7 @@ class ActiveSummaryTest(SharedStoreTestCase):
         self.assertEqual(payload["hookEventName"], "SessionStart")
         text = payload["additionalContext"]
         self.assertTrue(text.startswith(self.out.stdout.rstrip("\n")))
-        self.assertTrue(text.endswith("svod status <query>"))
+        self.assertTrue(text.endswith(TEXTS.text(keys.ACTIVE_HOOK_TAIL)))
 
     def test_rule7_active_and_status_agree(self):
         """Each summary step is the status next step of the same subject."""
@@ -138,8 +158,9 @@ class ActiveSummaryTest(SharedStoreTestCase):
                 continue
             with self.subTest(change=subject.id):
                 status = render_position(runtime.locale, position(ctx, pipeline, subject))
-                step = next(s for s in status if s.startswith("  Next step: "))
-                step = step.removeprefix("  Next step: ").removesuffix(".")
+                lead, tail = INDENT + STEP_PREFIX, STEP_SUFFIX
+                step = next(s for s in status if s.startswith(lead))
+                step = step.removeprefix(lead).removesuffix(tail)
                 item = next(s for s in summary if s.startswith(f"  - {subject.id} ("))
                 self.assertTrue(item.endswith(f") - {step}"), item)
 
@@ -184,7 +205,7 @@ class ActiveWorktreeTest(SharedStoreTestCase):
         self.assertEqual(section(self.lines, HDR_WORKTREE.format(dir=self.EDITED)),
                          [line("c-1", "tk-1", STEP_VERIFY)])
         self.assertEqual(section(self.lines, HDR_WORKTREE.format(dir=self.NOTE)),
-                         [f"  - 005 Draft: {STEP_REVIEW}"])
+                         [note_line("005 Draft", STEP_REVIEW)])
 
     def test_duplicates_and_quiet_checkouts(self):
         """Changed or archived in a checkout: not in the root groups; clean checkouts are silent."""
@@ -213,7 +234,7 @@ class ActiveEdgeTest(StoreTestCase):
         self.sb.commit(message="peer", author=PEER)
         self.sb.git(self.sb.store, "config", "--unset", "user.email")
         out = self.sb.cli("active")
-        self.assertTrue(out.stdout.startswith("Who you are is unknown"), out.stdout)
+        self.assertTrue(out.stdout.startswith(TEXTS.text(keys.ACTIVE_NO_IDENTITY)), out.stdout)
         self.assertIn(HDR_IDLE, out.stdout)
         self.assertNotIn(HDR_TEAM, out.stdout)
 

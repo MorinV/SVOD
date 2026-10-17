@@ -3,8 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import EXIT_OK, TempStore, doc, make_profile
+from support import EXIT_OK, TempStore, core_text, doc, make_profile
 
+from svod import keys
 from svod.context import Context
 from svod.document import block
 from svod.loader import load_runtime
@@ -20,16 +21,20 @@ steps:
     text: box.write
     gates: [ { gate: doc_type, params: { type: onepager } } ]
 """
-LOCALE = """
+WRITE = "write the onepager"
+CLOSE = "close the box"
+CLOSED = "box closed"
+LOCALE = f"""
 box:
-  write: "write the onepager"
-  close: "close the box"
-  done: "box closed"
+  write: "{WRITE}"
+  close: "{CLOSE}"
+  done: "{CLOSED}"
 gate:
-  field_equals: "{name} is {value}"
+  field_equals: "{{name}} is {{value}}"
 """
-PENDING_ROW = ("| done | status is closed | - | when every step passed and it did not: close the box; "
-               "when passed: box closed |")
+PENDING_ROW = (f"| {core_text(keys.DOC_DONE)} | status is closed | - | "
+               f"{core_text(keys.DOC_PENDING_TEXT, text=CLOSE)}; "
+               f"{core_text(keys.DOC_DONE_TEXT, text=CLOSED)} |")
 
 
 class PendingTest(unittest.TestCase):
@@ -53,13 +58,12 @@ class PendingTest(unittest.TestCase):
 
     def test_status(self):
         """Every step passed: pending; a step open: its text; done passed: the done text."""
-        cases = (("open", "Next step: close the box."), ("empty", "Next step: write the onepager."),
-                 ("shut", "Next step: box closed."))
+        cases = (("open", CLOSE), ("empty", WRITE), ("shut", CLOSED))
         for query, text in cases:
             with self.subTest(query=query):
                 out = self.sb.cli("status", query)
                 self.assertEqual(out.returncode, EXIT_OK, out.stderr)
-                self.assertIn(text, out.stdout)
+                self.assertIn(core_text(keys.STATUS_NEXT_STEP, step=text), out.stdout)
 
     def test_render(self):
         """The done row names the pending text before the done text."""

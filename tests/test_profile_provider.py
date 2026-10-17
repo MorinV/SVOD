@@ -5,6 +5,9 @@ from pathlib import Path
 
 from support import EXIT_OK, EXIT_USAGE, TempStore, make_profile
 
+from svod import keys
+from svod.locale import FALLBACK_LOCALE, load_locale
+
 GATES = """
 import re
 
@@ -94,6 +97,7 @@ class ProfileProviderTest(unittest.TestCase):
                                LOCALE, gates={"lite.py": GATES})
         cls.sb = TempStore(profile=profile)
         cls.sb.write("lite.txt", "tk-2\n")
+        cls.texts = load_locale(FALLBACK_LOCALE, profile)
 
     @classmethod
     def tearDownClass(cls):
@@ -110,12 +114,13 @@ class ProfileProviderTest(unittest.TestCase):
         """tk-2: the light position only; tk-3: the missing text and exit 2."""
         out = self.sb.cli("status", "tk-2")
         self.assertEqual(out.returncode, EXIT_OK, out.stderr)
-        self.assertEqual(out.stdout.splitlines()[0], "Light task tk-2")
-        self.assertIn("Next step: do the work.", out.stdout)
+        self.assertEqual(out.stdout.splitlines()[0], self.texts.text("lite.header", id="tk-2"))
+        self.assertIn(self.texts.text(keys.STATUS_NEXT_STEP, step=self.texts.text("lite.work")),
+                      out.stdout)
         self.assertEqual(out.stderr, "")
         out = self.sb.cli("status", "tk-3")
         self.assertEqual(out.returncode, EXIT_USAGE)
-        self.assertEqual(out.stderr.strip(), "Task tk-3: nothing is known.")
+        self.assertEqual(out.stderr.strip(), self.texts.text("task.missing", keys="tk-3"))
 
 
 if __name__ == "__main__":

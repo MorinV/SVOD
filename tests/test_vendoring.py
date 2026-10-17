@@ -1,21 +1,19 @@
 """Copy of the engine kept in a store: install, update, migrations, integrity, launcher, notice."""
 import datetime as dt
 import json
-import os
 import shutil
 import subprocess
 import re
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 import task_example as te
-from support import (CLI_MODULE, CLI_TIMEOUT_SEC, ENCODING, EXIT_FINDINGS, EXIT_OK, EXIT_USAGE,
-                     MAIN_BRANCH, REPO_DIR, TempStore)
+from support import (CLI_ENV, CLI_TIMEOUT_SEC, ENCODING, EXIT_FINDINGS, EXIT_OK, EXIT_USAGE,
+                     MAIN_BRANCH, REPO_DIR, TempStore, child_env, core_lead, core_text)
 
 import svod
-from svod import changelog, migrations, notice, vendor, versions
+from svod import changelog, keys, migrations, notice, vendor, versions
 from svod.config import load_config
 from svod.launcher import LAUNCH_ENV, split_argv
 from svod.locale import load_core_locale
@@ -55,6 +53,10 @@ UNRELEASED = "## [Unreleased]\n\n"
 VERSION_LINE = '__version__ = "{version}"'
 COMMITTER = ("release@example.com", "Release")
 PROJECT_ENV = "CLAUDE_PROJECT_DIR"
+SESSION_ENV = (PROJECT_ENV, LAUNCH_ENV)
+COPIES_DIR = "copies"
+CLI_FILE = "lib/svod/cli.py"
+UPDATE_COMMAND = "svod update"
 STAGING_GLOB = f"{vendor.VENDOR_DIR}-*"
 MISSING_SOURCE = "no-such-source"
 MISSING_REF = "v9.9.9"
@@ -107,20 +109,27 @@ def make_source(sb):
     return source
 
 
+def session_drop(extra):
+    """Session variables a run does not inherit unless the test sets them."""
+    return tuple(name for name in SESSION_ENV if name not in extra)
+
+
 def clean_env(sb, **extra):
-    """Environment of a CLI run: isolated git, no session project, no hand-over mark."""
-    env = dict(os.environ, **sb.env, PYTHONDONTWRITEBYTECODE="1", PYTHONUTF8="1", **extra)
-    for name in (PROJECT_ENV, LAUNCH_ENV):
-        if name not in extra:
-            env.pop(name, None)
+    """Environment of a child process: isolated git, no session project, no hand-over mark."""
+    env = child_env(**sb.env, **CLI_ENV, **extra)
+    for name in session_drop(extra):
+        env.pop(name, None)
     return env
 
 
 def cli(sb, *args, cwd=None, stdin=None, **extra):
-    """Run the installed CLI as a black box."""
-    return subprocess.run([sys.executable, "-m", CLI_MODULE, *args], cwd=str(cwd or sb.store),
-                          env=clean_env(sb, **extra), input=stdin, capture_output=True,
-                          text=True, encoding=ENCODING, timeout=CLI_TIMEOUT_SEC)
+    """Run the CLI in this process with no session project and no hand-over mark."""
+    return sb.cli(*args, cwd=cwd, stdin=stdin, drop=session_drop(extra), **extra)
+
+
+def cli_process(sb, *args, cwd=None, stdin=None, **extra):
+    """Run the installed CLI as a black box in a child process, for the launcher tests."""
+    return sb.cli_process(*args, cwd=cwd, stdin=stdin, drop=session_drop(extra), **extra)
 
 
 def append_line(path):
@@ -296,19 +305,31 @@ class MigrationsTest(unittest.TestCase):
                 self.assertTrue(locale.text(change.key, **change.facts))
 
 
+SHARED_SOURCE = {}
+
+
+def shared_source():
+    """(TempStore holding the source, the source) built once for the module."""
+    if not SHARED_SOURCE:
+        origin = TempStore()
+        SHARED_SOURCE.update(origin=origin, source=make_source(origin))
+    return SHARED_SOURCE["origin"], SHARED_SOURCE["source"]
+
+
+def tearDownModule():
+    """Remove the shared source and the copies saved from it."""
+    if SHARED_SOURCE:
+        SHARED_SOURCE.pop("origin").cleanup()
+        SHARED_SOURCE.clear()
+
+
 class SourceTestCase(unittest.TestCase):
-    """A Svod source repository with two releases, shared by the tests of the class."""
+    """A Svod source repository with two releases, shared by the tests of the module."""
 
     @classmethod
     def setUpClass(cls):
-        """Build the source once."""
-        cls.origin = TempStore()
-        cls.source = make_source(cls.origin)
-
-    @classmethod
-    def tearDownClass(cls):
-        """Remove the source."""
-        cls.origin.cleanup()
+        """Take the source, built once."""
+        cls.origin, cls.source = shared_source()
 
     def setUp(self):
         """A fresh store from the example, in git."""
@@ -321,6 +342,20 @@ class SourceTestCase(unittest.TestCase):
         self.assertEqual(out.returncode, EXIT_OK, out.stdout + out.stderr)
         return out
 
+    def restore(self, ref=OLD_TAG):
+        """Put a pristine copy of the release into the store, installing it once per class.
+
+        A copy does not depend on the store it was built in, so later tests reuse it instead
+        of cloning and validating again.
+        """
+        saved = self.origin.root / COPIES_DIR / ref
+        shutil.rmtree(vendor_dir(self.sb.store), ignore_errors=True)
+        if not saved.is_dir():
+            self.install(ref)
+            shutil.copytree(vendor_dir(self.sb.store), saved)
+            return
+        shutil.copytree(saved, vendor_dir(self.sb.store))
+
 
 class DeliveryTest(SourceTestCase):
     """install and update between two releases of a source repository."""
@@ -330,7 +365,8 @@ class DeliveryTest(SourceTestCase):
         head = self.sb.git(self.sb.store, "rev-parse", "HEAD")
         self.sb.write(LEGACY_FILE, "notes\n")
         out = self.install()
-        self.assertIn(f"Svod {OLD} ({OLD_TAG}) is copied into .svod", out.stdout)
+        self.assertIn(core_text(keys.UPDATE_INSTALLED, new=OLD, ref=OLD_TAG,
+                                path=vendor.VENDOR_DIR), out.stdout)
         stamp = vendor.read_stamp(self.sb.store)
         self.assertEqual(stamp, vendor.Stamp(OLD, str(self.source.resolve()), OLD_TAG))
         self.assertTrue((package_dir(self.sb.store) / "locale" / "en.yaml").is_file())
@@ -346,10 +382,13 @@ class DeliveryTest(SourceTestCase):
         self.assertEqual(out.returncode, EXIT_OK, out.stdout + out.stderr)
         self.assertEqual(vendor.read_stamp(self.sb.store).version, NEW)
         self.assertEqual(vendor.read_stamp(self.sb.store).ref, NEW_TAG)
-        for expected in (f"{OLD} -> {NEW}", f"Migration {NEW}:",
-                         f"{LEGACY_FILE} renamed to {RENAMED_FILE}", "Configuration is valid",
-                         f"Changes from {OLD} to {NEW}:", f"## [{NEW}]", MIGRATION_NOTE,
-                         "Nothing is committed"):
+        for expected in (core_text(keys.UPDATE_UPDATED, old=OLD, new=NEW, ref=NEW_TAG,
+                                   path=vendor.VENDOR_DIR),
+                         core_text(keys.MIGRATE_VERSION, version=NEW),
+                         core_text(keys.MIGRATE_RENAMED_FILE, old=LEGACY_FILE, new=RENAMED_FILE),
+                         core_lead(keys.VALIDATE_OK),
+                         core_text(keys.UPDATE_CHANGELOG, old=OLD, new=NEW),
+                         f"## [{NEW}]", MIGRATION_NOTE, core_text(keys.UPDATE_NEXT)):
             with self.subTest(expected=expected):
                 self.assertIn(expected, out.stdout)
         self.assertNotIn(f"## [{OLD}]", out.stdout)
@@ -367,20 +406,21 @@ class DeliveryTest(SourceTestCase):
     def test_refusals_and_failures_leave_the_store(self):
         """A refused command or a failed fetch changes nothing, the copy included."""
         cases = (
-            (False, ("update",), EXIT_FINDINGS, "svod install"),
+            (False, ("update",), EXIT_FINDINGS, core_text(keys.UPDATE_MISSING)),
             (False, ("install", "--from", MISSING_SOURCE), EXIT_USAGE, MISSING_SOURCE),
             (False, ("install", "--from", "{source}", "--to", MISSING_REF), EXIT_USAGE,
              MISSING_REF),
-            (True, ("install", "--from", "{source}"), EXIT_FINDINGS, "svod update"),
-            (True, ("update", "--to", MISSING_REF), EXIT_USAGE, "The store is unchanged"),
+            (True, ("install", "--from", "{source}"), EXIT_FINDINGS,
+             core_text(keys.UPDATE_EXISTS)),
+            (True, ("update", "--to", MISSING_REF), EXIT_USAGE, MISSING_REF),
             (True, ("update", "--from", MISSING_SOURCE, "--to", NEW_TAG), EXIT_USAGE,
-             "The store is unchanged"),
+             MISSING_SOURCE),
         )
         for installed, args, code, message in cases:
             with self.subTest(installed=installed, args=args):
                 shutil.rmtree(vendor_dir(self.sb.store), ignore_errors=True)
                 if installed:
-                    self.install()
+                    self.restore()
                 before = snapshot(self.sb.store)
                 out = cli(self.sb, *[a.format(source=self.source) for a in args])
                 self.assertEqual(out.returncode, code, out.stdout + out.stderr)
@@ -394,7 +434,7 @@ class ManifestTest(SourceTestCase):
 
     def test_modified_copy(self):
         """Changed, added or removed files are named; byte-code is not."""
-        cli_file = "lib/svod/cli.py"
+        cli_file = CLI_FILE
         extra = "lib/svod/extra.py"
         skill = f"skills/{SKILL}/SKILL.md"
         cases = (
@@ -408,8 +448,7 @@ class ManifestTest(SourceTestCase):
         )
         for name, spoil, named in cases:
             with self.subTest(case=name):
-                shutil.rmtree(vendor_dir(self.sb.store), ignore_errors=True)
-                self.install()
+                self.restore()
                 spoil(vendor_dir(self.sb.store))
                 out = cli(self.sb, "validate")
                 if named is None:
@@ -417,15 +456,15 @@ class ManifestTest(SourceTestCase):
                     continue
                 self.assertEqual(out.returncode, EXIT_FINDINGS)
                 self.assertIn(named, out.stderr)
-                self.assertIn("run svod update", out.stderr)
+                self.assertIn(UPDATE_COMMAND, out.stderr)
 
     def test_no_copy_no_check(self):
         """A store without .svod has nothing to check."""
         self.assertEqual(vendor.copy_errors(self.sb.store), [])
 
 
-class LauncherTest(SourceTestCase):
-    """The installed CLI hands commands over to the copy of the store."""
+class SplitArgvTest(unittest.TestCase):
+    """The launcher reads the store and the command from the arguments, without a store."""
 
     def test_split_argv(self):
         """The --root value and the command, whatever the global options before it."""
@@ -440,9 +479,13 @@ class LauncherTest(SourceTestCase):
             with self.subTest(argv=argv):
                 self.assertEqual(split_argv(argv), expected)
 
+
+class LauncherTest(SourceTestCase):
+    """The installed CLI hands commands over to the copy of the store."""
+
     def test_hand_over(self):
         """Inside a store with a copy the copy runs, once; elsewhere the installed engine runs."""
-        self.install(NEW_TAG)
+        self.restore(NEW_TAG)
         outside = self.sb.root / "home"
         lib = str(lib_dir(self.sb.store).resolve())
         cases = (
@@ -460,17 +503,25 @@ class LauncherTest(SourceTestCase):
                 self.assertEqual(out.stdout.strip(), f"svod {version}")
 
     def test_modified_copy_is_not_run(self):
-        """A copy that differs from its MANIFEST does not run: the installed engine does, and says so."""
-        self.install(NEW_TAG)
-        append_line(vendor_dir(self.sb.store) / "lib" / "svod" / "cli.py")
-        out = cli(self.sb, "--version")
+        """A copy that differs from its MANIFEST does not run: the installed engine does, and says so.
+
+        A child process: `python -m svod.cli` is started as an agent starts it, importing svod
+        through PYTHONPATH, and the refusal must reach the real stderr of that process.
+        """
+        self.restore(NEW_TAG)
+        append_line(vendor_dir(self.sb.store) / CLI_FILE)
+        out = cli_process(self.sb, "--version")
         self.assertEqual(out.returncode, EXIT_OK, out.stderr)
         self.assertEqual(out.stdout.strip(), f"svod {svod.__version__}")
-        self.assertIn("vendored copy modified", out.stderr)
+        self.assertIn(CLI_FILE, out.stderr)
 
     def test_hook_hands_over_with_stdin(self):
-        """A hook finds the store in the event and the copy reads the same event."""
-        self.install(NEW_TAG)
+        """A hook finds the store in the event and the copy reads the same event.
+
+        A child process: the event is read once from the real stdin of the installed CLI and must
+        reach the copy, a second process, intact.
+        """
+        self.restore(NEW_TAG)
         te.set_config(self.sb, unknown_key="1")
         outside = self.sb.root / "home"
         in_store = json.dumps({"hook_event_name": "SessionStart", "cwd": str(self.sb.store)})
@@ -483,8 +534,8 @@ class LauncherTest(SourceTestCase):
         )
         for name, sent, extra, args, copied in cases:
             with self.subTest(case=name):
-                out = cli(self.sb, *args, "hook", "session-start", cwd=outside, stdin=sent,
-                          **extra)
+                out = cli_process(self.sb, *args, "hook", "session-start", cwd=outside,
+                                  stdin=sent, **extra)
                 self.assertEqual(out.returncode, EXIT_OK, out.stderr)
                 self.assertEqual(COPY_MARKER in out.stdout, copied, out.stdout)
                 if copied:
@@ -525,15 +576,16 @@ class NoticeTest(unittest.TestCase):
 
     def test_once_a_day(self):
         """The first check reads the source; later ones within a day read the cache."""
-        available = f"Svod {NEW} is available (store uses {OLD}): svod update"
+        available = core_text(keys.UPDATE_AVAILABLE, latest=NEW, current=OLD)
+        newer = core_text(keys.UPDATE_AVAILABLE, latest=NEWER, current=OLD)
         moved = self.sb.root / "moved"
         steps = (
             ("first check", lambda: None, NOW, available, NEW),
             ("cached", lambda: self.sb.git(self.source, "tag", NEWER_TAG), NOW + HOUR, available,
              NEW),
-            ("next day", lambda: None, NOW + DAY + HOUR, available.replace(NEW, NEWER), NEWER),
-            ("offline", lambda: self.source.rename(moved), NOW + 2 * DAY + 2 * HOUR,
-             available.replace(NEW, NEWER), NEWER),
+            ("next day", lambda: None, NOW + DAY + HOUR, newer, NEWER),
+            ("offline", lambda: self.source.rename(moved), NOW + 2 * DAY + 2 * HOUR, newer,
+             NEWER),
         )
         for name, change, at, expected, cached in steps:
             with self.subTest(step=name):
@@ -573,7 +625,10 @@ class SetupSkillsTest(SourceTestCase):
     """The setup scripts link the skills of the copy of the store when it has one."""
 
     def test_skill_links(self):
-        """With a copy the skill links point into .svod/skills, without one into the repository."""
+        """With a copy the skill links point into .svod/skills, without one into the repository.
+
+        A child process: the setup script is bash and finds svod through PYTHONPATH.
+        """
         cases = (
             ("copy", True, vendor_dir(self.sb.store) / "skills" / SKILL),
             ("repository", False, REPO_DIR / "svod" / "templates" / "local" / "skills" / SKILL),
@@ -582,7 +637,7 @@ class SetupSkillsTest(SourceTestCase):
             with self.subTest(case=name):
                 shutil.rmtree(vendor_dir(self.sb.store), ignore_errors=True)
                 if installed:
-                    self.install()
+                    self.restore()
                 home = Path(tempfile.mkdtemp(prefix="svod-claude-"))
                 self.addCleanup(shutil.rmtree, home, ignore_errors=True)
                 out = subprocess.run(["bash", str(CLAUDE_SETUP), str(self.sb.store)],

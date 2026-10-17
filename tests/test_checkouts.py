@@ -3,21 +3,31 @@ import datetime as dt
 import unittest
 from pathlib import Path
 
-from support import EXIT_OK, MAIN_BRANCH, REMOTE, SharedStoreTestCase, doc
+from support import EXIT_OK, MAIN_BRANCH, REMOTE, TEST_PROFILE, SharedStoreTestCase, doc
 
+from svod import keys
 from svod.approval import write_mark
 from svod.context import Context
 from svod.loader import load_runtime
+from svod.locale import FALLBACK_LOCALE, load_locale
+from svod.render import INDENT
 from svod.providers.openspec_change import DEFAULT_ARCHIVE, DEFAULT_ROOT, METADATA_FILE
 from svod.resolve import by_key, resolve
 
 CHANGES = Path(DEFAULT_ROOT)
-CHECKOUT_LINE = "  In the checkout {dir}, not in the default branch yet"
+TEXTS = load_locale(FALLBACK_LOCALE, TEST_PROFILE)
+CHECKOUT_LINE = INDENT + TEXTS.text_template(keys.STATUS_CHECKOUT)
+CHECKOUT_LEAD = CHECKOUT_LINE.split("{", 1)[0]
 NEW = "store-tk-2_new"
 EDITED = "store-tk-1_edit"
 ARCHIVING = "store-tk-3_archive"
 MENTION = "store-tk-5_card"
 CLEAN = "store-ops_clean"
+
+
+def next_step(key):
+    """Next step line of a text of the test profile."""
+    return TEXTS.text(keys.STATUS_NEXT_STEP, step=TEXTS.text(key))
 
 
 def change(sb, name, key, base=None, approved=True):
@@ -86,10 +96,10 @@ class CheckoutResolveTest(SharedStoreTestCase):
     def test_status_is_counted_in_the_checkout(self):
         """The status names the checkout and reads the change files there."""
         cases = (
-            ("tk-2", NEW, "Next step: get the plan approved."),
-            ("tk-1", EDITED, "  progress +3\n"),
-            ("tk-3", ARCHIVING, "Next step: task closed."),
-            ("tk-5", MENTION, "Warning: the container has no design document, write it first."),
+            ("tk-2", NEW, next_step("task.step.approve")),
+            ("tk-1", EDITED, TEXTS.text("mark.progress_display", ahead=3)),
+            ("tk-3", ARCHIVING, next_step("task.done")),
+            ("tk-5", MENTION, TEXTS.text("task.entry.no_design")),
         )
         for query, checkout, text in cases:
             with self.subTest(query=query):
@@ -107,7 +117,7 @@ class CheckoutResolveTest(SharedStoreTestCase):
         self.assertIn(CHECKOUT_LINE.format(dir=EDITED), out.stdout)
         out = self.sb.cli("status", "tk-2", cwd=self.paths[NEW])
         self.assertEqual(out.returncode, EXIT_OK, out.stderr)
-        self.assertNotIn("In the checkout", out.stdout)
+        self.assertNotIn(CHECKOUT_LEAD, out.stdout)
 
 
 class CheckoutApproveTest(SharedStoreTestCase):

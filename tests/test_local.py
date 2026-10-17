@@ -4,8 +4,9 @@ import unittest
 import yaml
 
 from support import (EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, ENCODING, ME, PEER, StoreTestCase,
-                     TempStore)
+                     TempStore, core_text)
 
+from svod import keys
 from svod.config import load_config
 from svod.context import Context
 from svod.errors import LoadError
@@ -15,8 +16,8 @@ from test_active import HDR_IDLE, HDR_TEAM, change
 LOCAL = ".local.yaml"
 LOCAL_EMAIL = "local@example.com"
 LOGIN = "someone"
-NO_LOCAL = "Local config .local.yaml is missing"
-NO_IDENTITY = "Who you are is unknown"
+NO_LOCAL = core_text(keys.ACTIVE_NO_LOCAL_CONFIG, file=LOCAL)
+NO_IDENTITY = core_text(keys.ACTIVE_NO_IDENTITY)
 
 
 def local_store():
@@ -108,12 +109,13 @@ class InitTest(StoreTestCase):
         self.sb.write(LOCAL, f"login: {LOGIN}\n")
         out = self.sb.cli("init", "--login", "other")
         self.assertEqual(out.returncode, EXIT_FINDINGS)
-        self.assertIn("already exists", out.stderr)
+        self.assertEqual(out.stderr.strip(),
+                         core_text(keys.INIT_EXISTS, path=self.sb.store / LOCAL))
         self.assertEqual(self.local(), {"login": LOGIN})
         (self.sb.store / LOCAL).unlink()
         out = self.sb.cli("init")
         self.assertEqual(out.returncode, EXIT_USAGE)
-        self.assertIn("Login is required", out.stderr)
+        self.assertIn(core_text(keys.INIT_NEED_LOGIN), out.stderr)
         self.assertFalse((self.sb.store / LOCAL).exists())
 
     def test_not_configured(self):
