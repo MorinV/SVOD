@@ -1,1 +1,5 @@
 {"at": "2026-10-17T12:40:29+00:00", "event": "position_changed", "subject": "work/tasks/command-gate-in-template", "pipeline": "task", "step": "questions", "facts": {"from": null, "to": "questions"}}
+{"at": "2026-10-17T13:43:56+00:00", "event": "step_passed", "subject": "work/tasks/command-gate-in-template", "pipeline": "task", "step": "questions", "facts": {}}
+{"at": "2026-10-17T13:43:56+00:00", "event": "position_changed", "subject": "work/tasks/command-gate-in-template", "pipeline": "task", "step": "contract", "facts": {"from": "questions", "to": "contract"}}
+{"at": "2026-10-17T13:44:28+00:00", "event": "step_passed", "subject": "work/tasks/command-gate-in-template", "pipeline": "task", "step": "contract", "facts": {}}
+{"at": "2026-10-17T13:44:28+00:00", "event": "position_changed", "subject": "work/tasks/command-gate-in-template", "pipeline": "task", "step": "approve", "facts": {"from": "contract", "to": "approve"}}

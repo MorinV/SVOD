@@ -3,7 +3,7 @@
 <!--
 What the person approves together with card.md and questions.md
 (svod approve work/tasks/autonomy-by-kind --step approve). Any edit afterwards voids the approval.
-Draft: the answers to questions.md may change the rule below.
+Per questions.md: the level of the kind wins; `autonomy` may name the kind hotfix only.
 -->
 
 ## Result

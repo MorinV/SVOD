@@ -3,16 +3,16 @@
 <!--
 What the person approves together with card.md and questions.md
 (svod approve work/tasks/external-phrase-match --step approve). Any edit afterwards voids the approval.
-Draft: the answers to questions.md decide the matching rule below.
+Per questions.md: a line of its own only; "давай не будем" is no go-ahead.
 -->
 
 ## Result
 
-`go` of the human mark is true only when the reply starts with one of `external_effects.phrases` (letter case and surrounding punctuation aside) or, per the answer to question 1, is that phrase alone. A phrase elsewhere in the reply, or preceded by a negation, leaves `go` false.
+`go` of the human mark is true only when one of `external_effects.phrases` stands on a line of its own in the reply: nothing but spaces before it on the line, nothing but punctuation after it (letter case aside). A phrase inside a sentence, however placed and negated or not, leaves `go` false; no list of negations is needed.
 
 ## Boundaries
 
-- `svod`: `svod/hooks/prompt.py` (`says_go`, `GO_RE`), `tests/test_hooks.py`, `docs/reference.md` and its copy in `svod/templates/local/docs/`, `CHANGELOG.md`.
+- `svod`: `svod/hooks/prompt.py` (`says_go`, `go_at`; the negation constants go), `tests/test_hooks.py`, `docs/reference.md` and its copy in `svod/templates/local/docs/`, `CHANGELOG.md`.
 - Not touched: `svod/hooks/external.py` (what is held stays the same), the approval phrases, the locale texts other than the refusal hint if its wording names where the phrase goes.
 
 ## Effects
@@ -25,4 +25,4 @@ Commits on the task branch in the worktree of `svod`. Push and the pull request 
 
 ## Risks
 
-A person used to "ok давай" or "да, go ahead" is refused once more and must start the reply with the phrase; the refusal text (`hook.deny_external`) has to say so.
+A person used to "ok давай" or "да, go ahead" is refused once more and must put the phrase on a line of its own; the refusal text (`hook.deny_external`) has to say so.
