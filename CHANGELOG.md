@@ -26,6 +26,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 - The examples, the skills and the docs are checked against the packaged templates by a test, so the copies cannot drift.
 - The Russian locale (core and both templates) uses one set of terms (стор, чекаут, слияние/слито, одобрение, субъект), marks status as `+ - ?` like English, and a test keeps every en/ru pair on the same keys and placeholders.
 - Removed the unused `render.missing_text` and `versions.tag_of`; added a `[tool.ruff]` configuration (line length 100, rules E, F, W, B, UP, SIM) without mass reformatting.
+- `setup-claude.sh --project <store>` registers the hooks in the store's `.claude/settings.json` only (without it the script warns that the hooks run in every project); the hooks call `<absolute python> -m svod.cli` instead of the path of a `svod` script, and both setup scripts are tested end to end and pass shellcheck.
 
 ### Migration
 
