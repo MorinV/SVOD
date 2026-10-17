@@ -13,6 +13,7 @@ FACT_FIELDS = {
     "exists": {"exists": "bool"}, "archived": {},
     "artifact": {"count": "count"}, "git_pushed": {"ahead": "count"},
     "approval": {"reason": "reason"},
+    "command": {"code": "token", "cached": "bool", "stale": "bool", "age": "token"},
 }
 
 
@@ -42,6 +43,8 @@ def facts(outcome):
             result[name] = value
         elif kind == "reason" and isinstance(value, str) and value in REASONS:
             result["reason_code"] = value
+        elif kind == "token" and token(value) is not None:
+            result[name] = value
     return result
 
 

@@ -426,3 +426,30 @@ class NextActionTest(unittest.TestCase):
         self.assertIsNone(action["instruction"])
         self.assertEqual(action["blocker"]["status"], "fail")
         self.assertEqual(action["inputs"], [])
+
+
+class CommandFactsTest(unittest.TestCase):
+    """The command gate's code, cache, stale flag and age reach the JSON; its detail does not."""
+
+    def test_command_facts_are_projected(self):
+        from types import SimpleNamespace
+
+        from svod.gates import Result, Status
+        from svod.status_json import outcome_json
+        result = Result(Status.FAIL, {"code": "1", "cached": True, "stale": True, "age": "3m",
+                                      "detail": "secret output", "duration": "2.5"},
+                        reason="checks failed")
+        outcome = SimpleNamespace(ref=SimpleNamespace(gate="command", severity="required"),
+                                  result=result)
+        found = outcome_json(outcome)["facts"]
+        self.assertEqual(found, {"code": "1", "cached": True, "stale": True, "age": "3m"})
+
+    def test_command_facts_out_of_shape_are_dropped(self):
+        from types import SimpleNamespace
+
+        from svod.gates import Result, Status
+        from svod.status_json import outcome_json
+        result = Result(Status.PASS, {"code": "", "cached": "yes", "stale": 0, "age": "a b"})
+        outcome = SimpleNamespace(ref=SimpleNamespace(gate="command", severity="required"),
+                                  result=result)
+        self.assertEqual(outcome_json(outcome)["facts"], {})
