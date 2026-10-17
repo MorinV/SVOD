@@ -44,6 +44,10 @@ APPROVE_DONE = "approve.done"
 APPROVE_NO_MARK = "approve.no_mark"
 APPROVE_FOREIGN_KEY = "approve.foreign_key"
 APPROVE_NO_GATE = "approve.no_gate"
+APPROVE_NO_STEP = "approve.no_step"
+APPROVE_STEP_NO_GATE = "approve.step_no_gate"
+APPROVE_NOT_READY = "approve.not_ready"
+APPROVE_CHANGED_AFTER_MARK = "approve.changed_after_mark"
 APPROVE_NO_APPROVER = "approve.no_approver"
 
 UPDATE_EXISTS = "update.exists"
@@ -172,6 +176,10 @@ CORE_KEYS = (
     APPROVE_NO_MARK,
     APPROVE_FOREIGN_KEY,
     APPROVE_NO_GATE,
+    APPROVE_NO_STEP,
+    APPROVE_STEP_NO_GATE,
+    APPROVE_NOT_READY,
+    APPROVE_CHANGED_AFTER_MARK,
     APPROVE_NO_APPROVER,
     UPDATE_EXISTS,
     UPDATE_MISSING,

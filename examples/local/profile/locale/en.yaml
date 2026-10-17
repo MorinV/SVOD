@@ -1,0 +1,5 @@
+gate.current_process: 'Local process: {phase}'
+local.contract: Prepare a compact contract and select a clean source checkout.
+local.approve: Obtain the declared human contract approval.
+local.result: Record the selected local command result.
+local.done: Local completion recorded; no merge, push or deployment implied.

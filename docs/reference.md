@@ -27,7 +27,7 @@ Its presence marks the store root: the CLI walks up from the working directory t
 | `bindings` | no | string / none | bindings file relative to the root; without it roles are neither checked nor printed |
 | `local_config` | no | string / none | per-person config file relative to the root, kept out of version control; see [Local config](#local-config) |
 | `approval` | no | mapping / none | how a person approves in the chat; see [Approval by a person](#approval-by-a-person) |
-| `profile_config` | no | mapping / `{}` | settings of the profile and of the store's own scripts; the core only checks that it is a mapping and exposes it as `ctx.config.profile_config`, it never reads a key inside |
+| `profile_config` | no | mapping / `{}` | profile settings exposed as `ctx.config.profile_config`; hooks also read optional `agent_context` controls described below |
 | `workspace_gate` | no | string / none | name of a gate with a `worktrees(ctx, keys)` method (see [Writing a custom gate](#writing-a-custom-gate)); it tells the `pre-tool` hook which directories are work directories of a subject; without it that check is off |
 | `main_checkout_read_only` | no | bool / `false` | the `pre-tool` hook refuses edits in the main checkout of the store repository, except paths git ignores; work goes into worktrees |
 | `update_check` | no | bool / `true` | with a [copy of the engine](#vendored-copy) in the store, the session start summary says when a newer release is out, checked at most once a day; `false` turns the check off |
@@ -60,7 +60,7 @@ An approval is two acts: a person writes a phrase in the chat, then the agent re
 | `phrases` | no | list of strings / `[]` | phrases that approve; the `prompt` [hook](#hooks) matches them against a whole prompt |
 | `window_minutes` | no | positive int / `10` | how long a mark stays fresh |
 
-The mark is `svod-approval.json` in the git common directory of the store (so every worktree of the store shares it, and it is never committed): `{"at": "<ISO time with offset>", "keys": [<keys named in the prompt>]}`. `svod.approval.write_mark(root, keys)` writes it. `approve` accepts a mark younger than the window whose `keys`, when not empty, include a key of the subject (case-insensitively), and removes it after writing: one mark approves once.
+The mark is `svod-approval.json` in the git common directory of the store (so every worktree of the store shares it, and it is never committed): `{"at": "<ISO time with offset>", "keys": [<keys named in the prompt>]}`. The prompt hook writes it from a real human answer. `approve` requires a fresh mark for the subject, ready preceding nonoptional stages and bound files not modified after the answer. It consumes only this subject's named keys, preserving other keys and the original timestamp; an unnamed mark is single-use. Do not call the internal mark writer to manufacture human consent. `approve --step <id>` selects a specific applicable approval stage; otherwise the first unsatisfied applicable approval is selected.
 
 ### Local config
 
@@ -148,6 +148,7 @@ violations:
 | `optional` | no | bool / `false` | the step only shows marks; it never becomes the position and never takes part in violations |
 | `blocks_code` | no | bool / `false` | while the position is at or before this step, `status` prints the code freeze line |
 | `role` | no | string | who does the step; resolved to a skill by the [bindings file](#bindings-file) |
+| `when` | no | identifier matching the step-id syntax | apply the entire step only when `subject.attrs[when]` is truthy; missing means false |
 
 Constraints:
 
@@ -180,7 +181,8 @@ A gate use is a mapping naming a gate. The accepted keys depend on where it stan
 | `text` | req | opt | req | — | locale key | text shown when this gate decides the position; facts are the gate's facts (for `missing` also `{id}`, `{keys}`, `{pipeline}`) |
 | `pending` | — | — | opt, `done` only | — | locale key | next-step text when every step passed and `done` did not; facts are those of the done gate |
 | `severity` | req | — | — | — | `block` or `warn` | effect of a failed entry gate |
-| `when` | opt | — | — | — | subject attribute name | the gate applies only when the attribute is truthy |
+| `when` | opt | opt | — | — | subject attribute identifier | the gate applies only when the attribute is truthy; not an expression language |
+| `purpose` | — | opt | — | — | identifier | semantic approval selection, e.g. `contract` or `result`, independent of stage name |
 | `label` | — | opt | — | — | locale key | makes the gate a mark in `status`; facts are the gate's facts |
 | `fact` | — | — | — | opt | fact name | "in progress" also needs this fact to be a number > 0 |
 
@@ -206,6 +208,8 @@ steps:
 ## Position rules
 
 `status` and `active` both call one function, `position()`:
+
+An archived subject with a native `archived` terminal gate is historical: the engine reports that terminal outcome without executing live entry/step gates or presenting them as passing. Otherwise the rules below apply, omitting inapplicable steps and gate uses consistently with approval and code guards.
 
 1. **Entry** — the pipeline `entry` gates are evaluated for every subject, found or not, skipping those whose `when` attribute is falsy. The first failed `block` gate blocks the position; failed `warn` gates are printed as warnings after the step line. An entry gate that is UNKNOWN is printed as `status.unknown` instead of its warning; a blocking UNKNOWN still blocks, with no text of its own.
 2. **Marks** — when the subject exists, every step gate with a `label` (optional steps included) is shown as a mark: the gate's `display` when set, else `status.mark.<pass|fail|unknown>` with the rendered label.
@@ -473,6 +477,8 @@ Core keys (all required in every core locale file):
 | `approve.no_mark`, `approve.no_approver` | — |
 | `approve.foreign_key` | `{mark_keys}`, `{keys}` |
 | `approve.no_gate` | `{query}` |
+| `approve.no_step`, `approve.step_no_gate`, `approve.changed_after_mark` | `{query}`, `{step}` |
+| `approve.not_ready` | `{query}`, `{step}`, `{pending}` |
 | `gate.exists`, `gate.archived`, `gate.git_pushed` | — |
 | `gate.artifact_path` | `{path}` |
 | `gate.artifact_glob` | `{glob}`, `{min}` |
@@ -584,10 +590,12 @@ gate:
 | command | flags | does | exit codes |
 |---|---|---|---|
 | `validate` | — | loads config, pipelines, gates, providers, locale, descriptions and bindings, and checks the [copy of the engine](#vendored-copy) against its `MANIFEST`; prints every error | 0 valid, 1 errors |
-| `status <query>` | — | position of every subject the query resolves to; the `missing` text of a missing subject nothing is known about, when no position is shown | 0 found, 2 not found, ambiguous, or only such missing subjects |
+| `status <query>` | `--format text\|json` | position of every subject the query resolves to; JSON v1 projects captured native outcomes without re-evaluating gates, with bounded allowlisted facts and advisory `next_action`; no free-form logs, approval identity or exception text | 0 found, 2 not found, ambiguous, or only such missing subjects |
 | `active` | `--all`, `--hook` | summary of open work, including subjects changed in other checkouts of the store repository; `--all` expands `theirs`; `--hook` prints SessionStart hook JSON (`hookSpecificOutput.additionalContext`, with the [update notice](#update-notice) first and `active.hook_tail` appended); prints nothing when there is neither | 0 |
 | `render <pipeline>` | `--write` | prints the documentation block, or writes it between the markers | 0, 1 no markers, 2 unknown pipeline |
-| `approve <query>` | — | records the approval of the one open subject the query names: its first `approval` step gate gets `<marker>` (today), `<marker>_by` (login, else email of the local config, else git email) and, with `bind`, `<marker>_sha`; lines are replaced or appended one by one, every other line of the file stays; nothing is committed. Needs a fresh mark (see [Approval by a person](#approval-by-a-person)) and consumes it | 0 recorded, 1 refused (no fresh mark, a mark for other keys, no approver, no approval step), 2 not found or ambiguous |
+| `approve <query>` | `--step <id>` | records the ready selected applicable approval with date, approver and digest, consuming this subject's mark keys; refuses changed-after-answer inputs; nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
+| `new <directory>` | `--template local\|task` | creates an absent directory from installed templates without a pre-existing store; default local, never merges or overwrites | 0 created, 1 refused |
+| `local <action> <query>` | — | `prepare` diagnoses readiness, `checks` runs the chosen argv, `verify` validates the live result, `deliver` records and reads back local completion; see [local-workflow.md](local-workflow.md) | 0 success, 1 failed/refused, 2 invalid root/load/arguments |
 | `hook <event>` | — | answers one agent hook event, `session-start`, `prompt` or `pre-tool`, read as JSON on stdin; see [Hooks](#hooks) | 0 always |
 | `init` | `--login`, `--email`, `--force` | writes the local config; without `--login` asks at a terminal, and fails without one; the email defaults to `git config user.email`; an existing file is kept unless `--force` | 0 written, 1 exists, 2 no login or no `local_config` |
 | `install` | `--from`, `--to` | puts a copy of the engine into `.svod/` of the store, see [Vendored copy](#vendored-copy); refuses when `.svod/` exists | 0 done, 1 refused or the store does not validate after it, 2 nothing fetched (the store is unchanged) |
@@ -601,6 +609,8 @@ gate:
 `svod hook <event>` is registered as a command hook of Claude Code or Codex (`integrations/setup-claude.sh`, `integrations/setup-codex.sh`). Both agents send the same event JSON (`hook_event_name`, `cwd`, `prompt`, `tool_name`, `tool_input`); the answer is `hookSpecificOutput` with `hookEventName` and either `additionalContext` or `permissionDecision: deny` with `permissionDecisionReason`. Nothing to say prints nothing. The exit code is always 0. A store that does not load is reported as `hook.engine_broken` in `additionalContext` instead of silence (for `pre-tool`, only for file edits).
 
 **The store of the session** is the one holding `CLAUDE_PROJECT_DIR`, else the event `cwd`; else the store at `--root`, a fallback for sessions in a work directory outside the store. No store: silence.
+
+Optional `profile_config.agent_context` booleans `session_summary`, `prompt_positions` and `approval_notice` default on for compatibility. Setting them to false suppresses those context outputs, not native approval marking, agent-message filtering or pre-tool protection. The local template turns them off and uses explicit per-task status; `active` remains available on request. These controls do not guarantee token savings or enforce a sandbox.
 
 | event | agent event | does |
 |---|---|---|

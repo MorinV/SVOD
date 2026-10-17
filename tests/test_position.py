@@ -1,16 +1,20 @@
 """position() rules and the status output on the test profile."""
 import dataclasses
+import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from support import EXIT_OK, EXIT_USAGE, SharedStoreTestCase, doc
 
 from svod.context import Context
-from svod.gates import Gate, verdict
+from svod.gates import ArchivedGate, Gate, Status, unknown, verdict
 from svod.loader import load_runtime
+from svod.pipeline import GateRef, Pipeline, SEVERITY_BLOCK, Step, SubjectSpec
 from svod.position import position
 from svod.providers.openspec_change import DEFAULT_ARCHIVE, DEFAULT_ROOT, METADATA_FILE
 from svod.render import render_position, status_report
+from svod.subject import Subject
 
 CHANGES = Path(DEFAULT_ROOT)
 ARCHIVE = CHANGES / DEFAULT_ARCHIVE
@@ -138,10 +142,20 @@ class PositionTest(SharedStoreTestCase):
         self.assertIn(NEXT.format("task closed"), out)
         self.assertNotIn(FREEZE, out)
         self.assertNotIn(VIOLATIONS, out)
-        self.assertIn("  + spec (1)   + design", out)
+        self.assertFalse(any(line.startswith("  +") for line in out))
         pos = self.pos("tk-1")
         self.assertIsNone(pos.current)
         self.assertEqual(pos.violations, [])
+        self.assertEqual(pos.steps, [])
+        self.assertEqual(pos.marks, [])
+        structured = self.sb.cli("status", "tk-1", "--format", "json")
+        self.assertEqual(structured.returncode, EXIT_OK, structured.stderr)
+        historical = json.loads(structured.stdout)["positions"][0]
+        self.assertTrue(historical["done"])
+        self.assertEqual(historical["done_outcome"]["gate"], "archived")
+        self.assertEqual(historical["done_outcome"]["status"], "pass")
+        for name in ("entries", "steps", "marks", "current_entries"):
+            self.assertEqual(historical[name], [], name)
         self.assertIn(NEXT.format("project closed"), self.status("done"))
 
     def test_rule3_position_and_text(self):
@@ -262,6 +276,35 @@ class PositionTest(SharedStoreTestCase):
         self.assertTrue(any(line.startswith("  could not check: git") for line in closing))
         self.assertFalse(any("could not check" in line for line in self.status("full")))
 
+    def test_eff4_current_entry_capture_retains_block_and_failed_done(self):
+        """S1 capture actual native outcomes before collector refactor, no reruns."""
+        pos = self.pos("unready")
+        self.assertEqual(pos.current.step.id, "close")
+        self.assertTrue(pos.text_from_entry)
+        self.assertEqual(len(getattr(pos, "current_entries", [])), 2,
+                         "EFF-4 must retain both actual current entry outcomes")
+        self.assertIs(pos.current_blocked, pos.current_entries[1])
+        self.assertIsNone(pos.done)
+        self.assertIsNotNone(pos.done_outcome)
+        self.assertFalse(pos.done_outcome.passed)
+
+    def test_eff4_done_early_return_does_not_evaluate_current_entries(self):
+        """Successful done must retain its actual outcome but no current entry checks."""
+        pos = self.pos("tk-1")
+        self.assertIsNotNone(pos.done)
+        self.assertIs(getattr(pos, "done_outcome", None), pos.done)
+        self.assertEqual(pos.current_entries, [])
+        self.assertIsNone(pos.current_blocked)
+
+    def test_eff4_default_text_golden_before_refactor(self):
+        """Native missing/default text bytes are independent of new JSON projection."""
+        result = self.sb.cli("status", UNKNOWN_KEY)
+        self.assertEqual(result.returncode, EXIT_USAGE)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, UNKNOWN_TEXT + "\n")
+        self.assertEqual(self.status("tk-777"),
+                         ["Task tk-777", "", "  Next step: propose a change."])
+
     def test_several_changes_per_key_are_all_rendered(self):
         """All subjects matched by a key are rendered one after another."""
         pipeline = self.runtime.pipeline("task")
@@ -271,6 +314,87 @@ class PositionTest(SharedStoreTestCase):
             lines += render_position(self.ctx.locale, position(self.ctx, pipeline, subject))
         self.assertIn("Task c-10", lines)
         self.assertIn("Task c-2", lines)
+
+
+class ArchiveHistoryTest(unittest.TestCase):
+    """Archive presentation must not replay the live workflow or attest delivery."""
+
+    def pipeline(self, live_gate, done_gate=None):
+        """Small declaration independent of installed workflow policy."""
+        entry = GateRef("live", {}, "entry", severity=SEVERITY_BLOCK, impl=live_gate)
+        check = GateRef("live", {}, "step", label="live", impl=live_gate)
+        step = Step("live", "live.next", True, False, True, None, [check], [entry])
+        done = GateRef("archived", {}, "done", text="history", impl=(
+            done_gate if done_gate is not None else ArchivedGate()))
+        return Pipeline("synthetic", Path("synthetic.yaml"), SubjectSpec("synthetic", None, {}),
+                        [step], entry=[entry], done=done)
+
+    def test_archived_native_done_skips_all_live_gates(self):
+        """An archived outcome alone supplies history, never individual check PASS."""
+        live = PassGate()
+        pipeline = self.pipeline(live)
+        subject = Subject("history", None, archived=True)
+        for entries in (pipeline.entry, []):
+            with self.subTest(entry=bool(entries)):
+                with patch.object(live, "evaluate", side_effect=AssertionError("live gate replay")):
+                    pos = position(None, dataclasses.replace(pipeline, entry=entries), subject)
+        self.assertTrue(pos.done.passed)
+        self.assertIs(pos.done, pos.done_outcome)
+        self.assertIs(pos.done.ref, pipeline.done)
+        self.assertEqual(pos.text, "history")
+        self.assertEqual(pos.facts, {})
+        for name in ("entries", "steps", "marks", "current_entries", "unknown", "warnings",
+                     "violations"):
+            self.assertEqual(getattr(pos, name), [], name)
+        for name in ("current", "blocked", "current_blocked", "do_not_touch"):
+            self.assertIsNone(getattr(pos, name), name)
+
+    def test_active_native_done_still_evaluates_live_gates(self):
+        """The shortcut requires explicit provider archive metadata."""
+        live = PassGate()
+        pipeline = self.pipeline(live)
+        for entries in (pipeline.entry, []):
+            with self.subTest(entry=bool(entries)):
+                with patch.object(live, "evaluate", side_effect=AssertionError("live gate replay")):
+                    with self.assertRaisesRegex(AssertionError, "live gate replay"):
+                        position(None, dataclasses.replace(pipeline, entry=entries),
+                                 Subject("active", None))
+
+    def test_active_arbitrary_done_retains_live_outcomes(self):
+        """Existing successful active done still contains evaluated entries and marks."""
+        live = PassGate()
+        with patch.object(live, "evaluate", wraps=live.evaluate) as evaluate_live:
+            pos = position(None, self.pipeline(live, PassGate()), Subject("active", None))
+        self.assertEqual(evaluate_live.call_count, 2)
+        self.assertTrue(pos.done.passed)
+        self.assertEqual(len(pos.entries), 1)
+        self.assertEqual(len(pos.steps), 1)
+        self.assertTrue(pos.steps[0].passed)
+        self.assertEqual(pos.marks, [("live", pos.steps[0].outcomes)])
+
+    def test_arbitrary_done_still_evaluates_live_gates(self):
+        """A done gate's name or PASS does not qualify it as native archive history."""
+        for archived in (False, True):
+            with self.subTest(archived=archived):
+                live = PassGate()
+                with patch.object(live, "evaluate", side_effect=AssertionError("live gate replay")):
+                    with self.assertRaisesRegex(AssertionError, "live gate replay"):
+                        position(None, self.pipeline(live, PassGate()),
+                                 Subject("subject", None, archived=archived))
+
+    def test_failed_or_unknown_historical_done_is_not_success(self):
+        """Retain the actual done result once; failure must not manufacture history."""
+        for result in (verdict(False), unknown("archive unreadable")):
+            with self.subTest(status=result.status):
+                done = ArchivedGate()
+                with patch.object(done, "evaluate", return_value=result) as evaluate_done:
+                    pos = position(None, self.pipeline(PassGate(), done),
+                                   Subject("history", None, archived=True))
+                evaluate_done.assert_called_once()
+                self.assertIsNone(pos.done)
+                self.assertIs(pos.done_outcome.result, result)
+                self.assertEqual(pos.unknown, [pos.done_outcome]
+                                 if result.status is Status.UNKNOWN else [])
 
 
 class StoreAheadTest(SharedStoreTestCase):

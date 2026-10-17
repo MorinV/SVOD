@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
-from .approval import digest_matches, field_names
+from .approval import bound_files, digest_matches, field_names
 from .errors import LoadError, ParamError
 from .frontmatter import documents, read_frontmatter
 from .keys import (
@@ -224,10 +224,17 @@ class ApprovalGate(Gate):
         """FAIL with the reason among the facts."""
         return Result(Status.FAIL, {**facts, FACT_REASON: reason})
 
+    def effective_bind(self, ctx, subject):
+        """Native approval inputs; no external revision or import authority."""
+        return self.params.get(PARAM_BIND), None
+
     def evaluate(self, ctx, subject):
         """Read the approval fields; facts.value, marker, by, date and reason on failure."""
         marker = self.params[PARAM_MARKER]
         empty = {FACT_VALUE: "", FACT_MARKER: marker, FACT_BY: "", FACT_DATE: ""}
+        bind = self.params.get(PARAM_BIND)
+        if bind and (subject_dir(subject) is None or not bound_files(subject_dir(subject), bind)):
+            return self.failed(REASON_MISSING, **empty)
         base = subject_dir(subject)
         path = base / self.params[PARAM_FILE] if base is not None else None
         if path is None or not path.is_file():

@@ -91,9 +91,11 @@ class OpenspecChangeProvider(Provider):
         return [container] if container else []
 
     def match_exact(self, query, ctx):
-        """Changes whose directory name equals the query."""
+        """Changes by directory name or exact store-relative path."""
         wanted = normalize_name(query)
-        return [s for s in self.subjects(ctx) if normalize_name(s.id) == wanted]
+        return [s for s in self.subjects(ctx)
+                if normalize_name(s.id) == wanted
+                or normalize_name(relative(ctx, s.path)) == wanted]
 
     def match_key(self, key, ctx):
         """All changes carrying the key; a not-found subject when there are none."""

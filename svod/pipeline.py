@@ -36,6 +36,7 @@ FIELD_BLOCKS_CODE = "blocks_code"
 FIELD_ROLE = "role"
 FIELD_TITLE = "title"
 FIELD_PENDING = "pending"
+FIELD_PURPOSE = "purpose"
 
 PIPELINE_FIELDS = frozenset({FIELD_PIPELINE, FIELD_SUBJECT, FIELD_ACTIVE, FIELD_ENTRY,
                              FIELD_DONE, FIELD_MISSING, FIELD_STEPS, FIELD_VIOLATIONS,
@@ -50,8 +51,9 @@ DONE_FIELDS = frozenset({FIELD_GATE, FIELD_PARAMS, FIELD_TEXT, FIELD_PENDING})
 DONE_REQUIRED = (FIELD_GATE, FIELD_TEXT)
 MISSING_FIELDS = frozenset({FIELD_GATE, FIELD_PARAMS, FIELD_TEXT})
 STEP_FIELDS = frozenset({FIELD_ID, FIELD_TEXT, FIELD_REQUIRED, FIELD_OPTIONAL, FIELD_BLOCKS_CODE,
-                         FIELD_ROLE, FIELD_GATES, FIELD_ENTRY, FIELD_TITLE})
-STEP_GATE_FIELDS = frozenset({FIELD_GATE, FIELD_PARAMS, FIELD_LABEL, FIELD_TEXT})
+                         FIELD_ROLE, FIELD_GATES, FIELD_ENTRY, FIELD_TITLE, FIELD_WHEN})
+STEP_GATE_FIELDS = frozenset({FIELD_GATE, FIELD_PARAMS, FIELD_LABEL, FIELD_TEXT,
+                              FIELD_PURPOSE, FIELD_WHEN})
 
 SEVERITY_BLOCK = "block"
 SEVERITY_WARN = "warn"
@@ -81,6 +83,7 @@ class GateRef:
     severity: str | None = None
     pending: str | None = None
     impl: object = None
+    purpose: str | None = None
 
 
 @dataclass
@@ -96,6 +99,7 @@ class Step:
     gates: list
     entry: list
     title: str | None = None
+    when: str | None = None
 
 
 @dataclass
@@ -221,6 +225,14 @@ class _Parser:
             return False
         return value
 
+    def token(self, data, key, where):
+        """Optional identifier; applicability is not an expression language."""
+        value = self.string(data, key, where)
+        if value is not None and not STEP_ID_RE.fullmatch(value):
+            self.error(where, f"{key} must match {STEP_ID_RE.pattern}")
+            return None
+        return value
+
     def params(self, data, where, key=FIELD_PARAMS):
         """Optional params mapping under the key."""
         value = data.get(key, {})
@@ -255,7 +267,8 @@ class _Parser:
             where=where,
             label=self.string(data, FIELD_LABEL, where),
             text=self.string(data, FIELD_TEXT, where),
-            when=self.string(data, FIELD_WHEN, where),
+            when=self.token(data, FIELD_WHEN, where),
+            purpose=self.token(data, FIELD_PURPOSE, where),
             severity=severity,
             pending=self.string(data, FIELD_PENDING, where),
         )
@@ -337,6 +350,7 @@ class _Parser:
             gates=gates,
             entry=self.entry_list(data, f"{where}."),
             title=self.string(data, FIELD_TITLE, where),
+            when=self.token(data, FIELD_WHEN, where),
         )
         if step.optional and (step.required or step.blocks_code):
             self.error(where, f"{FIELD_OPTIONAL} excludes {FIELD_REQUIRED} and {FIELD_BLOCKS_CODE}")

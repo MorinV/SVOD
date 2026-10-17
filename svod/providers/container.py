@@ -87,8 +87,12 @@ class ContainerProvider(Provider):
         return self.select(ctx, lambda name: True)
 
     def match_exact(self, query, ctx):
-        """Containers named exactly as the query."""
+        """Containers addressed by their short name or exact store-relative path."""
         wanted = normalize_name(query)
+        if "/" in wanted:
+            return [self.subject(ctx, path)
+                    for path in container_dirs(ctx, self.params[PARAM_ROOTS])
+                    if normalize_name(relative(ctx, path)) == wanted]
         return self.select(ctx, lambda name: name == wanted)
 
     def match_substring(self, query, ctx):

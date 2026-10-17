@@ -3,10 +3,8 @@ from dataclasses import dataclass, field
 
 from . import keys
 from .bindings import resolve_role
-from .checkouts import subject_context
 from .gates import Status
-from .position import evaluate, position
-from .resolve import resolve
+from .position import evaluate
 
 INDENT = "  "
 MARK_SEPARATOR = "   "
@@ -161,23 +159,6 @@ def status_report(ctx, pipelines, query):
     Missing subjects nothing is known about are errors, reported only when no position is shown:
     another pipeline presenting the query is the answer.
     """
-    found = resolve(ctx, pipelines, query)
-    locale = ctx.locale
-    if not found.matches:
-        return Report(ok=False, err=[locale.text(keys.STATUS_NOT_FOUND, query=query)])
-    if found.ambiguous:
-        err = [locale.text(keys.STATUS_AMBIGUOUS)]
-        err += [INDENT + locale.text(keys.STATUS_CANDIDATE, id=s.id) for _, s in found.matches]
-        return Report(ok=False, err=err)
-    out, err = [], []
-    for pipeline, subject in found.matches:
-        own = subject_context(ctx, subject)
-        text = missing_text(own, pipeline, subject)
-        if text is not None:
-            err.append(text)
-            continue
-        if out:
-            out.append("")
-        pos = position(own, pipeline, subject)
-        out += render_position(locale, pos, step_skills(own, pos))
-    return Report(ok=bool(out), out=out, err=[] if out else err)
+    from .status import collect_status
+
+    return collect_status(ctx, pipelines, query).report

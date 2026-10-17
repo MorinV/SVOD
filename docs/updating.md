@@ -72,6 +72,10 @@ The path is cloned too, so exactly the tag is taken, and it is recorded as the s
 
 ## Versions and migrations
 
+Version 0.3 adds a compact local profile, packaged templates (`svod new`) and local command helpers. Updating the engine does not install or overwrite a project's profile: opt into a new store or adapt selected declarations explicitly. Update the engine before using `when`, `purpose` or new CLI commands. Existing human decisions and logs remain history; no automatic consent or lifecycle import is performed. Stricter readiness/timestamp checks can require presenting inputs again and obtaining a fresh human answer. See [local-workflow.md](local-workflow.md).
+
+Tags are separate from source versions. Until a `v0.3.0` tag is deliberately published, use an exact known commit/branch with `--to` rather than assuming the default newest-tag route selects these changes. Ordinary main publication does not itself publish a release.
+
 - Versions are semantic: `MAJOR.MINOR.PATCH`, tags `vX.Y.Z`. Before 1.0 a minor release (`0.3.0`) may change the format of a store; a patch release (`0.2.1`) does not.
 - Every release in [CHANGELOG.md](../CHANGELOG.md) has a **Migration** subsection: what changes in a store and what to do by hand; `none` when nothing.
 - What can be done automatically (renaming a key of `svod.yaml`, moving a file) is a migration in `svod/migrations.py`. `svod update` applies those of every version after the old one up to the new one, oldest first, and prints what it changed. They are ordinary changes of the working tree: review them in `git diff` like the copy.

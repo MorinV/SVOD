@@ -3,6 +3,7 @@ import datetime as dt
 import json
 import shutil
 import unittest
+from unittest import mock
 
 import yaml
 
@@ -11,14 +12,20 @@ from support import (ENCODING, EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, ME, TEST_PROF
 
 from svod.approval import (MARK_AT, MARK_KEYS, digest, is_fresh, mark_path, read_mark,
                              set_fields, write_mark)
+from svod.approve import approval_ref, approve, candidates, pending_prerequisites
 from svod.config import load_config
+from svod.context import Context
 from svod.errors import LoadError
+from svod.gates import Status
+from svod.loader import load_runtime
 from svod.locale import Locale
 from svod.providers.openspec_change import DEFAULT_ROOT, METADATA_FILE
 from svod.render import gate_text
 
 CHANGE = f"{DEFAULT_ROOT}/c-1"
 META = f"{CHANGE}/{METADATA_FILE}"
+CHANGE2 = f"{DEFAULT_ROOT}/c-2"
+META2 = f"{CHANGE2}/{METADATA_FILE}"
 BIND = ["design.md", "specs/**/spec.md"]
 UNBOUND_GATE = "params: { marker: approved, file: .openspec.yaml }"
 BOUND_GATE = ("params: { marker: approved, file: .openspec.yaml, "
@@ -34,6 +41,10 @@ KEEP = "ticket: tk-1\n# kept comment\nextra: value\n"
 WINDOW = 10
 MINUTE = dt.timedelta(minutes=1)
 PROFILE_DIR = "bound-profile"
+SECOND_PROFILE_DIR = "second-approval-profile"
+SECOND_STEP = "changes_approval"
+SECOND_META = f"{CHANGE}/review/approval.yaml"
+SECOND_BIND = ["review/code.yaml", "review/zed.yaml"]
 
 
 def bound_profile(root, gate=BOUND_GATE):
@@ -44,6 +55,31 @@ def bound_profile(root, gate=BOUND_GATE):
     text = pipeline.read_text(encoding=ENCODING)
     pipeline.write_text(text.replace(UNBOUND_GATE, gate), encoding=ENCODING)
     return target
+
+
+def second_approval_profile(root):
+    """Test profile with a native second approval after completed build and verification."""
+    target = bound_profile(root)
+    second = root / SECOND_PROFILE_DIR
+    target.rename(second)
+    pipeline = second / "pipelines" / "task.yaml"
+    text = pipeline.read_text(encoding=ENCODING)
+    step = f"""  - id: {SECOND_STEP}
+    required: true
+    text: task.step.review
+    gates:
+      - {{ gate: artifact, params: {{ path: review/code.yaml }} }}
+      - {{ gate: artifact, params: {{ path: review/zed.yaml }} }}
+      - gate: approval
+        params:
+          marker: changes_approved
+          file: review/approval.yaml
+          bind: [review/code.yaml, review/zed.yaml]
+        label: mark.approved
+"""
+    pipeline.write_text(text.replace("  - id: review\n", step + "  - id: review\n"),
+                        encoding=ENCODING)
+    return second
 
 
 class ApproveTest(StoreTestCase):
@@ -62,6 +98,9 @@ class ApproveTest(StoreTestCase):
         self.sb.write(META, KEEP)
         self.sb.write(f"{CHANGE}/design.md", "# design\n")
         self.sb.write(f"{CHANGE}/specs/cap/spec.md", "# spec\n")
+        self.sb.write(META2, "ticket: tk-2\n")
+        self.sb.write(f"{CHANGE2}/design.md", "# second design\n")
+        self.sb.write(f"{CHANGE2}/specs/cap/spec.md", "# second spec\n")
         self.sb.commit(message="change")
         self.change = self.sb.store / CHANGE
 
@@ -114,6 +153,50 @@ class ApproveTest(StoreTestCase):
         out = self.sb.cli("approve", "tk-1")
         self.assertEqual(out.returncode, EXIT_OK, out.stderr)
 
+    def test_grouped_mark_is_consumed_one_key_at_a_time(self):
+        """Separate CLI calls approve both named keys while retaining the original time."""
+        at = dt.datetime.now().astimezone()
+        write_mark(self.sb.store, ("TK-1", "tK-2"), at)
+        original = read_mark(self.sb.store)
+
+        first = self.sb.cli("approve", "Tk-1")
+        self.assertEqual(first.returncode, EXIT_OK, first.stderr)
+        remaining = read_mark(self.sb.store)
+        self.assertEqual(remaining[MARK_AT], original[MARK_AT])
+        self.assertEqual({key.casefold() for key in remaining[MARK_KEYS]}, {"tk-2"})
+
+        second = self.sb.cli("approve", "TK-2")
+        self.assertEqual(second.returncode, EXIT_OK, second.stderr)
+        self.assertIsNone(read_mark(self.sb.store))
+
+    def test_consumed_key_refusal_does_not_consume_another_group_key(self):
+        """Repeating an already consumed key is refused and leaves the other key usable."""
+        self.mark(("Tk-1", "TK-2"))
+        self.assertEqual(self.sb.cli("approve", "tK-1").returncode, EXIT_OK)
+        remaining = read_mark(self.sb.store)
+
+        repeated = self.sb.cli("approve", "TK-1")
+        self.assertEqual(repeated.returncode, EXIT_FINDINGS)
+        self.assertEqual(read_mark(self.sb.store), remaining)
+
+        other = self.sb.cli("approve", "tk-2")
+        self.assertEqual(other.returncode, EXIT_OK, other.stderr)
+        self.assertIsNone(read_mark(self.sb.store))
+
+    def test_expired_remaining_group_key_is_refused_and_retained(self):
+        """A remaining key keeps the shared window and is not consumed after it expires."""
+        self.mark(("tk-1", "tk-2"))
+        self.assertEqual(self.sb.cli("approve", "tk-1").returncode, EXIT_OK)
+        remaining = read_mark(self.sb.store)
+        write_mark(self.sb.store, remaining[MARK_KEYS],
+                   dt.datetime.now().astimezone() - (WINDOW + 1) * MINUTE)
+        expired = read_mark(self.sb.store)
+
+        refused = self.sb.cli("approve", "tk-2")
+        self.assertEqual(refused.returncode, EXIT_FINDINGS)
+        self.assertIn("No fresh approval", refused.stderr)
+        self.assertEqual(read_mark(self.sb.store), expired)
+
     def test_reapproval_replaces_the_fields(self):
         """A legacy date is overwritten in place, not duplicated."""
         set_fields(self.sb.store / META, {"approved": "2026-01-01"})
@@ -131,6 +214,288 @@ class ApproveTest(StoreTestCase):
         out = self.sb.cli("approve", "tk-1")
         self.assertEqual(out.returncode, EXIT_FINDINGS)
         self.assertIn("Who approves is unknown", out.stderr)
+
+
+class SecondApprovalTest(StoreTestCase):
+    """An explicit --step records a later approval only after its stage is ready."""
+
+    def setUp(self):
+        super().setUp()
+        config = self.sb.store / "svod.yaml"
+        text = config.read_text(encoding=ENCODING)
+        profile = second_approval_profile(self.sb.root)
+        self.sb.write("svod.yaml", text.replace(str(TEST_PROFILE), str(profile)))
+        self.sb.init_git(remote=False)
+        self.sb.write(META, KEEP)
+        self.sb.write(f"{CHANGE}/design.md", "# design\n")
+        self.sb.write(f"{CHANGE}/specs/cap/spec.md", "# spec\n")
+        self.sb.write(f"{CHANGE}/progress.txt", "1\n")
+        self.sb.write(f"{CHANGE}/report.md", "# verification\n")
+        self.sb.write(f"{CHANGE}/review/code.yaml", "head: abc\n")
+        self.sb.write(f"{CHANGE}/review/zed.yaml", "shown: true\n")
+        self.sb.commit(message="two approvals")
+        self.change = self.sb.store / CHANGE
+
+    def mark(self):
+        write_mark(self.sb.store, ("Tk-1",))
+
+    def approve_plan(self):
+        self.mark()
+        out = self.sb.cli("approve", "tk-1")
+        self.assertEqual(out.returncode, EXIT_OK, out.stderr)
+
+    def review_meta(self):
+        return yaml.safe_load((self.sb.store / SECOND_META).read_text(encoding=ENCODING))
+
+    def second_gate_result(self):
+        runtime = load_runtime(self.sb.store)
+        ctx = Context(runtime.config, runtime.locale, pipelines=runtime.by_name())
+        pipeline = runtime.pipeline("task")
+        subject = pipeline.subject.impl.resolve("tk-1", ctx)[0]
+        return approval_ref(pipeline, SECOND_STEP).impl.evaluate(ctx, subject)
+
+    def test_explicit_step_writes_only_the_second_approval_and_digest(self):
+        """A fresh second human approval writes its own file and leaves plan approval intact."""
+        self.approve_plan()
+        plan_meta = (self.sb.store / META).read_text(encoding=ENCODING)
+        self.mark()
+
+        out = self.sb.cli("approve", "tk-1", "--step", SECOND_STEP)
+
+        self.assertEqual(out.returncode, EXIT_OK, out.stderr)
+        self.assertEqual((self.sb.store / META).read_text(encoding=ENCODING), plan_meta)
+        meta = self.review_meta()
+        self.assertEqual(str(meta["changes_approved"]), dt.date.today().isoformat())
+        self.assertEqual(meta["changes_approved_by"], ME[0])
+        self.assertEqual(meta["changes_approved_sha"], digest(self.change, SECOND_BIND))
+        self.assertIsNone(read_mark(self.sb.store))
+
+    def test_premature_second_step_is_refused_without_consuming_the_mark(self):
+        """A missing first approval keeps the second stage closed and preserves the mark."""
+        self.mark()
+        marked = read_mark(self.sb.store)
+
+        out = self.sb.cli("approve", "tk-1", "--step", SECOND_STEP)
+
+        self.assertEqual(out.returncode, EXIT_FINDINGS)
+        self.assertIn("approve", out.stderr)
+        self.assertEqual(read_mark(self.sb.store), marked)
+        self.assertFalse((self.sb.store / SECOND_META).exists())
+
+    def test_missing_and_nonapproval_steps_are_refused_without_consuming_mark(self):
+        """--step must name a real step containing a native approval gate."""
+        cases = (("absent", "no step absent"),
+                 ("spec", "step spec has no native approval gate"))
+        for step, message in cases:
+            with self.subTest(step=step):
+                self.mark()
+                marked = read_mark(self.sb.store)
+                out = self.sb.cli("approve", "tk-1", "--step", step)
+                self.assertEqual(out.returncode, EXIT_FINDINGS)
+                self.assertIn(message, out.stderr)
+                self.assertEqual(read_mark(self.sb.store), marked)
+
+    def test_selected_step_artifacts_must_pass_before_approval(self):
+        """A selected non-approval gate cannot be bypassed with --step."""
+        self.approve_plan()
+        (self.change / "review/zed.yaml").unlink()
+        self.mark()
+        marked = read_mark(self.sb.store)
+
+        out = self.sb.cli("approve", "tk-1", "--step", SECOND_STEP)
+
+        self.assertEqual(out.returncode, EXIT_FINDINGS)
+        self.assertIn(SECOND_STEP, out.stderr)
+        self.assertEqual(read_mark(self.sb.store), marked)
+        self.assertFalse((self.sb.store / SECOND_META).exists())
+
+    def test_second_approval_becomes_stale_when_bound_review_changes(self):
+        """The core approval gate rejects review evidence changed after approval."""
+        self.approve_plan()
+        self.mark()
+        out = self.sb.cli("approve", "tk-1", "--step", SECOND_STEP)
+        self.assertEqual(out.returncode, EXIT_OK, out.stderr)
+        self.assertEqual(self.second_gate_result().status, Status.PASS)
+
+        self.sb.write(f"{CHANGE}/review/code.yaml", "head: changed\n")
+        result = self.second_gate_result()
+        self.assertEqual(result.status, Status.FAIL)
+        self.assertEqual(result.facts["reason"], "drift")
+
+    def test_second_approval_refuses_review_changed_after_chat_response(self):
+        """The CLI preserves an old mark until the person approves the regenerated review."""
+        self.approve_plan()
+        write_mark(self.sb.store, ("Tk-1",), dt.datetime.now().astimezone() - MINUTE)
+        old_mark = read_mark(self.sb.store)
+        self.sb.write(f"{CHANGE}/review/code.yaml", "head: regenerated\n")
+
+        refused = self.sb.cli("approve", "tk-1", "--step", SECOND_STEP)
+
+        self.assertEqual(refused.returncode, EXIT_FINDINGS)
+        self.assertIn("changed after the person's chat response", refused.stderr)
+        self.assertEqual(read_mark(self.sb.store), old_mark)
+        self.assertFalse((self.sb.store / SECOND_META).exists())
+
+        self.mark()
+        accepted = self.sb.cli("approve", "tk-1", "--step", SECOND_STEP)
+        self.assertEqual(accepted.returncode, EXIT_OK, accepted.stderr)
+        self.assertEqual(self.review_meta()["changes_approved_sha"],
+                         digest(self.change, SECOND_BIND))
+
+    def test_bound_file_stat_error_refuses_without_consuming_mark(self):
+        """An unreadable exact version fails closed and preserves the human mark."""
+        self.approve_plan()
+        self.mark()
+        marked = read_mark(self.sb.store)
+        runtime = load_runtime(self.sb.store)
+        ctx = Context(runtime.config, runtime.locale, pipelines=runtime.by_name())
+
+        with mock.patch("svod.approve.bound_files", side_effect=OSError("unreadable")):
+            report = approve(ctx, runtime.pipelines, "tk-1", step=SECOND_STEP)
+
+        self.assertFalse(report.ok)
+        self.assertTrue(report.refused)
+        self.assertIn("changed after the person's chat response", report.err[0])
+        self.assertEqual(read_mark(self.sb.store), marked)
+        self.assertFalse((self.sb.store / SECOND_META).exists())
+
+
+class ConditionalApprovalTest(StoreTestCase):
+    """Synthetic declarations drive native writer applicability and readiness."""
+
+    def setUp(self):
+        super().setUp()
+        profile = bound_profile(self.sb.root)
+        config = self.sb.store / "svod.yaml"
+        self.sb.write("svod.yaml", config.read_text(encoding=ENCODING).replace(
+            str(TEST_PROFILE), str(profile)))
+        self.pipeline_path = profile / "pipelines/task.yaml"
+        self.data = yaml.safe_load(self.pipeline_path.read_text(encoding=ENCODING))
+        self.data["steps"] = [
+            {"id": "orchard", "text": "task.step.review", "required": True,
+             "gates": [{"gate": "approval", "purpose": "fruit",
+                        "params": {"marker": "pear_accepted", "file": ".openspec.yaml"}}]},
+            {"id": "meadow", "text": "task.step.review",
+             "gates": [{"gate": "approval", "purpose": "grass",
+                        "params": {"marker": "grass_accepted", "file": "decision.yaml"}}]},
+        ]
+        self.data.pop("violations", None)
+        self.sb.init_git(remote=False)
+        self.sb.write(META, KEEP)
+        self.sb.commit(message="synthetic approvals")
+
+    def runtime_case(self, attrs=None):
+        self.pipeline_path.write_text(yaml.safe_dump(self.data), encoding=ENCODING)
+        runtime = load_runtime(self.sb.store)
+        ctx = Context(runtime.config, runtime.locale, pipelines=runtime.by_name())
+        pipeline = runtime.pipeline("task")
+        subject = pipeline.subject.impl.resolve("tk-1", ctx)[0]
+        subject.attrs.update(attrs or {})
+        return ctx, pipeline, subject
+
+    def test_inapplicable_step_is_refused_without_write_or_mark_consumption(self):
+        self.data["steps"][0]["when"] = "needs_fruit"
+        ctx, pipeline, subject = self.runtime_case()
+        write_mark(self.sb.store, ("tk-1",))
+        marked = read_mark(self.sb.store)
+        with mock.patch("svod.approve.resolve", return_value=mock.Mock(
+                matches=[(pipeline, subject)])):
+            report = approve(ctx, [pipeline], "tk-1", step="orchard")
+        self.assertFalse(report.ok)
+        self.assertTrue(report.refused)
+        self.assertEqual(read_mark(self.sb.store), marked)
+        self.assertEqual((self.sb.store / META).read_text(encoding=ENCODING), KEEP)
+
+    def test_inapplicable_approval_gate_is_not_an_automatic_candidate(self):
+        self.data["steps"][0]["gates"][0]["when"] = "needs_fruit"
+        ctx, pipeline, subject = self.runtime_case()
+        with mock.patch("svod.approve.resolve", return_value=mock.Mock(
+                matches=[(pipeline, subject)])):
+            pairs, _ = candidates(ctx, [pipeline], "tk-1")
+        self.assertEqual(pairs, [(subject, pipeline.steps[1].gates[0])])
+
+    def test_skipped_prerequisite_and_selected_artifact_allow_real_approval(self):
+        self.data["steps"][0]["when"] = "needs_fruit"
+        self.data["steps"][1]["gates"].insert(0, {
+            "gate": "artifact", "when": "needs_report", "params": {"path": "absent.md"}})
+        ctx, pipeline, subject = self.runtime_case()
+        self.assertEqual(pending_prerequisites(ctx, pipeline, subject, "meadow"), [])
+        write_mark(self.sb.store, ("tk-1",))
+        with mock.patch("svod.approve.resolve", return_value=mock.Mock(
+                matches=[(pipeline, subject)])):
+            report = approve(ctx, [pipeline], "tk-1")
+        self.assertTrue(report.ok, report.err)
+        self.assertIsNone(read_mark(self.sb.store))
+        self.assertIn("grass_accepted", yaml.safe_load(
+            (subject.path / "decision.yaml").read_text(encoding=ENCODING)))
+        self.assertEqual((self.sb.store / META).read_text(encoding=ENCODING), KEEP)
+
+    def test_gate_only_skipped_prerequisite_does_not_block_later_approval(self):
+        self.data["steps"][0]["gates"][0]["when"] = "needs_fruit"
+        ctx, pipeline, subject = self.runtime_case()
+        self.assertEqual(pending_prerequisites(ctx, pipeline, subject, "meadow"), [])
+        self.assertIsNone(approval_ref(pipeline, "orchard", subject))
+        self.assertEqual(pending_prerequisites(ctx, pipeline, subject, "orchard"), ["orchard"])
+
+    def test_applicable_prerequisite_and_selected_artifact_still_block(self):
+        self.data["steps"][0]["when"] = "needs_fruit"
+        self.data["steps"][1]["gates"].insert(0, {
+            "gate": "artifact", "when": "needs_report", "params": {"path": "absent.md"}})
+        ctx, pipeline, subject = self.runtime_case(
+            {"needs_fruit": True, "needs_report": True})
+        self.assertIs(approval_ref(pipeline, "orchard", subject), pipeline.steps[0].gates[0])
+        self.assertEqual(pending_prerequisites(ctx, pipeline, subject, "meadow"),
+                         ["orchard", "meadow"])
+
+    def test_repeated_approval_is_evaluated_once_and_needs_no_extra_human_event(self):
+        duplicate = yaml.safe_load(yaml.safe_dump(self.data["steps"][0]["gates"][0]))
+        duplicate["label"] = "mark.approved"
+        self.data["steps"].insert(1, {"id": "copse", "text": "task.step.review",
+                                       "required": True, "gates": [duplicate]})
+        ctx, pipeline, subject = self.runtime_case()
+        write_mark(self.sb.store, ("tk-1",))
+        with mock.patch("svod.approve.resolve", return_value=mock.Mock(
+                matches=[(pipeline, subject)])):
+            first = approve(ctx, [pipeline], "tk-1")
+            self.assertTrue(first.ok, first.err)
+            repeated = pipeline.steps[1].gates[0].impl
+            with mock.patch.object(repeated, "evaluate", wraps=repeated.evaluate) as evaluate:
+                pairs, _ = candidates(ctx, [pipeline], "tk-1")
+            self.assertEqual(pairs, [(subject, pipeline.steps[2].gates[0])])
+            evaluate.assert_not_called()
+            self.assertEqual(pending_prerequisites(ctx, pipeline, subject, "meadow"), [])
+            write_mark(self.sb.store, ("tk-1",))
+            second = approve(ctx, [pipeline], "tk-1")
+        self.assertTrue(second.ok, second.err)
+        self.assertIsNone(read_mark(self.sb.store))
+
+    def test_skipped_first_copy_does_not_hide_applicable_duplicate(self):
+        duplicate = yaml.safe_load(yaml.safe_dump(self.data["steps"][0]["gates"][0]))
+        self.data["steps"][0]["when"] = "needs_fruit"
+        self.data["steps"][1]["gates"].insert(0, duplicate)
+        ctx, pipeline, subject = self.runtime_case()
+        write_mark(self.sb.store, ("tk-1",))
+        with mock.patch("svod.approve.resolve", return_value=mock.Mock(
+                matches=[(pipeline, subject)])):
+            pairs, _ = candidates(ctx, [pipeline], "tk-1")
+            self.assertEqual(pairs, [(subject, pipeline.steps[1].gates[0])])
+            report = approve(ctx, [pipeline], "tk-1")
+        self.assertTrue(report.ok, report.err)
+
+    def test_inapplicable_gate_is_refused_with_explicit_step_and_all_skipped_has_no_candidate(self):
+        for stage in self.data["steps"]:
+            stage["gates"][0]["when"] = "needs_decision"
+        ctx, pipeline, subject = self.runtime_case()
+        write_mark(self.sb.store, ("tk-1",))
+        marked = read_mark(self.sb.store)
+        with mock.patch("svod.approve.resolve", return_value=mock.Mock(
+                matches=[(pipeline, subject)])):
+            pairs, _ = candidates(ctx, [pipeline], "tk-1")
+            self.assertEqual(pairs, [])
+            report = approve(ctx, [pipeline], "tk-1", step="orchard")
+        self.assertFalse(report.ok)
+        self.assertTrue(report.refused)
+        self.assertEqual(read_mark(self.sb.store), marked)
 
 
 class ApproveIgnoringLinesTest(ApproveTest):

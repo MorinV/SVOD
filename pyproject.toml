@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "svod"
-version = "0.2.0"
+version = "0.3.0"
 description = "Declarative work pipelines for coding agents: steps, gates and a position computed from files and git"
 urls = { Homepage = "https://github.com/MorinV/SVOD" }
 readme = "README.md"
@@ -19,4 +19,4 @@ svod = "svod.cli:main"
 include = ["svod*"]
 
 [tool.setuptools.package-data]
-svod = ["locale/*.yaml"]
+svod = ["locale/*.yaml", "templates/**/*", "templates/**/.gitignore"]

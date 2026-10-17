@@ -1,4 +1,5 @@
 """Agent hooks: session start summary, prompt positions and approval marks, pre-tool guards."""
+import datetime as dt
 import json
 import os
 import subprocess
@@ -10,7 +11,10 @@ import task_example as te
 from support import CLI_MODULE, CONFIG_FILE, ENCODING, EXIT_OK
 
 from svod import hooks
-from svod.approval import MARK_KEYS, clear_mark, read_mark
+from svod.approval import MARK_AT, MARK_KEYS, clear_mark, read_mark
+from svod.gates import ExistsGate
+from svod.pipeline import parse_pipeline
+from svod.subject import Subject
 
 NO_OUTPUT = None
 NO_MARK = None
@@ -71,6 +75,8 @@ class HookTestCase(unittest.TestCase):
         cls.sb.write(te.CODE_FILE, te.CODE_TEXT, base=te.service(cls.sb))
         cls.meta = cls.sb.store / te.META
         cls.meta_text = cls.meta.read_text(encoding=ENCODING)
+        cls.config_path = cls.sb.store / CONFIG_FILE
+        cls.config_text = cls.config_path.read_text(encoding=ENCODING)
 
     @classmethod
     def tearDownClass(cls):
@@ -81,12 +87,21 @@ class HookTestCase(unittest.TestCase):
     def tearDown(self):
         """Drop the approval and the mark a case left."""
         self.meta.write_text(self.meta_text, encoding=ENCODING)
+        self.config_path.write_text(self.config_text, encoding=ENCODING)
         clear_mark(self.sb.store)
 
     def answer(self, event_name, event, fallback=None):
         """Parsed hook answer, or None."""
         found = hooks.answer(event_name, event, fallback)
         return json.loads(found) if found else None
+
+    def set_agent_context(self, **values):
+        """Set optional hook output controls in the example store config."""
+        lines = ["profile_config:", "  agent_context:"]
+        lines.extend(f"    {name}: {'true' if enabled else 'false'}"
+                     for name, enabled in values.items())
+        self.config_path.write_text(self.config_text.rstrip() + "\n" + "\n".join(lines) + "\n",
+                                    encoding=ENCODING)
 
 
 class PreToolTest(HookTestCase):
@@ -156,6 +171,13 @@ class PreToolTest(HookTestCase):
              bash(f"cp /tmp/plan_approved.yaml {te.META}"), DENIED_FIELDS),
             ("bash reads an approval field", False, store,
              bash(f"grep plan_approved {te.META}"), NO_OUTPUT),
+            ("bash python reads metadata before writing review evidence", False, store,
+             bash(f"""python3 <<'PY'
+from pathlib import Path
+p = Path('{te.CHANGE_NAME}')
+raw = (p / '.openspec.yaml').read_bytes()
+(p / 'review/independent.md').write_bytes(raw + b'plan_approved_sha')
+PY"""), NO_OUTPUT),
             ("edit in the store, read-only off", False, store, edit(store / NOTES), NO_OUTPUT),
         )
         for name, approved, cwd, tool_input, expected in cases:
@@ -168,6 +190,116 @@ class PreToolTest(HookTestCase):
                     self.assertIsNone(reason)
                 else:
                     self.assertIn(expected, reason or "")
+
+    def test_python_metadata_reads_do_not_look_like_approval_writes(self):
+        """Only explicit inline Path reads may mention guarded metadata and approval fields."""
+        guarded = [hooks.Guarded(("task", ".openspec.yaml"),
+                                 ("plan_approved_sha",))]
+        allowed = (
+            ("heredoc reads metadata and writes review evidence elsewhere", """python3 <<'PY'
+from pathlib import Path
+import yaml
+
+p = Path('task')
+metadata = yaml.safe_load((p / '.openspec.yaml').read_text())
+raw = metadata['plan_approved_sha'].encode()
+(p / 'review/independent.md').write_bytes(raw)
+(p / 'review/independent.yaml').write_text(yaml.safe_dump(metadata))
+PY"""),
+            ("dash-c reads metadata and writes another file",
+             "python3 -c \"from pathlib import Path; "
+             "value = Path('task/.openspec.yaml').read_text(); "
+             "Path('result.txt').write_text('plan_approved_sha=' + value)\""),
+            ("inline path reads bytes",
+             "python3 -c \"from pathlib import Path; "
+             "Path('task/.openspec.yaml').read_bytes(); plan_approved_sha = True\""),
+        )
+        blocked = (
+            ("write_text to metadata",
+             "python3 -c \"from pathlib import Path; "
+             "Path('task/.openspec.yaml').write_text('plan_approved_sha: x')\""),
+            ("write_bytes to metadata",
+             "python3 -c \"from pathlib import Path; "
+             "Path('task/.openspec.yaml').write_bytes(b'plan_approved_sha: x')\""),
+            ("open append to metadata",
+             "python3 -c \"open('task/.openspec.yaml', 'a').write('plan_approved_sha: x')\""),
+            ("open overwrite of metadata",
+             "python3 -c \"open('task/.openspec.yaml', 'w').write('plan_approved_sha: x')\""),
+            ("mixed metadata read and write", """python3 <<'PY'
+from pathlib import Path
+
+Path('task/.openspec.yaml').read_text()
+Path('task/.openspec.yaml').write_text('plan_approved_sha: x')
+PY"""),
+            ("decoy read before dynamically named metadata write",
+             "python3 -c \"from pathlib import Path; "
+             "Path('safe/.openspec.yaml').read_text(); "
+             "Path('target').joinpath('.open' + 'spec.yaml').write_text("
+             "'plan_approved_sha: forged')\""),
+            ("metadata write before a decoy heredoc read", """python3 -c "open(
+'target/.openspec.yaml', 'w').write('plan_approved_sha: forged')"; cat <<'PY'
+from pathlib import Path
+Path('safe/.openspec.yaml').read_text()
+PY"""),
+            ("non-python decoy before actual python metadata writer",
+             "echo -c \"from pathlib import Path; "
+             "Path('safe/.openspec.yaml').read_text(); plan_approved_sha=True\"; "
+             "python3 -c \"open('target/.openspec.yaml', 'w').write("
+             "'plan_approved_sha: forged')\""),
+            ("safe dash-c followed by node command",
+             "python3 -c \"from pathlib import Path; "
+             "Path('safe/.openspec.yaml').read_text(); plan_approved_sha=True\"; "
+             "node -e \"process.exit(0)\""),
+            ("safe dash-c followed by touch command",
+             "python3 -c \"from pathlib import Path; "
+             "Path('safe/.openspec.yaml').read_text(); plan_approved_sha=True\"; "
+             "touch marker"),
+            ("quoted heredoc followed by shell command", """python3 <<'PY'
+from pathlib import Path
+Path('safe/.openspec.yaml').read_text()
+plan_approved_sha = True
+PY
+touch marker"""),
+            ("quoted heredoc header followed by sibling command", """python3 <<'PY'; ruby -e 'File.write("target/"+".open"+"spec.yaml", "plan_approved_sha: forged")'
+from pathlib import Path
+Path('safe/.openspec.yaml').read_text()
+PY"""),
+            ("unquoted heredoc", """python3 <<PY
+from pathlib import Path
+Path('safe/.openspec.yaml').read_text()
+plan_approved_sha = True
+PY"""),
+            ("decoy read before copy to dynamic metadata destination", """python3 <<'PY'
+from pathlib import Path
+import shutil
+
+Path('safe/.openspec.yaml').read_text()
+destination = Path('target') / ('.open' + 'spec.yaml')
+shutil.copyfile('plan_approved_sha', destination)
+PY"""),
+            ("reserved Path name is reassigned",
+             "python3 -c \"from pathlib import Path; "
+             "Path = wrapper; Path('safe/.openspec.yaml').read_text(); "
+             "plan_approved_sha = True\""),
+            ("path alias",
+             "python3 -c \"from pathlib import Path; "
+             "meta = Path('task/.openspec.yaml'); "
+             "meta.read_text(); plan_approved_sha = True\""),
+            ("unknown path operation",
+             "python3 -c \"from pathlib import Path; "
+             "Path('task/.openspec.yaml').exists(); plan_approved_sha = True\""),
+            ("malformed script",
+             "python3 -c \"from pathlib import Path; "
+             "Path('task/.openspec.yaml').read_text(; plan_approved_sha = True\""),
+        )
+        for name, command in allowed:
+            with self.subTest(case=name):
+                self.assertTrue(hooks.python_reads_metadata(command, ".openspec.yaml"))
+                self.assertFalse(hooks.bash_writes_approval(command, guarded))
+        for name, command in blocked:
+            with self.subTest(case=name):
+                self.assertFalse(hooks.python_reads_metadata(command, ".openspec.yaml"))
+                self.assertTrue(hooks.bash_writes_approval(command, guarded))
 
     def test_read_only_main_checkout(self):
         """With the option on, the main checkout refuses edits except ignored paths."""
@@ -234,6 +366,58 @@ class PromptTest(HookTestCase):
                     self.assertIn(expected, found[hooks.OUTPUT][hooks.CONTEXT])
                 self.assertEqual(mark, written[MARK_KEYS] if written else None)
 
+    def test_silent_prompt_controls_still_record_approval(self):
+        """Output can be suppressed without suppressing human approval or agent filtering."""
+        self.set_agent_context(prompt_positions=False, approval_notice=False)
+        event = {"hook_event_name": "UserPromptSubmit", "cwd": str(self.sb.store),
+                 "prompt": f"approve {te.KEY}"}
+        self.assertIsNone(self.answer(hooks.EVENT_PROMPT, event))
+        self.assertEqual([te.KEY], read_mark(self.sb.store)[MARK_KEYS])
+        clear_mark(self.sb.store)
+        event["prompt"] = f"<agent-message from=\"x\">approve {te.KEY}</agent-message>"
+        self.assertIsNone(self.answer(hooks.EVENT_PROMPT, event))
+        self.assertIsNone(read_mark(self.sb.store))
+
+    def test_verified_redelivery_preserves_original_time_and_refuses_expired_event(self):
+        """Redelivering the same human event cannot extend its approval window."""
+        event = {"cwd": str(self.sb.store), "prompt": f"approve {te.KEY}"}
+        original = dt.datetime.now().astimezone() - dt.timedelta(minutes=1)
+        clear_mark(self.sb.store)
+        try:
+            hooks.prompt_hook(event, self.sb.store, at=original)
+            self.assertEqual(read_mark(self.sb.store)[MARK_AT], original.isoformat())
+            clear_mark(self.sb.store)
+            expired = original - dt.timedelta(minutes=20)
+            answer = hooks.prompt_hook(event, self.sb.store, at=expired)
+            self.assertIsNone(read_mark(self.sb.store))
+            self.assertNotIn(MARKED, json.loads(answer)[hooks.OUTPUT][hooks.CONTEXT])
+        finally:
+            clear_mark(self.sb.store)
+
+    def test_ui_reply_approves_only_the_actual_answer(self):
+        """Approval-looking question text and options never mint a human mark."""
+        event = {"cwd": str(self.sb.store)}
+        for answer, expected in ((f"approve {te.KEY}", [te.KEY]), ("No", None)):
+            with self.subTest(answer=answer):
+                payload = [{"question": f"approve {te.KEY}",
+                            "options": [f"approve {te.KEY}"], "answer": answer}]
+                event["prompt"] = (hooks.QUESTION_REPLY_OPEN + "\n" + json.dumps(payload)
+                                   + "\n" + hooks.QUESTION_REPLY_CLOSE)
+                clear_mark(self.sb.store)
+                hooks.prompt_hook(event, self.sb.store)
+                mark = read_mark(self.sb.store)
+                self.assertEqual(mark[MARK_KEYS] if mark else None, expected)
+        self.assertEqual(hooks.human_answers(hooks.QUESTION_REPLY_OPEN + "garbage"
+                                            + hooks.QUESTION_REPLY_CLOSE), [])
+
+    def test_explicit_changes_phrase_is_supported_when_configured(self):
+        runtime, reason = hooks.load(self.sb.store)
+        self.assertIsNone(reason)
+        from dataclasses import replace
+        runtime.config = replace(runtime.config, approval_phrases=("одобряю", "одобряю изменения"))
+        self.assertEqual(hooks.approval_keys(runtime, f"Одобряю изменения {te.KEY}"), [te.KEY])
+        self.assertIsNone(hooks.approval_keys(runtime, f"не одобряю изменения {te.KEY}"))
+
     def test_session_start(self):
         """Summary from the store of the cwd or the fallback; silence without a store."""
         elsewhere = self.sb.root / ELSEWHERE
@@ -251,6 +435,44 @@ class PromptTest(HookTestCase):
                     self.assertIsNone(found)
                 else:
                     self.assertIn(expected, found[hooks.OUTPUT][hooks.CONTEXT])
+
+    def test_session_summary_can_be_silent(self):
+        """The session summary switch suppresses context while legacy remains enabled."""
+        self.set_agent_context(session_summary=False)
+        self.assertIsNone(self.answer(hooks.EVENT_SESSION_START,
+                                      {"hook_event_name": "SessionStart",
+                                       "cwd": str(self.sb.store)}))
+
+
+class ConditionalFreezeTest(unittest.TestCase):
+    """Code freeze follows synthetic step and gate applicability declarations."""
+
+    def test_freeze_skips_inapplicable_stages_and_gates(self):
+        from types import SimpleNamespace
+
+        pipeline, errors = parse_pipeline({
+            "pipeline": "synthetic-freeze", "subject": {"provider": "synthetic"},
+            "steps": [{"id": "orchard", "text": "synthetic.orchard",
+                       "blocks_code": True, "when": "needs_fruit",
+                       "gates": [{"gate": "exists", "when": "needs_seed"}]}],
+        }, "synthetic-freeze.yaml")
+        self.assertEqual(errors, [])
+        assert pipeline is not None
+        pipeline.steps[0].gates[0].impl = ExistsGate()
+        guard = hooks.Guard.__new__(hooks.Guard)
+        guard.ctx = None
+        with mock.patch.object(guard, "runtime", SimpleNamespace(
+                locale=SimpleNamespace(text=lambda key, **facts: key)), create=True):
+            self.assert_freeze_cases(guard, pipeline)
+
+    def assert_freeze_cases(self, guard, pipeline):
+        """Both predicates must apply before the failing gate freezes code."""
+        for attrs, expected in (({}, None), ({"needs_seed": True}, None),
+                                ({"needs_fruit": True}, None),
+                                ({"needs_fruit": True, "needs_seed": True}, "synthetic.orchard")):
+            with self.subTest(attrs=attrs):
+                subject = Subject("synthetic", None, exists=False, attrs=attrs)
+                self.assertEqual(guard.frozen(pipeline, subject), expected)
 
 
 class BrokenStoreTest(unittest.TestCase):

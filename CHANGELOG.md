@@ -6,6 +6,25 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-17
+
+### Added
+
+- A portable compact local workflow: contract, selected native human approval, real command checks on clean Git source and durable local completion. Runtime helpers ship in the engine, without a project-specific integration.
+- `svod new <directory> --template local` creates a new store from packaged assets; `--template task` keeps the OpenSpec/Git example available.
+- `svod local prepare|checks|verify|deliver <query>` and `status --format json`, including a bounded advisory next action and allowlisted facts without free-form logs or approval identity.
+- Declarative step/gate applicability (`when`), semantic approval `purpose`, `approve --step` and independent consumption of named approval keys.
+- Optional hook context controls and a reusable efficient-execution skill. Silencing context does not disable human approval marking or edit guards.
+
+### Changed
+
+- Approvals require ready preceding stages and reject bound inputs changed after the human answer. Archived subjects with an archive terminal gate are presented as history without replaying live checks.
+- Exact store-relative addressing for directory/OpenSpec subjects. Process-change guidance selects verification by changed risk rather than imposing extra ceremony.
+
+### Migration
+
+Update the engine before using new YAML fields or commands. Existing profiles are not rewritten; the local template is opt-in. Re-present a plan and obtain a fresh real approval if readiness or input timestamps reject an earlier answer. No historical approval/evidence import, tracker, service CI, review or deployment gate is installed. Local completion identifies a checked commit, not merge/push/deploy; `command: null` is not a passed test. No release tag is created by changing this version.
+
 ## [0.2.0] - 2026-10-05
 
 ### Added

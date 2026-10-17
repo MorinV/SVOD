@@ -1,17 +1,17 @@
 ---
 name: svod-pipeline
-description: Create or change a Svod pipeline — add a pipeline, a step, a gate, texts, or bind a skill to a role — and prove the change with validate, status and render. Use when someone asks to change how work flows (a new step, a new check before code, a new kind of work), or when a gate gives a wrong answer.
+description: Use when changing Svod pipelines or gates. Simplify obligations first and verify the changed mechanism.
 ---
 
 # Creating and changing Svod pipelines
 
-A pipeline is a YAML file in the profile (`<profile>/pipelines/<name>.yaml`). The engine computes the position of a piece of work from files and git, so a change to a pipeline changes what every agent is told to do next. Make it small, prove it, and show the human what changed in the rendered documentation.
+A pipeline is a YAML file in the profile (`<profile>/pipelines/<name>.yaml`). It is the authority for the selected process, not a copy of historical requirements. Changes follow the project's repository policy; do not invent an additional task or approval merely to change Svod itself. Keep history without automatically migrating consent or replaying retired validators.
 
 The format of every key is in [docs/reference.md](../../docs/reference.md). This skill is the order of work; when it and the reference disagree, the reference wins.
 
 ## 1. Agree on the change first
 
-Before touching files, state in the chat, in plain words:
+Establish the requested functional boundary before touching files; ask only for unresolved decisions that affect it:
 
 - what kind of work the change is about (task, project, note…) and which pipeline file holds it;
 - the new or changed step and the condition that makes it pass — a file that exists, a field value, an approval, a git state;
@@ -48,17 +48,17 @@ A profile gate is a Python class in `<profile>/gates/`; how to write one, its fa
 
 ```bash
 svod validate                    # declarations, texts in every locale, bindings
-svod status <KEY or name>        # position of one real subject before and after
-svod render <pipeline> --write   # refresh the pipeline diagram in the docs
+svod render <pipeline>          # inspect the declaration's documentation
+svod status <selected query>    # when a concrete affected position needs checking
 ```
 
-`validate` must be clean. Run `status` on at least one real subject that the change affects and one it should not affect, and paste both outputs into the chat. If the position moved for a subject that is not supposed to move, the gate or its params are wrong.
+Choose checks by changed risk. Routine composition of supported steps normally needs validate/render, not a full lifecycle, all tasks, independent review or two mandatory pasted status blocks. Use `render --write` only when maintained documentation has the relevant markers. Report concise actual results and limitations instead of full successful output.
 
-If the profile has tests (a `tests/profile/` fixture or similar), add a case for the new gate or step: a subject where it passes and one where it fails.
+For a new or changed mechanism, use synthetic declarations and focused positive/negative regressions. Trace YAML, recorders, hooks, completion readers and bindings together. Do not freeze a copy of mutable production policy into mechanism tests. `when` predicates must agree across status, code freeze and approval; use approval `purpose: contract` or `purpose: result` instead of guessing stage names.
 
 ## 5. Show the change
 
-Tell the human, in a few lines: the step before and after, the rendered diagram diff, and which current subjects changed their position. Then land the change like any other change to the repository.
+Tell the human what obligation changed, what actually passed and what remains unverified. Land only within the project's authorized Git/publication boundaries. Local delivery never grants merge/push/deploy permission. Removing an obligation requires tracing live consumers, not just deleting its visible YAML step.
 
 ## Do not
 

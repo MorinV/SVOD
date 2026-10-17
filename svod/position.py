@@ -1,8 +1,9 @@
 """Position of a subject in a pipeline: entry, done, current step, violations, marks."""
 from dataclasses import dataclass, field
 
-from .gates import Status, unknown
+from .gates import ArchivedGate, Status, unknown
 from .pipeline import SEVERITY_BLOCK, SEVERITY_WARN, VIOLATION_SEPARATOR
+from .workflow_policy import step_applies
 
 FACT_STEP = "step"
 
@@ -29,8 +30,12 @@ class StepState:
 
     @property
     def passed(self):
-        """A step passes only when it has gates and all of them pass."""
-        return bool(self.outcomes) and all(o.passed for o in self.outcomes)
+        """A declared gate group passes when all applicable gates pass.
+
+        A genuinely gateless stage stays manual; a conditional-only group with no
+        applicable gates is skipped, consistently with approval and code guards.
+        """
+        return bool(self.step.gates) and all(o.passed for o in self.outcomes)
 
     @property
     def first_open(self):
@@ -67,6 +72,9 @@ class Position:
     violations: list = field(default_factory=list)
     unknown: list = field(default_factory=list)
     marks: list = field(default_factory=list)
+    current_entries: list = field(default_factory=list)
+    current_blocked: Outcome | None = None
+    done_outcome: Outcome | None = None
 
 
 def evaluate(ctx, ref, subject):
@@ -137,20 +145,32 @@ def position(ctx, pipeline, subject):
     Every step passed while done did not: the pending text of done, when declared.
     """
     pos = Position(pipeline=pipeline, subject=subject)
+    done = None
+    if subject.archived and pipeline.done and isinstance(pipeline.done.impl, ArchivedGate):
+        # Archive presentation is history, not evidence of live checks or delivery.
+        done = evaluate(ctx, pipeline.done, subject)
+        pos.done_outcome = done
+        if done.passed:
+            pos.done = done
+            pos.text, pos.facts = done.ref.text, done.result.facts
+            return pos
+
     pos.entries = run_entries(ctx, pipeline.entry, subject)
     pos.blocked = first_blocking(pos.entries)
     pos.warnings = failed_warnings(pos.entries)
     pos.unknown = [o for o in pos.entries if o.result.status is Status.UNKNOWN]
 
-    pos.steps = [StepState(s, [evaluate(ctx, g, subject) for g in s.gates])
-                 for s in pipeline.steps]
+    pos.steps = [StepState(s, [evaluate(ctx, g, subject) for g in s.gates
+                              if applies(g, subject)])
+                 for s in pipeline.steps if step_applies(s, subject)]
     if subject.exists:
         pos.marks = [(s.step.id, [o for o in s.outcomes if o.ref.label]) for s in pos.steps]
         pos.marks = [(step_id, marks) for step_id, marks in pos.marks if marks]
 
-    done = None
     if pipeline.done:
-        done = evaluate(ctx, pipeline.done, subject)
+        if done is None:
+            done = evaluate(ctx, pipeline.done, subject)
+        pos.done_outcome = done
         if done.passed:
             pos.done = done
             pos.text, pos.facts = done.ref.text, done.result.facts
@@ -178,9 +198,11 @@ def position(ctx, pipeline, subject):
         return pos
     pos.current = states[index]
     step_entries = run_entries(ctx, pos.current.step.entry, subject)
+    pos.current_entries = step_entries
     pos.warnings += failed_warnings(step_entries)
     pos.unknown += [o for o in step_entries if o.result.status is Status.UNKNOWN]
     step_block = first_blocking(step_entries)
+    pos.current_blocked = step_block
     gate = pos.current.first_open
     if step_block:
         pos.text, pos.facts = entry_text(step_block)

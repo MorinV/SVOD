@@ -2,6 +2,7 @@
 import argparse
 import importlib.util
 import io
+import json
 import sys
 from pathlib import Path
 
@@ -25,20 +26,47 @@ CMD_HOOK = "hook"
 CMD_INSTALL = "install"
 CMD_UPDATE = "update"
 CMD_MIGRATE = "migrate"
+CMD_NEW = "new"
+CMD_LOCAL = "local"
 DELIVERY_COMMANDS = (CMD_INSTALL, CMD_UPDATE)
 YAML_MODULE = "yaml"
 ERROR_INDENT = "  "
 
 
+def emit_json_error(code, query=None):
+    """Structured status failures contain only a safe reason code."""
+    from svod.status_json import error_json
+    print(json.dumps(error_json(code, query), ensure_ascii=False))
+    return EXIT_USAGE
+
+
+class StatusParser(argparse.ArgumentParser):
+    """Preserve argparse text behavior except explicit JSON status failures."""
+
+    json_errors = False
+
+    def error(self, message):
+        if self.json_errors:
+            raise SystemExit(emit_json_error("invalid_arguments"))
+        super().error(message)
+
+
 def build_parser():
     """Argument parser with one subcommand per mode."""
-    parser = argparse.ArgumentParser(prog=PROG)
+    parser = StatusParser(prog=PROG)
     parser.add_argument("--root", help="store root holding svod.yaml")
     parser.add_argument("--version", action="version", version=f"{PROG} {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
+    new = commands.add_parser(CMD_NEW, help="create a new store from packaged templates")
+    new.add_argument("directory", help="new destination directory; must not exist")
+    new.add_argument("--template", choices=("local", "task"), default="local")
+    local = commands.add_parser(CMD_LOCAL, help="run the compact local workflow")
+    local.add_argument("action", choices=("prepare", "checks", "verify", "deliver"))
+    local.add_argument("query", help="exact task path, name or supported key")
     commands.add_parser(CMD_VALIDATE, help="check declarations, locale keys and registries")
     status = commands.add_parser(CMD_STATUS, help="position of a task or container")
     status.add_argument("query", help="tracker key or container name")
+    status.add_argument("--format", choices=("text", "json"), default="text")
     active = commands.add_parser(CMD_ACTIVE, help="summary of open work")
     active.add_argument("--all", action="store_true", help="expand the team's work")
     active.add_argument(HOOK_FLAG, action="store_true", help="SessionStart hook JSON")
@@ -47,8 +75,9 @@ def build_parser():
     render.add_argument("--write", action="store_true",
                         help="replace the block between its markers in every store document")
     approve = commands.add_parser(CMD_APPROVE,
-                                  help="record the plan approval a person left in the chat")
+                                  help="record an approval a person left in the chat")
     approve.add_argument("query", help="tracker key or subject name")
+    approve.add_argument("--step", help="approval step id; first pending approval by default")
     hook = commands.add_parser(CMD_HOOK, help="answer an agent hook event read as JSON on stdin")
     hook.add_argument("event", choices=EVENTS, help="hook event")
     init = commands.add_parser(CMD_INIT, help="create the local config named in svod.yaml")
@@ -196,12 +225,22 @@ def run(args):
     from svod.locale import bootstrap_locale
     from svod.render import status_report
 
+    if args.command == CMD_NEW:
+        from svod.scaffold import scaffold
+        try:
+            print(scaffold(args.directory, args.template))
+            return EXIT_OK
+        except (OSError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_FINDINGS
     if args.root:
         root = Path(args.root).resolve()
         root = root if (root / CONFIG_FILE).is_file() else None
     else:
         root = find_root(Path.cwd())
     if root is None:
+        if args.command == CMD_STATUS and getattr(args, "format", "text") == "json":
+            return emit_json_error("invalid_root", args.query)
         print(bootstrap_locale().text(keys.ERROR_NOT_ROOT), file=sys.stderr)
         return EXIT_USAGE
     if args.command == CMD_INIT:
@@ -212,6 +251,18 @@ def run(args):
                        args.ref)
     if args.command == CMD_MIGRATE:
         return migrate(root, args.since)
+    if args.command == CMD_LOCAL:
+        from svod import local_runner, local_workflow
+        try:
+            result = getattr(local_runner, args.action)(root, args.query)
+            print(json.dumps(result, ensure_ascii=False))
+            return EXIT_OK if result.get("passed", True) else EXIT_FINDINGS
+        except LoadError as exc:
+            print_errors(error_locale(root).text(keys.ERROR_LOAD), exc.errors)
+            return EXIT_USAGE
+        except local_workflow.ERRORS as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_FINDINGS
 
     copy_errors = []
     if args.command == CMD_VALIDATE:
@@ -225,6 +276,8 @@ def run(args):
             errors = exc.errors + copy_errors
             print_errors(locale.text(keys.VALIDATE_FAILED, count=len(errors)), errors)
             return EXIT_FINDINGS
+        if args.command == CMD_STATUS and getattr(args, "format", "text") == "json":
+            return emit_json_error("invalid_load", args.query)
         print_errors(locale.text(keys.ERROR_LOAD), exc.errors)
         return EXIT_USAGE
 
@@ -238,12 +291,18 @@ def run(args):
     ctx = Context(runtime.config, runtime.locale, bindings=runtime.bindings,
                   pipelines=runtime.by_name())
     if args.command == CMD_STATUS:
+        if getattr(args, "format", "text") == "json":
+            from svod.status import collect_status
+            from svod.status_json import to_json
+            data = to_json(collect_status(ctx, runtime.pipelines, args.query))
+            print(json.dumps(data, ensure_ascii=False, allow_nan=False))
+            return data["report"]["exit_code"]
         return emit(status_report(ctx, runtime.pipelines, args.query))
     if args.command == CMD_RENDER:
         return render(ctx, runtime.pipelines, args)
     if args.command == CMD_APPROVE:
         from svod.approve import approve
-        return emit(approve(ctx, runtime.pipelines, args.query))
+        return emit(approve(ctx, runtime.pipelines, args.query, step=args.step))
     lines = summarize(ctx, runtime.pipelines, args.all)
     if args.hook:
         from svod.notice import update_notice, with_notice
@@ -259,15 +318,25 @@ def main(argv=None):
     Exits quietly in hook mode without PyYAML.
     """
     argv = sys.argv[1:] if argv is None else list(argv)
+    json_status = CMD_STATUS in argv and ("--format=json" in argv or
+                    any(a == "--format" and b == "json" for a, b in zip(argv, argv[1:])))
     launched = launch(argv)
     if launched.code is not None:
         return launched.code
     if importlib.util.find_spec(YAML_MODULE) is None and CMD_HOOK not in argv:
+        if json_status:
+            return emit_json_error("missing_runtime")
         if HOOK_FLAG in argv:
             return EXIT_OK
         print(MISSING_YAML, file=sys.stderr)
         return EXIT_USAGE
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    parser.json_errors = json_status
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for command_parser in action.choices.values():
+                command_parser.json_errors = json_status
+    args = parser.parse_args(argv)
     if args.command == CMD_HOOK:
         stream = io.StringIO(launched.stdin) if launched.stdin is not None else None
         return run_hook(args.event, args.root, stream)

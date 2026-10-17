@@ -1,6 +1,6 @@
 # Svod
 
-Svod keeps coding agents on a process you can read. You describe how work flows — a spec, a human approval, code in its own directory, a merge — as YAML pipelines. Svod computes where each piece of work stands from files and git, tells the agent the next step, and stops it from touching code before the plan is approved.
+Svod keeps coding agents on a process you can read. YAML pipelines describe the checks and human decisions your project actually needs. Svod computes the current position from files and Git instead of relying on a session's memory. Profiles choose the obligations; the framework does not require every task to use a tracker, CI, review or deployment ceremony.
 
 The position is never remembered: every session recomputes it from the repository, so a new session, a teammate or a different agent (Claude Code or Codex) continues from the same place.
 
@@ -21,7 +21,27 @@ Approval is a human act. The person writes "approve PROJ-1" in the chat; the pro
 
 The engine knows nothing about your team. Everything specific — pipelines, extra gates, texts, which skill does which step — lives in a **profile** next to `svod.yaml`.
 
-## Quickstart
+## Quickstart: compact local work
+
+Requires Python 3.10+ and Git. Install the current framework, then create a new store:
+
+```bash
+pip install git+https://github.com/MorinV/SVOD
+svod new demo-store
+cd demo-store
+git init
+svod init --login your-login
+svod validate
+svod render local
+```
+
+The bundled local profile uses contract → selected human approval → real command checks → local completion. It includes project instructions and task templates; follow [docs/local-workflow.md](docs/local-workflow.md) to create your first task. Source runs in an ordinary clean Git checkout, separate from task records and logs. An installed wheel and a vendored engine both contain the runtime helpers and templates.
+
+Work on one selected task with `svod status tasks/<name>` (or `--format json`). Automatic whole-store context is disabled in the local template, but approval marking and edit guards are not disabled. Final checks run once on unchanged source; completion survives deletion of the disposable source checkout while still detecting damaged evidence. Local completion is not merge, push, installation or deployment.
+
+The execution skill explains bounded reads, meaningful delegation and risk-proportionate verification. These are practical reductions in repeated work, not measured claims about token or time savings.
+
+## OpenSpec/Git example
 
 Requires Python 3.10+ and git.
 
@@ -85,8 +105,11 @@ Copy `examples/task`, then change the pipeline: add a step, a gate, a text. The 
 |---|---|
 | `svod validate` | checks config, pipelines, gates, texts and bindings |
 | `svod status <key or name>` | the position of one piece of work |
+| `svod status <query> --format json` | bounded structured outcomes and advisory next action |
 | `svod active` | everything open |
-| `svod approve <key>` | records a human approval |
+| `svod approve <key> [--step <id>]` | records the selected ready human approval |
+| `svod new <directory> [--template local\|task]` | creates a new store without overwriting existing files |
+| `svod local checks <query>`, `svod local deliver <query>` | observes a real local result, then records local completion |
 | `svod render <pipeline> --write` | refreshes the pipeline diagram in your docs |
 | `svod init` | creates the per-person local config |
 | `svod install`, `svod update` | puts a release of the engine into the store, replaces it |
@@ -106,7 +129,7 @@ svod update           # later: replace the copy, migrate the store, show the cha
 
 ## Status
 
-Early. The engine has run a real team's process for several weeks; this repository is its first public cut. Expect the format to change before 1.0.
+Early. Version 0.3 packages reusable local-workflow and context improvements from real project use. Existing profiles are not silently rewritten; expect the format to change before 1.0. See [CHANGELOG.md](CHANGELOG.md) for compatibility and migration boundaries. A source version is not a published release tag.
 
 ## License
 

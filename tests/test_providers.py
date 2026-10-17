@@ -106,6 +106,8 @@ class ProviderTest(StoreTestCase):
             ("2026-08-01-c-102", ["2026-08-01-c-102"]),
             ("c-10", []),
             ("c-102", []),
+            ("openspec/changes/c-101", ["c-101"]),
+            ("openspec/changes/archive/2026-08-01-c-102", ["2026-08-01-c-102"]),
         )
         for query, ids in cases:
             with self.subTest(query=query):
@@ -126,6 +128,8 @@ class ProviderTest(StoreTestCase):
         self.assertFalse(alpha.archived)
         cases = (
             ("exact", "ALPHA", [CONTAINER_ALPHA]),
+            ("exact", "projects/ALPHA", [CONTAINER_ALPHA]),
+            ("exact", "missing/alpha", []),
             ("substring", "alpha", [CONTAINER_ALPHA, "projects/alphabet"]),
             ("substring", "bet", ["projects/alphabet", "projects/beta"]),
             ("exact", "alp", []),

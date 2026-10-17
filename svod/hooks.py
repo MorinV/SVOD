@@ -3,10 +3,12 @@
 Every hook reads one event of Claude Code or Codex as JSON on stdin, prints its JSON answer or
 nothing, and never fails: a store that does not load is reported in one line instead of silence.
 """
+import ast
 import importlib.util
 import json
 import os
 import re
+import shlex
 import sys
 import unicodedata
 from dataclasses import dataclass
@@ -25,6 +27,8 @@ DECISION = "permissionDecision"
 DECISION_REASON = "permissionDecisionReason"
 DENY = "deny"
 FIELD_PROMPT = "prompt"
+QUESTION_REPLY_OPEN = "<send_user_message_question_reply>"
+QUESTION_REPLY_CLOSE = "</send_user_message_question_reply>"
 FIELD_CWD = "cwd"
 FIELD_TOOL = "tool_name"
 FIELD_INPUT = "tool_input"
@@ -73,6 +77,10 @@ COPY_TO = r"\b(?:cp|mv)\b"
 COPY_END = r"['\"]?\s*(?:$|[|;&])"
 QUOTED = r"['\"][^'\"\n]*{path}['\"]"
 PYTHON_SCRIPT = re.compile(r"\bpython[\d.]*\b" + SEGMENT + r"(?:\s-c\b|<<)", re.MULTILINE)
+PYTHON_HEREDOC = re.compile(
+    r"<<[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1[ \t]*\n(.*?)^\2\s*$",
+    re.MULTILINE | re.DOTALL,
+)
 
 
 @dataclass(frozen=True)
@@ -160,6 +168,13 @@ def context_of(runtime):
                    pipelines=runtime.by_name())
 
 
+def agent_context_setting(runtime, name):
+    """Whether an optional agent-context output is enabled (legacy defaults on)."""
+    profile = getattr(runtime.config, "profile_config", {})
+    settings = profile.get("agent_context", {}) if isinstance(profile, dict) else {}
+    return not (isinstance(settings, dict) and settings.get(name) is False)
+
+
 def key_gates(pipelines):
     """Key gates of the pipelines that declare one."""
     return [p.subject.key_impl for p in pipelines if p.subject.key_impl is not None]
@@ -208,6 +223,25 @@ def approval_keys(runtime, prompt):
         if all(folded(token) in joiners for token in TAIL_SEPARATOR_RE.split(left) if token):
             return keys
     return None
+
+
+def human_answers(prompt):
+    """Extract only actual answers from a UI reply, never the questions/options."""
+    text = prompt.strip()
+    if not text.startswith(QUESTION_REPLY_OPEN):
+        return [prompt]
+    if not text.endswith(QUESTION_REPLY_CLOSE):
+        return []
+    try:
+        replies = json.loads(text[len(QUESTION_REPLY_OPEN):-len(QUESTION_REPLY_CLOSE)])
+    except ValueError:
+        return []
+    if not isinstance(replies, list) or not replies:
+        return []
+    if any(not isinstance(reply, dict) or not isinstance(reply.get("answer"), str)
+           for reply in replies):
+        return []
+    return [reply["answer"] for reply in replies]
 
 
 def subject_names(ctx, pipelines):
@@ -259,15 +293,21 @@ def session_start(event, fallback):
     runtime, reason = load(root)
     if runtime is None:
         return context_output(EVENT_SESSION_START, broken_text(root, reason))
+    if not agent_context_setting(runtime, "session_summary"):
+        return None
     from .notice import update_notice, with_notice
     lines = summarize(context_of(runtime), runtime.pipelines, False)
     lines = with_notice(lines, update_notice(runtime.config, runtime.locale))
     return hook_payload(runtime.locale, lines) if lines else None
 
 
-def prompt_hook(event, fallback):
-    """Approval mark for an approving prompt and positions of the work the prompt names."""
-    from .approval import write_mark
+def prompt_hook(event, fallback, at=None):
+    """Mark a human prompt; a verified redelivery keeps its original event time.
+
+    ``at`` is for a trusted integration replaying the same actual human event, never
+    for treating an old answer as approval of a new plan. Expired events cannot mark.
+    """
+    from .approval import MARK_AT, is_fresh, write_mark
     from .keys import HOOK_APPROVAL_MARKED, HOOK_POSITION_HEAD, HOOK_POSITION_TAIL
     prompt = event.get(FIELD_PROMPT)
     if not isinstance(prompt, str) or not prompt.strip() or is_agent_message(prompt):
@@ -280,28 +320,33 @@ def prompt_hook(event, fallback):
         return context_output(EVENT_PROMPT, broken_text(root, reason))
     locale = runtime.locale
     blocks = []
-    keys = approval_keys(runtime, prompt)
-    if keys is not None and write_mark(root, keys) is not None:
+    answers = human_answers(prompt)
+    approvals = [keys for answer in answers
+                 if (keys := approval_keys(runtime, answer)) is not None]
+    keys = list(dict.fromkeys(key for group in approvals for key in group)) if approvals else None
+    fresh = at is None or is_fresh({MARK_AT: at.isoformat()}, runtime.config.approval_window)
+    marked = keys is not None and fresh and write_mark(root, keys, at=at) is not None
+    if marked and agent_context_setting(runtime, "approval_notice"):
         blocks.append(locale.text(HOOK_APPROVAL_MARKED, minutes=runtime.config.approval_window))
-    ctx = context_of(runtime)
-    found = positions(ctx, runtime.pipelines, queries(ctx, runtime.pipelines, prompt))
-    if found:
-        blocks += [locale.text(HOOK_POSITION_HEAD), *found, locale.text(HOOK_POSITION_TAIL)]
+    if agent_context_setting(runtime, "prompt_positions"):
+        ctx = context_of(runtime)
+        found = positions(ctx, runtime.pipelines, queries(ctx, runtime.pipelines, "\n".join(answers)))
+        if found:
+            blocks += [locale.text(HOOK_POSITION_HEAD), *found, locale.text(HOOK_POSITION_TAIL)]
     return context_output(EVENT_PROMPT, BLOCK_SEPARATOR.join(blocks)) if blocks else None
 
 
 def guarded_files(pipelines):
     """Metadata files holding approval fields, from the approval gates of every pipeline step."""
     from .approval import field_names
-    from .gates import PARAM_FILE, PARAM_MARKER, ApprovalGate
+    from .gates import PARAM_FILE, PARAM_MARKER
+    from .workflow_policy import approval_refs
     found = {}
     for pipeline in pipelines:
-        for step in pipeline.steps:
-            for ref in step.gates:
-                if isinstance(ref.impl, ApprovalGate):
-                    parts = Path(ref.params[PARAM_FILE]).parts
-                    fields = found.setdefault(parts, [])
-                    fields += [f for f in field_names(ref.params[PARAM_MARKER]) if f not in fields]
+        for ref in approval_refs(pipeline):
+            parts = Path(ref.params[PARAM_FILE]).parts
+            fields = found.setdefault(parts, [])
+            fields += [f for f in field_names(ref.params[PARAM_MARKER]) if f not in fields]
     return [Guarded(parts, tuple(fields)) for parts, fields in found.items()]
 
 
@@ -320,6 +365,128 @@ def read_text(path):
         return ""
 
 
+def python_reads_metadata(command, name):
+    """Recognize only explicit Path(...).read_text/read_bytes uses of metadata literals.
+
+    Unknown syntax, path aliases and write operations retain the conservative guard.
+    This is a narrow false-positive fix, not a general Python side-effect analyser.
+    """
+    scripts = list(PYTHON_SCRIPT.finditer(command))
+    if len(scripts) != 1:
+        return False
+    invocation = scripts[0]
+    # The exception must cover exactly one Python command, never sibling commands
+    # or a -c argument supplied by another program in the shell expression.
+    if re.fullmatch(r"\s*(?:[A-Za-z0-9_./~-]+/)?", command[:invocation.start()]) is None:
+        return False
+    heredoc = (PYTHON_HEREDOC.match(command, invocation.end() - 2)
+               if invocation.group().endswith("<<") else None)
+    try:
+        if invocation.group().endswith("<<"):
+            if (heredoc is None or not heredoc.group(1)
+                    or command[heredoc.end():].strip()):
+                return False
+            header = shlex.split(command[:invocation.end() - 2])
+            if header[1:] not in ([], ["-"], ["-u"], ["-u", "-"]):
+                return False
+            source = heredoc.group(3)
+        else:
+            if "$" in command or "`" in command:
+                return False
+            lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>")
+            lexer.whitespace_split = True
+            lexer.commenters = ""
+            args = list(lexer)
+            if len(args) != 3 or args[1] != "-c":
+                return False
+            source = args[2]
+        tree = ast.parse(source)
+    except (ValueError, IndexError, SyntaxError):
+        return False
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+    literals = [node for node in ast.walk(tree)
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and node.value.endswith(name)]
+    if not literals:
+        return False
+
+    def path_expression(node):
+        if isinstance(node, (ast.Constant, ast.Name)):
+            return True
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            return path_expression(node.left) and path_expression(node.right)
+        if isinstance(node, ast.Call):
+            func = node.func
+            constructor = (isinstance(func, ast.Name) and func.id == "Path"
+                           or isinstance(func, ast.Attribute) and func.attr == "Path"
+                           and isinstance(func.value, ast.Name) and func.value.id == "pathlib")
+            return constructor and not node.keywords and all(path_expression(arg) for arg in node.args)
+        return False
+
+    def filename(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return Path(node.value).name
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            return filename(node.right)
+        if isinstance(node, ast.Call) and path_expression(node) and node.args:
+            return filename(node.args[-1])
+        return None
+
+    # A decoy read must not bless other arbitrary operations in the same script.
+    # Keep the exception to the small receipt-writing vocabulary; unfamiliar calls,
+    # dynamically named destinations and rebinding these helpers remain guarded.
+    reserved = {"Path", "pathlib", "yaml", "hashlib", "dict", "print"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.stmt) and not isinstance(node, (ast.Import, ast.ImportFrom,
+                                                               ast.Assign, ast.Expr, ast.Assert)):
+            return False
+        if isinstance(node, ast.Import) and any(alias.name not in {"pathlib", "yaml", "hashlib"}
+                                               or alias.asname for alias in node.names):
+            return False
+        if isinstance(node, ast.ImportFrom) and (node.module != "pathlib" or node.level
+                                                 or any(alias.name != "Path" or alias.asname
+                                                        for alias in node.names)):
+            return False
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id in reserved:
+            return False
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Store):
+            return False
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name) and func.id in {"Path", "dict", "print"}:
+            continue
+        if not isinstance(func, ast.Attribute):
+            return False
+        if isinstance(func.value, ast.Name) and (func.value.id, func.attr) in {
+                ("pathlib", "Path"), ("yaml", "safe_load"), ("yaml", "safe_dump"),
+                ("hashlib", "sha256")}:
+            continue
+        if func.attr in {"read_text", "read_bytes"} and path_expression(func.value):
+            continue
+        if func.attr in {"write_text", "write_bytes"} and path_expression(func.value):
+            destination = filename(func.value)
+            if destination and destination not in {name, ".", ".."}:
+                continue
+        if func.attr in {"encode", "hexdigest"}:
+            continue
+        return False
+
+    for literal in literals:
+        child = literal
+        while child in parents:
+            parent = parents[child]
+            if (isinstance(parent, ast.Attribute) and parent.value is child
+                    and parent.attr in ("read_text", "read_bytes")):
+                call = parents.get(parent)
+                if isinstance(call, ast.Call) and call.func is parent and path_expression(child):
+                    break
+            child = parent
+        else:
+            return False
+    return True
+
+
 def bash_writes_approval(command, guarded):
     """The command writes into a metadata file and names one of its approval fields.
 
@@ -331,7 +498,8 @@ def bash_writes_approval(command, guarded):
         if name not in command or not any(f in command for f in item.fields):
             continue
         path = re.escape(name) + PATH_END
-        if PYTHON_SCRIPT.search(command) and re.search(QUOTED.format(path=path), command):
+        if (PYTHON_SCRIPT.search(command) and re.search(QUOTED.format(path=path), command)
+                and not python_reads_metadata(command, name)):
             return True
         patterns = (REDIRECT_TO + path, IN_PLACE_TOOLS + SEGMENT + IN_PLACE,
                     TEE + SEGMENT + path, COPY_TO + SEGMENT + path + COPY_END)
@@ -488,14 +656,15 @@ class Guard:
         from .checkouts import subject_context
         from .gates import Status
         from .keys import STATUS_UNKNOWN
-        from .position import evaluate
+        from .position import applies, evaluate
         from .render import gate_text
+        from .workflow_policy import step_applies
         own = subject_context(self.ctx, subject)
         locale = self.runtime.locale
-        for step in (s for s in pipeline.steps if s.blocks_code):
+        for step in (s for s in pipeline.steps if s.blocks_code and step_applies(s, subject)):
             if not step.gates:
                 return gate_text(locale, step.text, {})
-            for ref in step.gates:
+            for ref in (g for g in step.gates if applies(g, subject)):
                 result = evaluate(own, ref, subject).result
                 if result.passed:
                     continue

@@ -153,10 +153,31 @@ def read_mark(root):
 
 
 def clear_mark(root):
-    """Remove the approval mark: one mark approves once."""
+    """Remove an exhausted approval mark."""
     path = mark_path(root)
     if path is not None:
         path.unlink(missing_ok=True)
+
+
+def consume_mark(root, keys, mark=None):
+    """Consume the approved subject's keys, preserving other keys and the original time.
+
+    An unnamed mark remains single-use. Do not overwrite a newer prompt's mark if it
+    arrived while the approval was being written. CLI approvals are sequential.
+    """
+    current = read_mark(root)
+    if mark is not None and current != mark:
+        return
+    named = mark_keys(current)
+    used = {key.casefold() for key in keys}
+    remaining = {key for key in named if key.casefold() not in used}
+    if not remaining:
+        clear_mark(root)
+        return
+    path = mark_path(root)
+    if path is not None:
+        data = {**current, MARK_KEYS: sorted(remaining)}
+        path.write_text(json.dumps(data), encoding=ENCODING)
 
 
 def mark_time(mark):
