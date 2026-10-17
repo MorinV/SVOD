@@ -31,6 +31,7 @@ CMD_RENDER = "render"
 CMD_INIT = "init"
 CMD_APPROVE = "approve"
 CMD_ANSWER = "answer"
+CMD_ASK = "ask"
 CMD_HOOK = "hook"
 CMD_INSTALL = "install"
 CMD_UPDATE = "update"
@@ -118,6 +119,13 @@ def build_parser() -> StatusParser:
     approve.add_argument("--step", help="approval step id; first pending approval by default")
     approve.add_argument("--confirm", action="store_true",
                          help="without a fresh mark, ask the person at the terminal to confirm")
+    ask = commands.add_parser(CMD_ASK, help="add a question before work to the questions file")
+    ask.add_argument("query", help="tracker key or subject name")
+    ask.add_argument("question", nargs="*", help="the question, one line")
+    ask.add_argument("--context", default="",
+                     help="one line under the question: options and what each would change")
+    ask.add_argument("--none", action="store_true",
+                     help="write none: there is nothing to ask")
     answer = commands.add_parser(CMD_ANSWER,
                                  help="record a person's answer to a question before work")
     answer.add_argument("query", help="tracker key or subject name")
@@ -574,6 +582,10 @@ def run(args: argparse.Namespace) -> int:
         from svod.approve import approve
         return emit(approve(ctx, runtime.pipelines, args.query, step=args.step,
                             confirm=args.confirm))
+    if args.command == CMD_ASK:
+        from svod.questions import ask
+        return emit(ask(ctx, runtime.pipelines, args.query, " ".join(args.question),
+                        args.context, args.none))
     if args.command == CMD_ANSWER:
         from svod.questions import answer
         return emit(answer(ctx, runtime.pipelines, args.query, args.number, " ".join(args.text)))

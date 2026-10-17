@@ -1,8 +1,10 @@
-"""Questions before work: the questions file, the human mark and the answer command.
+"""Questions before work: the questions file, the human mark, the ask and the answer commands.
 
 The questions file of a subject holds headings `## Q: <question>`, each followed by a line
-`A: <answer>`, or the single line `none` when there is nothing to ask. An answer is written by
-`svod answer` only while a fresh human mark is present: the prompt hook leaves it when a person
+`A: <answer>`, or the single line `none` when there is nothing to ask. The agent adds a question
+with `svod ask`, or says there is none with `svod ask --none`; the pre-tool hook refuses every
+direct write of the file. An answer is written by `svod answer` only while a fresh human mark
+is present: the prompt hook leaves it when a person
 writes in the chat, so the mark shows that the person has just spoken, not what they said. The
 agent copies the answer from the chat; the line under it records the approver, the date and the
 digest of the prompt the mark was left for.
@@ -37,6 +39,7 @@ NONE_LINE = "none"
 QUESTION_RE = re.compile(r"^##\s+Q:\s*(.*?)\s*$")
 ANSWER_RE = re.compile(r"^A:\s*(.*?)\s*$")
 ANSWER_PREFIX = "A: "
+QUESTION_HEAD = "## Q: {question}"
 BY_RE = re.compile(r"^\s+by:")
 BY_LINE = "  by: {by}, at: {date}, prompt: {sha}"
 SECTION_END_RE = re.compile(r"^#{1,2}\s")
@@ -110,6 +113,28 @@ def answered_text(text: str, number: int, answer: str, by_line: str) -> str:
         last = max((i for i in section if lines[i].strip()), default=question.line)
         lines[last + 1:last + 1] = new
     return NEWLINE.join(lines) + NEWLINE
+
+
+def one_line(text: str | None) -> str:
+    """The text with its whitespace runs joined into single spaces, stripped."""
+    return " ".join((text or "").split())
+
+
+def asked_text(text: str | None, question: str, context: str = "") -> str:
+    """The file text with the question, and its context line when given, at the end.
+
+    No file (None) or a file saying none starts afresh; otherwise one blank line separates the
+    question from what is already there.
+    """
+    lines = [QUESTION_HEAD.format(question=question)] + ([context] if context else [])
+    rest = "" if text is None or parse_questions(text).none else text.rstrip()
+    head = rest + NEWLINE + NEWLINE if rest else ""
+    return head + NEWLINE.join(lines) + NEWLINE
+
+
+def misread(line: str) -> bool:
+    """Whether a context line would read as an answer or end the section of its question."""
+    return bool(ANSWER_RE.match(line) or SECTION_END_RE.match(line))
 
 
 def human_mark_path(root: Path, run: Run | None = None) -> Path | None:
@@ -197,6 +222,51 @@ def target(ctx: Context, pipelines: list[Pipeline],
     return found[0][1], [p for p, _ in found], None
 
 
+def subject_file(ctx: Context, subject: Subject, found: list[Pipeline]) -> tuple[Path, str]:
+    """(questions file of the subject, its path as shown: relative to its checkout root)."""
+    from .checkouts import subject_context
+    # Callers pass an existing subject with a path, as target returns it.
+    path: Path = subject.path / questions_file(found)  # type: ignore[operator]
+    root = subject_context(ctx, subject).root  # type: ignore[arg-type]
+    shown = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+    return path, shown
+
+
+def ask(ctx: Context, pipelines: list[Pipeline], query: str, question: str,
+        context: str = "", none: bool = False) -> Report:
+    """Add a question to the end of the subject's questions file, or write none with none.
+
+    The file is created when absent; a file saying none is replaced by the question. none is
+    refused when the file already has questions, an empty question or a question with --none
+    are refused, and so is a context line that would read as an answer or a heading. No mark
+    is needed: the agent asks, the person answers through svod answer. Nothing is committed.
+    """
+    from .render import Report
+    question, context = one_line(question), one_line(context)
+    if none and (question or context):
+        return refusal(ctx, keys.ASK_CONFLICT)
+    if not none and not question:
+        return refusal(ctx, keys.ASK_EMPTY)
+    if context and misread(context):
+        return refusal(ctx, keys.ASK_MISREAD, context=context)
+    subject, found, report = target(ctx, pipelines, query)
+    if report is not None:
+        return report
+    # target returns an existing subject with a path when it returns no report.
+    path, shown = subject_file(ctx, subject, found)  # type: ignore[arg-type]
+    content = path.read_text(encoding=ENCODING) if path.is_file() else None
+    items = parse_questions(content).items if content is not None else ()
+    if none:
+        if items:
+            return refusal(ctx, keys.ASK_HAS_QUESTIONS, file=shown, count=len(items))
+        path.write_text(NONE_LINE + NEWLINE, encoding=ENCODING)
+        return Report(ok=True, out=[ctx.locale.text(keys.ASK_NONE, file=shown)])
+    path.write_text(asked_text(content, question, context), encoding=ENCODING)
+    return Report(ok=True, out=[ctx.locale.text(keys.ASK_DONE, file=shown,
+                                                number=len(items) + FIRST_NUMBER,
+                                                question=question, query=query)])
+
+
 def answer(ctx: Context, pipelines: list[Pipeline], query: str, number: int, text: str,
            at: dt.datetime | None = None) -> Report:
     """Write the answer under question number of the subject's questions file.
@@ -205,25 +275,20 @@ def answer(ctx: Context, pipelines: list[Pipeline], query: str, number: int, tex
     unknown approver. Nothing is committed and the mark is not consumed: one message of the
     person may answer several questions.
     """
-    from .checkouts import subject_context
     from .identity import approver
     from .render import Report
     subject, found, report = target(ctx, pipelines, query)
     if report is not None:
         return report
     # target returns an existing subject with a path when it returns no report.
-    base: Path = subject.path  # type: ignore[union-attr,assignment]
-    root = subject_context(ctx, subject).root  # type: ignore[arg-type]
-    name = questions_file(found)
-    path = base / name
-    shown = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+    path, shown = subject_file(ctx, subject, found)  # type: ignore[arg-type]
     if not path.is_file():
         return refusal(ctx, keys.ANSWER_NO_FILE, file=shown)
     content = path.read_text(encoding=ENCODING)
     count = len(parse_questions(content).items)
     if not FIRST_NUMBER <= number <= count:
         return refusal(ctx, keys.ANSWER_NO_QUESTION, file=shown, number=number, count=count)
-    words = " ".join(text.split())
+    words = one_line(text)
     if not words:
         return refusal(ctx, keys.ANSWER_EMPTY)
     mark = fresh_human_mark(ctx.root, ctx.config.approval_window, at)

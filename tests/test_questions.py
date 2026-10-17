@@ -1,4 +1,4 @@
-"""Questions before work: the file format, the questions_answered gate and svod answer."""
+"""Questions before work: the file format, the questions_answered gate, svod ask and answer."""
 import datetime as dt
 import json
 import unittest
@@ -9,8 +9,9 @@ from test_relations import FEATURES, RESEARCH, WorkStoreTestCase, write_work
 from svod import keys
 from svod.approval import MARK_AT
 from svod.gates import Status
-from svod.questions import (HUMAN_MARK_FILE, MARK_SHA, answered_text, fresh_human_mark,
-                            human_mark_path, parse_questions, prompt_sha, write_human_mark)
+from svod.questions import (HUMAN_MARK_FILE, MARK_SHA, answered_text, asked_text,
+                            fresh_human_mark, human_mark_path, parse_questions, prompt_sha,
+                            write_human_mark)
 
 PASS, FAIL = Status.PASS, Status.FAIL
 WORK = f"{RESEARCH}/r1"
@@ -53,6 +54,16 @@ class ParseTest(unittest.TestCase):
         self.assertTrue(second.endswith(f"A: nobody\n{by}\n"))
         self.assertEqual([q.answer for q in parse_questions(second).items],
                          ["Postgres", "nobody"])
+
+    def test_asked_text(self):
+        """A question goes after a blank line, its context under it; none or no file: afresh."""
+        added = asked_text(TWO, "Which cache?", "Redis or none")
+        self.assertTrue(added.startswith(TWO.rstrip() + "\n\n## Q: Which cache?\nRedis or none\n"))
+        self.assertEqual([q.text for q in parse_questions(added).items],
+                         ["Which database?", "Who owns the API?", "Which cache?"])
+        for text in (None, "none\n", "  NONE \n"):
+            with self.subTest(text=text):
+                self.assertEqual(asked_text(text, "Which cache?"), "## Q: Which cache?\n")
 
 
 class QuestionsGateTest(WorkStoreTestCase):
@@ -174,6 +185,81 @@ class AnswerTest(WorkStoreTestCase):
         unknown = self.sb.cli("answer", "nothing-like-this", "--q", "1", "x")
         self.assertEqual(unknown.returncode, EXIT_USAGE)
         self.assertEqual(self.text(), TWO)
+
+
+class AskTest(WorkStoreTestCase):
+    """svod ask adds the agent's questions; --none says there is nothing to ask."""
+
+    def setUp(self):
+        """Store with a research work without a questions file."""
+        super().setUp()
+        write_work(self.sb, WORK)
+
+    def ask(self, *args):
+        """Run svod ask for the research work."""
+        return self.sb.cli("ask", "r1", *args)
+
+    def text(self):
+        """Current questions file."""
+        return (self.sb.store / FILE).read_text(encoding=ENCODING)
+
+    def gate(self):
+        """questions_answered over the research work."""
+        return self.run_gate("questions_answered", None, "research", WORK)
+
+    def test_adds_questions(self):
+        """The file is created, each question appended with its context; the gate counts them."""
+        first = self.ask("Which", "database?", "--context", "Postgres  or\nSQLite")
+        self.assertEqual(first.returncode, EXIT_OK, first.stderr)
+        self.assertEqual(self.text(), "## Q: Which database?\nPostgres or SQLite\n")
+        self.assertIn(core_text(keys.ASK_DONE, file=FILE, number=1, question="Which database?",
+                                query="r1"), first.stdout)
+        second = self.ask("Who owns the API?")
+        self.assertEqual(second.returncode, EXIT_OK, second.stderr)
+        self.assertIn(core_text(keys.ASK_DONE, file=FILE, number=2, question="Who owns the API?",
+                                query="r1"), second.stdout)
+        self.assertEqual(self.text(), "## Q: Which database?\nPostgres or SQLite\n\n"
+                                      "## Q: Who owns the API?\n")
+        result = self.gate()
+        self.assertEqual((result.status, result.facts),
+                         (FAIL, {"total": 2, "count": 2, "reason": "unanswered"}))
+
+    def test_none(self):
+        """--none writes none for no file or one without questions, and gives way to a question."""
+        for before in (None, "# Questions\n"):
+            with self.subTest(before=before):
+                if before is not None:
+                    self.sb.write(FILE, before)
+                out = self.ask("--none")
+                self.assertEqual(out.returncode, EXIT_OK, out.stderr)
+                self.assertIn(core_text(keys.ASK_NONE, file=FILE), out.stdout)
+                self.assertEqual(self.text(), "none\n")
+                self.assertEqual(self.gate().status, PASS)
+        self.assertEqual(self.ask("Which cache?").returncode, EXIT_OK)
+        self.assertEqual(self.text(), "## Q: Which cache?\n")
+        refused = self.ask("--none")
+        self.assertEqual(refused.returncode, EXIT_FINDINGS)
+        self.assertIn(core_text(keys.ASK_HAS_QUESTIONS, file=FILE, count=1), refused.stderr)
+        self.assertEqual(self.text(), "## Q: Which cache?\n")
+
+    def test_refusals(self):
+        """Empty, with --none, a context read as an answer or a heading, an unknown subject."""
+        cases = (
+            (("  ",), keys.ASK_EMPTY, {}),
+            (("Which?", "--none"), keys.ASK_CONFLICT, {}),
+            (("--none", "--context", "x"), keys.ASK_CONFLICT, {}),
+            (("Which?", "--context", "A: yes"), keys.ASK_MISREAD, {"context": "A: yes"}),
+            (("Which?", "--context", "## Q: other"), keys.ASK_MISREAD,
+             {"context": "## Q: other"}),
+        )
+        for args, key, facts in cases:
+            with self.subTest(args=args):
+                out = self.ask(*args)
+                self.assertEqual(out.returncode, EXIT_FINDINGS)
+                self.assertIn(core_text(key, **facts), out.stderr)
+        self.assertFalse((self.sb.store / FILE).exists())
+        unknown = self.sb.cli("ask", "nothing-like-this", "Which?")
+        self.assertEqual(unknown.returncode, EXIT_USAGE)
 
 
 if __name__ == "__main__":

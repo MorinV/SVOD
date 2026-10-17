@@ -71,6 +71,13 @@ answer:
   no_file: "No questions file {file}: write the questions first"
   no_question: "{file} has no question {number}: it has {count}"
   empty: "The answer is empty: copy the person's answer from the chat"
+ask:
+  done: "Question {number} added to {file}: {question}. Ask it in the chat and wait; record the person's answer with svod answer {query} --q {number} <text>."
+  none: "{file} says none: there is nothing to ask. Nothing is committed."
+  empty: "The question is empty: svod ask <record> \"<question>\", or svod ask <record> --none when there is nothing to ask"
+  conflict: "Either a question or --none, not both"
+  misread: "The context would read as an answer or a heading in the questions file: {context}"
+  has_questions: "{file} already has {count} questions: --none is only for a record with nothing to ask"
 do:
   usage: "Name the action and the subject: svod do <action> <query>; the actions: svod do --list"
   unknown: "Unknown action: {name}, no script {script}. The actions: svod do --list"
@@ -198,7 +205,7 @@ hook:
   deny_broken: "The pipeline engine failed to load: {reason}. Until the store loads (svod validate), writes outside the store are refused: repair the store first."
   knowledge_head: "Knowledge on the tags of this work; open the file before relying on it:"
   deny_human: "The mark {file} is left by the prompt hook on every message of a person in the chat; it is never written by hand or by a command."
-  deny_questions: "{file} is written by svod answer when a person answers in the chat, not by editing the file nor by a shell command. Ask the person in the chat and record their answer with svod answer."
+  deny_questions: "{file} is written by svod, not by editing the file nor by a shell command. Add a question with svod ask <record> \"<question>\" (or svod ask <record> --none when there is nothing to ask); ask the person in the chat and record their answer with svod answer <record> --q <n> <text>."
   deny_external: "{command} has an effect outside this machine. Ask the person in the chat and run it after their answer: a reply holding one of {phrases} allows such commands for {minutes} min."
 gate:
   exists: "the subject exists"
