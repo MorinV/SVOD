@@ -7,6 +7,7 @@ validate:
 status:
   header: "{id}"
   checkout: "In the checkout {dir}, not in the default branch yet"
+  autonomy: "Autonomy: {level}"
   next_step: "Next step: {step}."
   do_not_touch: "Do not touch the code: step {step} has not passed."
   do_not_touch_blocked: "Do not touch the code: entry conditions are not met."
@@ -139,6 +140,9 @@ hook:
   deny_mark: "The approval mark {file} is left by the prompt hook when a person approves in the chat; it is never written by hand or by a command. Show the plan to the person and wait for their answer."
   deny_broken: "The pipeline engine failed to load: {reason}. Until the store loads (svod validate), writes outside the store are refused: repair the store first."
   knowledge_head: "Knowledge on the tags of this work; open the file before relying on it:"
+  deny_human: "The mark {file} is left by the prompt hook on every message of a person in the chat; it is never written by hand or by a command."
+  deny_questions: "{file} is written by svod answer when a person answers in the chat, not by editing the file nor by a shell command. Ask the person in the chat and record their answer with svod answer."
+  deny_external: "{command} has an effect outside this machine. Ask the person in the chat and run it after their answer: a reply holding one of {phrases} allows such commands for {minutes} min."
 gate:
   exists: "the subject exists"
   artifact_path: "{path} exists"

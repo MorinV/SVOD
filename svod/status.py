@@ -82,7 +82,8 @@ def collect_status(ctx: Context, pipelines: list[Pipeline], query: str) -> Colle
         evidence_log.note_position(ctx, pos)
         item.skills = step_skills(own, pos)
         item.instruction_variant = text_key(locale, pos.text, pos.facts) if pos.text else None
-        out += render_position(locale, pos, item.skills)
+        out += render_position(locale, pos, item.skills,
+                               ctx.config.autonomy.get(pipeline.name))
     for item in items:
         item.missing_suppressed = bool(out) and item.position is None
     return Collection(query, found, Report(bool(out), out=out, err=[] if out else err), items)

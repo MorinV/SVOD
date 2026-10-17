@@ -164,10 +164,16 @@ def sentence(text: str) -> str:
     return text[:-1] if text.endswith(".") and not text.endswith(ELLIPSIS) else text
 
 
-def render_position(locale: Locale, pos: Position, skills: Skills | None = None) -> list[str]:
-    """Lines of the status block for one position; skills of the current step when resolved."""
+def render_position(locale: Locale, pos: Position, skills: Skills | None = None,
+                    autonomy: str | None = None) -> list[str]:
+    """Lines of the status block for one position; skills of the current step when resolved.
+
+    autonomy: the level of the pipeline from svod.yaml, printed under the header when set.
+    """
     header = pos.pipeline.header or keys.STATUS_HEADER
     lines = [locale.text(header, **subject_facts(pos))]
+    if autonomy:
+        lines.append(INDENT + locale.text(keys.STATUS_AUTONOMY, level=autonomy))
     if pos.subject.checkout is not None:
         lines.append(INDENT + locale.text(keys.STATUS_CHECKOUT, dir=pos.subject.checkout.name))
     lines += [INDENT + line for line in mark_lines(locale, pos)]

@@ -8,7 +8,7 @@ from support import (EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, TempStore, core_lead, c
                      make_profile)
 
 from svod import keys
-from svod.config import DEFAULT_BRANCH_FALLBACK, load_config
+from svod.config import DEFAULT_BRANCH_FALLBACK, DEFAULT_EXTERNAL_PHRASES, load_config
 from svod.errors import LoadError, LocaleError
 from svod.loader import load_runtime
 from svod.locale import Locale, load_locale
@@ -68,6 +68,9 @@ class ConfigTest(unittest.TestCase):
         self.assertIsNone(config.workspaces)
         self.assertEqual(config.active_order, ())
         self.assertEqual(config.profile_config, {})
+        self.assertEqual(config.autonomy, {})
+        self.assertEqual((config.external_deny, config.external_allow), ((), ()))
+        self.assertEqual(config.external_phrases, DEFAULT_EXTERNAL_PHRASES)
 
     def test_profile_config_is_passed_through(self):
         """profile_config reaches the profile as written; the core checks only agent_context."""
@@ -114,6 +117,12 @@ class ConfigTest(unittest.TestCase):
             ("agent context not a mapping",
              f"locale: en\nprofile: {profile}\nprofile_config:\n  agent_context: off\n",
              "profile_config.agent_context must be a mapping"),
+            ("unknown autonomy level",
+             f"locale: en\nprofile: {profile}\nautonomy: {{task: free}}\n",
+             "autonomy.task must be one of guided, supervised, autonomous"),
+            ("external effects not a mapping",
+             f"locale: en\nprofile: {profile}\nexternal_effects: [git push]\n",
+             "external_effects must be a mapping"),
         )
         for name, text, message in cases:
             with self.subTest(name=name):

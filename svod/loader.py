@@ -1,17 +1,18 @@
 """Loads a store: config, registries, pipelines and locale."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .bindings import Bindings, check_bindings, load_bindings
-from .config import FIELD_WORKSPACE_GATE, Config, load_config
+from .config import (AUTONOMY_AUTONOMOUS, AUTONOMY_KINDS, AUTONOMY_SUPERVISED, FIELD_AUTONOMY,
+                     FIELD_WORKSPACE_GATE, Config, load_config)
 from .errors import LoadError, LocaleError, ParamError
-from .gates import build_registries
+from .gates import ApprovalGate, build_registries
 from .keys import CORE_KEYS
 from .locale import load_locale
-from .pipeline import Pipeline, bind_pipeline, parse_pipeline
+from .pipeline import Pipeline, Step, bind_pipeline, parse_pipeline
 from .yamlio import read_yaml
 
 if TYPE_CHECKING:
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
 PIPELINES_DIR = "pipelines"
 PIPELINE_GLOB = "*.yaml"
 WORKTREES_METHOD = "worktrees"
+PURPOSE_RESULT = "result"
 
 
 @dataclass
@@ -104,6 +106,40 @@ def workspace_gate(name: str | None, gates: dict[str, type[Gate]]) -> tuple[Gate
         return None, [f"{FIELD_WORKSPACE_GATE}: {exc}"]
 
 
+def approval_step(step: Step, purpose: str | None = None) -> bool:
+    """Whether the step has an approval gate, of the given purpose when one is given."""
+    return any(isinstance(ref.impl, ApprovalGate) and (purpose is None or ref.purpose == purpose)
+               for ref in step.gates)
+
+
+def relaxed(step: Step, level: str) -> Step:
+    """The step as the autonomy level runs it: an approval step it lifts becomes optional.
+
+    supervised lifts the approvals of the result, autonomous every approval; an optional step
+    is neither required nor blocks code. Any other step, and every step under guided, is kept.
+    """
+    lifted = (level == AUTONOMY_AUTONOMOUS and approval_step(step)
+              or level == AUTONOMY_SUPERVISED and approval_step(step, PURPOSE_RESULT))
+    return replace(step, optional=True, required=False, blocks_code=False) if lifted else step
+
+
+def apply_autonomy(pipelines: list[Pipeline], autonomy: dict[str, str]) -> list[str]:
+    """Relax the approval steps of each pipeline by its autonomy level; return the errors.
+
+    The loaded steps are replaced, the declaration files are not touched. A name that is
+    neither a loaded pipeline nor a kind of work is an error. A kind (hotfix) has no effect
+    here: the steps are shared by every subject of the pipeline.
+    """
+    names = {p.name for p in pipelines}
+    errors = [f"{FIELD_AUTONOMY}: unknown pipeline: {name}" for name in autonomy
+              if name not in names and name not in AUTONOMY_KINDS]
+    for pipeline in pipelines:
+        level = autonomy.get(pipeline.name)
+        if level:
+            pipeline.steps = [relaxed(step, level) for step in pipeline.steps]
+    return errors
+
+
 def load_runtime(root: Path) -> Runtime:
     """Load the store at root; raise LoadError listing every problem found."""
     config = load_config(root)
@@ -115,6 +151,7 @@ def load_runtime(root: Path) -> Runtime:
     for name in config.active_order:
         if name not in names:
             errors.append(f"active_order: unknown pipeline: {name}")
+    errors.extend(apply_autonomy(pipelines, config.autonomy))
     required = set(CORE_KEYS)
     for pipeline in pipelines:
         required |= pipeline.locale_keys()

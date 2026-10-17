@@ -9,8 +9,9 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from ..approval import MARK_AT, is_fresh, write_mark
+from ..approval import MARK_AT, is_fresh, write_human_mark, write_mark
 from ..checkouts import subject_context
+from ..config import DEFAULT_EXTERNAL_PHRASES, DEFAULT_WINDOW_MINUTES
 from ..gates import ApprovalGate
 from ..keys import (HOOK_APPROVAL_JOINERS, HOOK_APPROVAL_MARKED, HOOK_APPROVAL_MARKED_UNNAMED,
                     HOOK_POSITION_HEAD, HOOK_POSITION_TAIL)
@@ -19,10 +20,12 @@ from ..position import position
 from ..render import render_position, step_skills
 from ..resolve import resolve
 from .protocol import EVENT_PROMPT, FIELD_PROMPT, Event, context_output
-from .store import (agent_context_setting, broken_text, context_of, cut_key, load, query_keys,
-                    store_root)
+from .store import (agent_context_setting, broken_text, config_of, context_of, cut_key, load,
+                    query_keys, store_root)
 
 if TYPE_CHECKING:
+    from ..approval import Run
+    from ..config import Config
     from ..context import Context
     from ..loader import Runtime
     from ..locale import Locale
@@ -39,6 +42,7 @@ MIN_NAME = 8
 NORMAL_FORM: Final = "NFC"
 NAME_RE = r"(?<![\w-]){name}(?![\w-])"
 PHRASE_RE = r"\s*{phrase}(?!\w)"
+GO_RE = r"(?<!\w){phrase}(?!\w)"
 APPROVAL_END_RE = re.compile(r"[\s.!]*$")
 TAIL_SEPARATOR_RE = re.compile(r"[\s,;:&+/–—-]+")
 ID_SEPARATOR = "/"
@@ -109,6 +113,34 @@ def human_answers(prompt: str) -> list[str]:
            for reply in replies):
         return []
     return [reply[REPLY_ANSWER] for reply in replies]
+
+
+def says_go(text: str, phrases: Iterable[str]) -> bool:
+    """Whether the text holds one of the phrases as whole words, letter case and form aside."""
+    found = folded(text)
+    return any(re.search(GO_RE.format(phrase=re.escape(folded(phrase).strip())), found)
+               for phrase in phrases if phrase.strip())
+
+
+def mark_human(root: Path, answers: list[str], config: Config | None,
+               at: dt.datetime | None = None, run: Run | None = None) -> Path | None:
+    """Leave the human mark of a reply of a person; its path, or None when none is left.
+
+    The text is the reply, or the answers of a reply to a question joined by lines. A store
+    whose svod.yaml does not load gets the default phrases and window. An event older than the
+    window leaves no mark, nor does a git directory that cannot be written.
+    """
+    text = LINE_SEPARATOR.join(answers).strip()
+    if not text:
+        return None
+    window = config.approval_window if config else DEFAULT_WINDOW_MINUTES
+    if at is not None and not is_fresh({MARK_AT: at.isoformat()}, window):
+        return None
+    phrases = config.external_phrases if config else DEFAULT_EXTERNAL_PHRASES
+    try:
+        return write_human_mark(root, text, go=says_go(text, phrases), at=at, run=run)
+    except OSError:
+        return None
 
 
 def subject_names(ctx: Context, pipelines: Iterable[Pipeline]) -> list[str]:
@@ -191,6 +223,8 @@ def prompt_hook(event: Event, fallback: str | Path | None,
                 at: dt.datetime | None = None) -> str | None:
     """Mark a human prompt; a verified redelivery keeps its original event time.
 
+    Every reply of a person leaves the human mark; an approving one also the approval mark.
+
     ``at`` is for a trusted integration replaying the same actual human event, never
     for treating an old answer as approval of a new plan. Expired events cannot mark.
     """
@@ -201,12 +235,14 @@ def prompt_hook(event: Event, fallback: str | Path | None,
     if root is None:
         return None
     runtime, reason = load(root)
+    answers = human_answers(prompt)
     if runtime is None:
+        mark_human(root, answers, config_of(root), at)
         return context_output(EVENT_PROMPT, broken_text(root, reason))
     locale = runtime.locale
     ctx = context_of(runtime)
+    mark_human(ctx.root, answers, runtime.config, at, ctx.cache.git)
     blocks: list[str] = []
-    answers = human_answers(prompt)
     approvals = [keys for answer in answers
                  if (keys := approval_keys(runtime, answer)) is not None]
     keys = list(dict.fromkeys(key for group in approvals for key in group)) if approvals else None
