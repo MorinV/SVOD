@@ -198,7 +198,7 @@ class StandardTemplateTest(unittest.TestCase):
             card = card.replace("kind: task", "kind: hotfix").replace("services: []",
                                                                       "services: [app]")
             sb.write(f"{HOTFIX}/card.md", card)
-            sb.write(f"{HOTFIX}/questions.md", "# Questions\n\nNone.\n")
+            sb.write(f"{HOTFIX}/questions.md", "none\n")
             status = sb.cli("status", HOTFIX).stdout
             self.assertIn(CAUSE_STEP, status)
             sb.edit(f"{HOTFIX}/card.md", "parent:", "cause: incident 42\nparent:")

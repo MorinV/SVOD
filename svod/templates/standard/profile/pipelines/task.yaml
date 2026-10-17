@@ -27,7 +27,7 @@ steps:
     text: work.step.questions
     gates:
       - { gate: artifact, params: { path: questions.md }, label: work.mark.questions }
-      # - { gate: questions_answered, params: { path: questions.md }, label: work.mark.answered }  # svod 0.5
+      - { gate: questions_answered, params: { file: questions.md }, label: work.mark.answered }
   - id: contract
     title: task.title.contract
     role: task
@@ -70,7 +70,7 @@ steps:
   - id: implement
     title: task.title.implement
     role: task
-    # action: start-task                                                     # svod 0.5
+    action: start-task
     text: task.step.implement
     gates:
       - { gate: artifact, params: { path: work.yaml }, label: task.mark.worktrees }
@@ -81,7 +81,8 @@ steps:
     text: task.step.checks
     gates:
       - { gate: artifact, params: { path: checks.md }, label: work.mark.checks }
-      # - { gate: command, params: { action: checks }, label: work.mark.checks_pass }  # svod 0.5
+      # With services declared in svod.yaml, let a script decide instead of the file:
+      # - { gate: command, params: { argv: [bash, profile/actions/checks.sh], service: app }, label: work.mark.checks_pass }
   - id: deliver
     title: work.title.deliver
     role: task

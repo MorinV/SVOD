@@ -24,13 +24,13 @@ steps:
     text: work.step.questions
     gates:
       - { gate: artifact, params: { path: questions.md }, label: work.mark.questions }
-      # - { gate: questions_answered, params: { path: questions.md }, label: work.mark.answered }  # svod 0.5
+      - { gate: questions_answered, params: { file: questions.md }, label: work.mark.answered }
   - id: researches
     title: project.title.researches
     role: project
     text: project.step.researches
-    # gates:                                                                 # svod 0.5
-    #   - { gate: children_done, params: { pipelines: [research] }, label: work.mark.children_done }  # svod 0.5
+    gates:
+      - { gate: children_done, params: { pipelines: [research] }, label: work.mark.children_done }
   - id: architecture
     title: project.title.architecture
     role: project
@@ -58,13 +58,13 @@ steps:
     text: project.step.breakdown
     gates:
       - { gate: artifact, params: { path: breakdown.md }, label: work.mark.breakdown }
-      # - { gate: has_children, params: { pipelines: [feature, task] }, label: work.mark.children }  # svod 0.5
+      - { gate: has_children, params: { pipelines: [feature, task] }, label: work.mark.children }
   - id: children
     title: work.title.children
     role: project
     text: project.step.children
-    # gates:                                                                 # svod 0.5
-    #   - { gate: children_done, params: { pipelines: [feature, task] }, label: work.mark.children_done }  # svod 0.5
+    gates:
+      - { gate: children_done, params: { pipelines: [feature, task] }, label: work.mark.children_done }
   - id: deliver
     title: work.title.deliver
     role: project

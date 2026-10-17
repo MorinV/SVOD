@@ -24,7 +24,7 @@ steps:
     text: work.step.questions
     gates:
       - { gate: artifact, params: { path: questions.md }, label: work.mark.questions }
-      # - { gate: questions_answered, params: { path: questions.md }, label: work.mark.answered }  # svod 0.5
+      - { gate: questions_answered, params: { file: questions.md }, label: work.mark.answered }
   - id: breakdown
     title: work.title.breakdown
     role: feature
@@ -32,7 +32,7 @@ steps:
     text: feature.step.breakdown
     gates:
       - { gate: artifact, params: { path: breakdown.md }, label: work.mark.breakdown }
-      # - { gate: has_children, params: { pipelines: [task] }, label: work.mark.children }  # svod 0.5
+      - { gate: has_children, params: { pipelines: [task] }, label: work.mark.children }
   - id: approve
     title: work.title.approve
     role: feature
@@ -50,8 +50,8 @@ steps:
     title: work.title.children
     role: feature
     text: feature.step.children
-    # gates:                                                                 # svod 0.5
-    #   - { gate: children_done, params: { pipelines: [task] }, label: work.mark.children_done }  # svod 0.5
+    gates:
+      - { gate: children_done, params: { pipelines: [task] }, label: work.mark.children_done }
   - id: integration
     title: feature.title.integration
     role: feature
@@ -59,7 +59,8 @@ steps:
     text: feature.step.integration
     gates:
       - { gate: artifact, params: { path: checks.md }, label: work.mark.checks }
-      # - { gate: command, params: { action: checks }, label: work.mark.checks_pass }  # svod 0.5
+      # With services declared in svod.yaml, let a script decide instead of the file:
+      # - { gate: command, params: { argv: [bash, profile/actions/checks.sh], service: app }, label: work.mark.checks_pass }
   - id: deliver
     title: work.title.deliver
     role: feature

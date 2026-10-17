@@ -40,5 +40,5 @@ class WorkProvider(ContainerProvider):
         return subject
 
 
-GATES = {}
+GATES: dict[str, type] = {}
 PROVIDERS = {WorkProvider.name: WorkProvider}

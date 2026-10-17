@@ -25,7 +25,7 @@ work:
     checks_pass: "checks pass"
     result: "result approved"
   step:
-    questions: "write what you do not know into questions.md, ask the person in the chat and wait; record every answer with svod answer <record> (until then under its question)"
+    questions: "write what you do not know into questions.md as ## Q: headings (or the single line none), ask the person in the chat and wait; record each answer with svod answer <record> --q <n> <text>"
   active:
     item: "- {id} - {step}"
 task:
