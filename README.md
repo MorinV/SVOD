@@ -59,7 +59,7 @@ Ask for the position of one task with `svod status tasks/<name>` (`--format json
 
 The store ships `AGENTS.md` and two skills: `svod-efficient-execution` for running a task, `svod-pipeline` for changing the process.
 
-**Svod develops itself with Svod.** [`store/`](store) is a standard-template store whose one service is this repository: the work on the engine is recorded there as features, tasks and research, with their questions, contracts, approvals and evidence log. How to work through it, what is committed and what the first run found: [docs/dogfooding.md](docs/dogfooding.md).
+**Svod develops itself with Svod.** The instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd) is a standard-template store next to a clone of this repository: the work on the engine is recorded there as features, tasks and research, with their questions, contracts, approvals and evidence log. The layout and what the first runs found: [docs/dogfooding.md](docs/dogfooding.md).
 
 ## OpenSpec/Git example
 

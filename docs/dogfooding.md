@@ -1,76 +1,34 @@
 # Svod develops itself with Svod
 
-`store/` in this repository is a store made by `svod new store --template standard`. Its one service is the repository itself (`services: {svod: ..}` in `store/svod.yaml`), so the work on the engine is recorded the way a team records the work on its services: features, tasks and research in `store/work/`, questions answered by a person, contracts approved in the chat, checks, delivery, and the evidence log that a retrospective will read. Every friction met on the way is a finding about the product; the first run's are at the end.
+The sources of Svod (this repository) hold no store. The work on the engine is run from an instance of the standard template, the repository [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd), laid out next to a clone of the sources:
 
-What is in it now:
-
-| record | state |
-|---|---|
-| `work/features/0.5-release` | brief and breakdown written; questions wait for the person |
-| `work/tasks/autonomy-by-kind` | card, questions, draft contract; questions wait |
-| `work/tasks/external-phrase-match` | card, questions, draft contract; questions wait |
-| `work/tasks/command-gate-in-template` | card, questions; the contract depends on the answers |
-| `work/research/retro-signals` | question written; findings and `outcome` open |
-| `knowledge/docs-and-their-template-copies-match-byte-for-byte.md` | a convention of this repository, given to the agent on the tags `docs`, `tests`, `engine` |
-
-## Set up, once per clone
-
-Run from `store/`, with the engine of this clone (`pip install -e .` from the root, or `PYTHONPATH=<clone>` and `python3 -m svod.cli` in place of `svod`):
-
-```bash
-cd store
-svod init --login <your-login> --email <the email of your commits>
-svod validate
-svod active
+```
+~/Projects/
+  svod-rnd/     the instance: svod.yaml, profile/, skills/, work/, knowledge/, evidence/, .svod/ (the engine it pins)
+  SVOD/         a clone of this repository: the one service of the instance, services: {svod: ../SVOD}
 ```
 
-Give `--email` the address your commits carry: `active` tells your records from the team's by the author of the last commit, and without it `init` takes `git config user.email` of the clone.
+This is the layout every user of Svod has: one instance next to the repositories it is about, agents started from the instance, worktrees of the services next to them (`~/Projects/svod-task-<name>` for a task of the service `svod`).
 
-Connect Claude Code to this store only, from the root of the clone:
+## Setting it up
 
 ```bash
-bash integrations/setup-claude.sh --project store
+pip install git+https://github.com/MorinV/SVOD@v0.5.0
+git clone https://github.com/MorinV/svod-rnd ~/Projects/svod-rnd
+git clone https://github.com/MorinV/SVOD ~/Projects/SVOD
+cd ~/Projects/svod-rnd && svod init --login <your-login> && svod doctor
+bash ~/Projects/SVOD/integrations/setup-claude.sh --project ~/Projects/svod-rnd
 ```
 
-It writes `store/.claude/settings.json` and links skills into `store/.claude/skills/`, both with absolute paths of your machine: they are ignored by `store/.gitignore`, never committed. Run it again after moving the clone or switching Python. Start Claude Code in `store/`. The hooks call the `svod` that `python3` imports; when an editable install points at another checkout, the hooks run that checkout's engine, not the one you are changing (finding 12).
+The instance pins its engine in `.svod/` (`svod install`, `svod update`); the installed `svod` hands every command over to that copy. Records (`work/`), knowledge and the evidence log are committed in the instance; `.svod-local.yaml`, `.claude/` and `checks.log` are not.
 
-## Run a piece of work
+## Working through it
 
-The skills in `store/skills/` say each step in detail; `svod status work/<kind>/<name>` always names the next one. In short, for a task:
-
-1. **Record.** `work/tasks/<name>/card.md` with frontmatter `type: card`, `kind: task` (or `hotfix` with `cause:`), `key:` (empty: this store has no tracker), `services: [svod]`, `parent: work/features/<feature>` or empty, `tags: [...]`, `status: open`; a title, a description, acceptance. Copy a record of `store/work/tasks/`; the commented format is `svod/templates/standard/work/tasks/example/card.md`.
-2. **Questions.** `questions.md`: one `## Q: <question>` per unknown with the options, or the single line `none`. Ask them in the chat in one message and wait. After the person answers, record each answer: `svod answer work/tasks/<name> --q <n> "<their words>"`. With the hooks on, the agent cannot write `questions.md` itself (finding 1): until that is fixed, write the questions before connecting the hooks, or let the person save the file the agent proposes in the chat.
-3. **Contract.** `contract.md`: result, boundaries per service (files of this repository), effects, checks, risks.
-4. **Approval.** Show card, questions and contract; the person writes `Approved` as the whole reply; then `svod approve work/tasks/<name> --step approve`. Never edit `approval.yaml`. Any later edit of a bound file voids it.
-5. **Worktree.** `svod do start-task work/tasks/<name>` makes a worktree of this repository next to the clone, `<clone dir>-<name>`, on the branch `<name>`, and lists it in `work.yaml`. Use `svod do`, not `bash profile/actions/start-task.sh` (finding 2). Change engine code only there and commit there. The worktree carries its own copy of `store/` from the branch point: change records only in the checkout you run `svod` from.
-6. **Checks.** From `store/`, with the test suite isolated from the variables of the action (finding 3):
-
-   ```bash
-   SVOD_CHECKS_SVOD='env -u SVOD_ROOT -u SVOD_ID -u SVOD_SUBJECT_PATH -u SVOD_SERVICES -u SVOD_KEY -u SVOD_KIND -u SVOD_PIPELINE -u SVOD_LOCALE -u SVOD_SERVICE_SVOD PYTHONPATH=. python3 -m pytest -q' \
-     bash profile/actions/checks.sh work/tasks/<name>
-   ```
-
-   It writes `checks.md` (committed) and `checks.log` (ignored). It refuses while the worktree has uncommitted changes.
-7. **Delivery.** `svod do pr work/tasks/<name>` prints the pull request text. `git push` is held by the pre-tool hook until the person's reply starts with "go ahead" or "давай" (and, until `external-phrase-match` is done, merely contains it). Under `autonomy: {task: supervised}` the result approval is optional; when the person approves anyway, `svod approve work/tasks/<name> --step deliver`.
-8. **Close.** After the merge set `status: done` in the card, then `svod do cleanup work/tasks/<name>` removes clean worktrees; delete the merged branch with `git branch -d <name>`.
-
-A feature goes brief → questions → breakdown (tasks with `parent:`) → approval → children done → integration checks → delivery; a research goes question → findings → `outcome` (`hotfix`/`feature` with `leads_to:`, or `knowledge` with `knowledge:`). Lasting answers go to `knowledge/` through `svod knowledge note "<text>" --tags a,b --title "<title>"`; the hooks give them to the agent on records that share a tag.
-
-**Retro.** `svod status`, `svod approve` and the pre-tool hook append to `store/evidence/<pipeline>/<record>.jsonl`; commit those lines with the record they belong to. There is no retrospective command yet: `work/research/retro-signals` decides which signals one should show, and this store is its first data.
-
-## What is committed
-
-| committed | not committed (`store/.gitignore`, root `.gitignore`) |
-|---|---|
-| `svod.yaml`, `profile/`, `skills/`, `AGENTS.md`, `README.md` | `.svod-local.yaml`: login and email of one person |
-| `work/**`: `card.md`, `brief.md`, `breakdown.md`, `questions.md`, `contract.md`, `question.md`, `findings.md`, `checks.md`, `approval.yaml`, `adr/` | `work.yaml`: worktrees of one machine, absolute paths under `svod do` |
-| `knowledge/` with `INDEX.md` | `checks.log` |
-| `evidence/**.jsonl` (`evidence: {commit: true}`) | `.claude/`: hooks and skill links with absolute paths |
-| | `__pycache__/` of `profile/gates/` |
-
-`tests/test_dogfood_store.py` keeps the store valid on a copy: `svod validate` is green, every record resolves and names `svod`, `svod active` lists the open records, and no committed file holds an absolute path of a machine.
-
-`store/profile/` is the standard template's profile as of 0.5 with two changes in `svod.yaml` (`services`, `workspaces: ../..`) and the example task removed. A later change of `svod/templates/standard/` does not reach it: port it by hand when the store should follow.
+- A new piece of work: `svod do start-task work/tasks/<name>` after writing `card.md` (or copy a record), then `svod status work/tasks/<name>` at every step; `svod next` is planned for 0.6.
+- Questions before work: `svod ask work/tasks/<name> "<question>"`, the person answers in the chat, `svod answer work/tasks/<name> --q <n> <text>`.
+- Approval: show the bound files, wait for "Approved" or "Одобряю" alone in the chat, `svod approve work/tasks/<name> --step approve`.
+- Implementation in the worktree `~/Projects/svod-task-<name>` on the branch `task/<name>`; `svod do checks work/tasks/<name>` runs the suite there and writes `checks.md`; after the merge `status: done` in `card.md` and `svod do cleanup`.
+- At the end of a feature: `svod retro work/features/<name>`.
 
 ## Findings
 
@@ -92,6 +50,6 @@ From the first run (setting up the store, five records, `status`, `active`, `sta
 14. **One text for two different questions states.** `profile/pipelines/task.yaml:27-30` (and the same step of feature and project) use `work.step.questions` for both a missing file and unanswered questions, so a record whose questions are written and asked still says "write what you do not know into questions.md"; it does not say how many answers are missing.
 15. **`workspaces` is read by nothing.** `svod/templates/standard/svod.yaml:4` sets `workspaces: ..`; neither the core nor the template reads it (the actions use `services`). Here it is `../..`, where the worktrees go, for the reader only.
 16. **Reference drift.** `docs/reference.md:810` lists `svod new --template local|task` without `standard`; `docs/reference.md:105` and `:109` are two paragraphs titled "The human mark" that disagree (`go` field or not, `svod.approval` or `svod.questions.write_human_mark`).
-17. **A store inside its service repository.** `checks.sh:38` refuses a dirty service, and record edits in `store/` make the service dirty: the feature's integration checks (no worktree) need every record change committed first, and `checks.sh` then writes `checks.md` into the same repository. `svod active` walks every worktree of the repository (25 agent worktrees here) for changed records.
+17. **A store inside its service repository (resolved by the layout above: the instance is a repository of its own).** `checks.sh:38` refuses a dirty service, and record edits in `store/` make the service dirty: the feature's integration checks (no worktree) need every record change committed first, and `checks.sh` then writes `checks.md` into the same repository. `svod active` walks every worktree of the repository (25 agent worktrees here) for changed records.
 18. **A store does not follow its template.** This store was made from the standard template before the template's actions, gates, pipelines, locale and skills changed; `svod do start-task` then made worktrees by the old name with absolute paths in `work.yaml` (finding 2 again). The profile had to be copied from the template by hand and `workspace_gate: work_tree` added to `svod.yaml`. Nothing in the engine tells a store that its template moved on, and nothing updates it: a candidate for the next plan (`svod update --profile`, or a stamp of the template version in `svod.yaml` that `doctor` compares).
 19. **A test that assumes a clean environment fails under the checks action.** `tests/test_command_gate.py::test_action_variables_in_a_pipeline` patched two `SVOD_` variables and expected the others absent; under `svod do checks` the suite inherits `SVOD_PIPELINE`, `SVOD_SERVICES` and the rest, so the test failed in every task worktree. The test now starts from an environment without `SVOD_` variables. Any test of this repository that reads the environment must do the same, since the repository checks itself through the action.

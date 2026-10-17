@@ -6,6 +6,10 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Changed
+
+- The sources hold no store any more: the work on Svod is recorded in the instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd), a standard-template store next to a clone of this repository, as every user's instance is.
+
 ## [0.5.0] - 2026-10-17
 
 ### Added
