@@ -1,0 +1,76 @@
+# Tag v<version> and a GitHub Release from CHANGELOG.md when the version on main changes.
+# The tag is made here, never by hand. No PyPI.
+name: release
+on:
+  push:
+    branches: [main]
+    paths: [svod/__init__.py]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Full sha of a commit of main to release (default the head of main)
+        required: false
+        default: ""
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET: ${{ inputs.ref || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET }}
+          path: target
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Commit must be on main
+        working-directory: target
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor HEAD origin/main \
+            || { echo "::error::$TARGET is not on main"; exit 1; }
+      - name: Version and notes
+        id: release
+        run: |
+          version=$(python3 .github/scripts/release_notes.py --root target version)
+          tag="v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $tag exists: nothing to do"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          python3 .github/scripts/release_notes.py --root target notes > "$RUNNER_TEMP/notes.md" \
+            || { echo "::error::CHANGELOG.md has no section ## [$version]"; exit 1; }
+      - name: Tag
+        if: steps.release.outputs.skip == 'false'
+        working-directory: target
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+            echo "Tag $TAG exists: release it as it is"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG" HEAD
+          git push origin "refs/tags/$TAG"
+      - name: GitHub Release
+        if: steps.release.outputs.skip == 'false'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
