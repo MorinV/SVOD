@@ -29,8 +29,18 @@ APPROVAL_PHRASES = "phrases"
 APPROVAL_WINDOW = "window_minutes"
 APPROVAL_FIELDS = frozenset({APPROVAL_PHRASES, APPROVAL_WINDOW})
 AGENT_CONTEXT = "agent_context"
-AGENT_CONTEXT_FIELDS = frozenset({"session_summary", "prompt_positions", "approval_notice",
-                                  "knowledge"})
+SESSION_SUMMARY = "session_summary"
+SESSION_START = "session_start"
+INDEX_LINES = "index_lines"
+AGENT_CONTEXT_FLAGS = frozenset({SESSION_SUMMARY, "prompt_positions", "approval_notice",
+                                 "knowledge"})
+AGENT_CONTEXT_FIELDS = AGENT_CONTEXT_FLAGS | {SESSION_START, INDEX_LINES}
+SESSION_INDEX = "index"
+SESSION_FULL = "summary"
+SESSION_OFF = "off"
+SESSION_MODES = (SESSION_INDEX, SESSION_FULL, SESSION_OFF)
+DEFAULT_SESSION_START = SESSION_INDEX
+DEFAULT_INDEX_LINES = 40
 FIELD_KNOWLEDGE = "knowledge"
 KNOWLEDGE_DIR = "dir"
 KNOWLEDGE_LIMIT = "limit_lines"
@@ -145,8 +155,20 @@ def services_errors(path: Path, root: Path, data: Any) -> list[str]:
     return errors
 
 
+def session_mode(value: Any) -> str | None:
+    """Mode of a session_start value, or None when it names none; YAML reads `off` as false."""
+    if value is False:
+        return SESSION_OFF
+    return value if isinstance(value, str) and value in SESSION_MODES else None
+
+
 def agent_context_errors(path: Path, profile_config: Any) -> list[str]:
-    """Errors of profile_config.agent_context: a mapping of known keys with boolean values."""
+    """Errors of profile_config.agent_context: a mapping of known keys.
+
+    The switches are booleans, session_start one of SESSION_MODES, index_lines a positive
+    integer; session_summary, the old spelling of session_start summary|off, may not say
+    otherwise when both are given.
+    """
     if not isinstance(profile_config, dict) or AGENT_CONTEXT not in profile_config:
         return []
     where = f"{path}: {FIELD_PROFILE_CONFIG}.{AGENT_CONTEXT}"
@@ -155,9 +177,47 @@ def agent_context_errors(path: Path, profile_config: Any) -> list[str]:
         return [f"{where} must be a mapping"]
     errors = [f"{where}: unknown key: {key}" for key in sorted(set(data) - AGENT_CONTEXT_FIELDS)]
     errors += [f"{where}.{key} must be a boolean"
-               for key in sorted(set(data) & AGENT_CONTEXT_FIELDS)
+               for key in sorted(set(data) & AGENT_CONTEXT_FLAGS)
                if not isinstance(data[key], bool)]
+    mode = session_mode(data.get(SESSION_START))
+    if SESSION_START in data and mode is None:
+        errors.append(f"{where}.{SESSION_START} must be one of {', '.join(SESSION_MODES)}")
+    legacy = data.get(SESSION_SUMMARY)
+    if mode is not None and isinstance(legacy, bool) \
+            and mode != (SESSION_FULL if legacy else SESSION_OFF):
+        errors.append(f"{where}: {SESSION_START}: {mode} contradicts "
+                      f"{SESSION_SUMMARY}: {str(legacy).lower()}")
+    lines = data.get(INDEX_LINES, DEFAULT_INDEX_LINES)
+    if isinstance(lines, bool) or not isinstance(lines, int) or lines < 1:
+        errors.append(f"{where}.{INDEX_LINES} must be a positive integer")
     return errors
+
+
+def agent_context(profile_config: Any) -> dict[str, Any]:
+    """profile_config.agent_context as written; empty when absent or not a mapping."""
+    data = profile_config.get(AGENT_CONTEXT) if isinstance(profile_config, dict) else None
+    return data if isinstance(data, dict) else {}
+
+
+def session_start_mode(profile_config: Any) -> str:
+    """What the session-start hook gives: session_start, else session_summary true|false as
+    summary|off, else the index."""
+    data = agent_context(profile_config)
+    mode = session_mode(data.get(SESSION_START))
+    if mode is not None:
+        return mode
+    legacy = data.get(SESSION_SUMMARY)
+    if isinstance(legacy, bool):
+        return SESSION_FULL if legacy else SESSION_OFF
+    return DEFAULT_SESSION_START
+
+
+def index_limit(profile_config: Any) -> int:
+    """Records the session index lists at most: agent_context.index_lines, 40 by default."""
+    lines = agent_context(profile_config).get(INDEX_LINES)
+    if isinstance(lines, int) and not isinstance(lines, bool) and lines > 0:
+        return lines
+    return DEFAULT_INDEX_LINES
 
 
 def knowledge_errors(path: Path, data: Any) -> list[str]:

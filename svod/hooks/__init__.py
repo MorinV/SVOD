@@ -1,4 +1,4 @@
-"""Agent hooks: the summary at session start, positions named in a prompt, guards before a tool.
+"""Agent hooks: the index at session start, positions named in a prompt, guards before a tool.
 
 Every hook reads one event of Claude Code or Codex as JSON on stdin, prints its JSON answer or
 nothing, and never fails: a store that does not load is reported in one line instead of silence.

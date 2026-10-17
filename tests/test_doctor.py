@@ -10,7 +10,7 @@ from unittest import mock
 from support import ENCODING, EXIT_FINDINGS, EXIT_OK
 from test_wizard import LOGIN, SERVICE, WizardStore
 
-from svod.doctor import FAIL, OK, WARN, interpreter
+from svod.doctor import FAIL, OK, WARN, hooks_format_error, interpreter, settings_files
 
 NEWEST = "0.4.0"
 LATEST = "svod.notice.latest_known"
@@ -133,6 +133,39 @@ class DoctorTest(unittest.TestCase):
             path.write_text(json.dumps(data), encoding=ENCODING)
             result = ds.doctor()
             self.assertIn(f"warn: hooks in {path} lack pre-tool", result.stdout)
+
+    def test_hooks_format(self):
+        """Both agents: events map to groups of handlers; Codex also refuses keys it does not
+        read and wants command handlers with whole-second timeouts."""
+        handler = {"type": "command", "command": "python3 -m svod.cli hook prompt", "timeout": 20}
+        good = {"hooks": {"UserPromptSubmit": [{"hooks": [handler]}]}}
+        self.assertIsNone(hooks_format_error(good, codex=True))
+        self.assertIsNone(hooks_format_error({**good, "permissions": {}}, codex=False))
+        self.assertIsNone(hooks_format_error({"permissions": {}}, codex=False))
+        cases = (
+            ("claude list", [], False, "not a JSON object"),
+            ("claude group", {"hooks": {"Stop": ["x"]}}, False, "hooks.Stop[0] must be"),
+            ("claude handler", {"hooks": {"Stop": [{"hooks": [{}]}]}}, False,
+             "hooks.Stop[0].hooks[0] must be an object with a type"),
+            ("codex top key", {**good, "permissions": {}}, True, "unknown key permissions"),
+            ("codex group key", {"hooks": {"Stop": [{"hooks": [], "when": 1}]}}, True,
+             "hooks.Stop[0]: unknown key when"),
+            ("codex prompt handler", {"hooks": {"Stop": [{"hooks": [{"type": "prompt"}]}]}},
+             True, "must be a command handler"),
+            ("codex timeout", {"hooks": {"Stop": [{"hooks": [{**handler, "timeout": 0}]}]}},
+             True, "timeout must be a positive integer"),
+        )
+        for name, data, codex, expected in cases:
+            with self.subTest(case=name):
+                self.assertIn(expected, hooks_format_error(data, codex) or "")
+
+    def test_codex_files_are_checked(self):
+        """The store's .codex/hooks.json and $CODEX_HOME/hooks.json are among the files."""
+        root, home = Path("/store"), Path("/home/me")
+        files = settings_files(root, {"HOME": str(home), "CODEX_HOME": "/codex"})
+        self.assertEqual(files, [root / ".claude/settings.json", root / ".codex/hooks.json",
+                                 home / ".claude/settings.json", Path("/codex/hooks.json")])
+        self.assertIn(home / ".codex/hooks.json", settings_files(root, {"HOME": str(home)}))
 
     def test_interpreter_of_a_hook_command(self):
         """The program after assignments and env."""

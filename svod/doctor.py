@@ -1,8 +1,8 @@
 """svod doctor: is the store ready to work in? One line per check: ok, warn or fail.
 
 Each check stands alone and reads only what it needs, so a store that does not load still gets
-every other answer: svod.yaml, the services, the hooks of Claude Code, the copy of the engine,
-the newest release, the evidence log, the knowledge index and the local config.
+every other answer: svod.yaml, the services, the hooks of Claude Code and Codex, the copy of the
+engine, the newest release, the evidence log, the knowledge index and the local config.
 """
 from __future__ import annotations
 
@@ -50,9 +50,21 @@ PROBE_BYTES = b"svod doctor\n"
 CLAUDE_DIR = ".claude"
 CLAUDE_CONFIG_ENV = "CLAUDE_CONFIG_DIR"
 SETTINGS_FILE = "settings.json"
-SETUP_COMMAND = "integrations/setup-claude.sh --project {root}"
+CODEX_DIR = ".codex"
+CODEX_HOME_ENV = "CODEX_HOME"
+CODEX_HOOKS_FILE = "hooks.json"
+SETUP_COMMAND = ("integrations/setup-claude.sh --project {root} "
+                 "(Codex: integrations/setup-codex.sh --project {root})")
 HOOKS_FIELD = "hooks"
 COMMAND_FIELD = "command"
+TYPE_FIELD = "type"
+TIMEOUT_FIELD = "timeout"
+COMMAND_TYPE = "command"
+# What Codex reads of hooks.json (codex-rs/config/src/hook_config.rs): unknown keys are errors.
+CODEX_TOP_KEYS = frozenset({"description", HOOKS_FIELD})
+CODEX_GROUP_KEYS = frozenset({"matcher", HOOKS_FIELD})
+CODEX_HANDLER_KEYS = frozenset({TYPE_FIELD, COMMAND_FIELD, "commandWindows", TIMEOUT_FIELD,
+                                "async", "statusMessage", "additionalContextLimit"})
 MARKER = "svod"
 HOOK_WORD = "hook"
 HOOK_EVENTS = ("session-start", "prompt", "pre-tool")
@@ -115,11 +127,63 @@ def service_checks(root: Path, locale: Locale, data: dict[str, Any]) -> list[Che
 
 
 def settings_files(root: Path, env: dict[str, str] | None = None) -> list[Path]:
-    """Settings of Claude Code that may hold the hooks: the store's, then the user's."""
+    """Files of Claude Code and Codex that may hold the hooks: the store's, then the user's."""
     env = dict(os.environ) if env is None else env
-    user = Path(env[CLAUDE_CONFIG_ENV]) if env.get(CLAUDE_CONFIG_ENV) else (
-        Path(env.get("HOME") or Path.home()) / CLAUDE_DIR)
-    return [root / CLAUDE_DIR / SETTINGS_FILE, user / SETTINGS_FILE]
+    home = Path(env.get("HOME") or Path.home())
+    user = Path(env[CLAUDE_CONFIG_ENV]) if env.get(CLAUDE_CONFIG_ENV) else home / CLAUDE_DIR
+    codex = Path(env[CODEX_HOME_ENV]) if env.get(CODEX_HOME_ENV) else home / CODEX_DIR
+    return [root / CLAUDE_DIR / SETTINGS_FILE, root / CODEX_DIR / CODEX_HOOKS_FILE,
+            user / SETTINGS_FILE, codex / CODEX_HOOKS_FILE]
+
+
+def unknown_keys(data: dict[str, Any], known: frozenset[str], where: str) -> str | None:
+    """Error naming the first key Codex does not read, or None."""
+    extra = sorted(set(map(str, data)) - known)
+    return f"{where}: unknown key {extra[0]}" if extra else None
+
+
+def handler_error(hook: Any, where: str, codex: bool) -> str | None:
+    """Error of one hook handler, or None: a mapping with a type; for Codex a command handler
+    of the keys it reads, with a command and a timeout in whole seconds."""
+    if not isinstance(hook, dict) or not isinstance(hook.get(TYPE_FIELD), str):
+        return f"{where} must be an object with a type"
+    if not codex:
+        return None
+    timeout = hook.get(TIMEOUT_FIELD, 1)
+    if hook[TYPE_FIELD] != COMMAND_TYPE or not isinstance(hook.get(COMMAND_FIELD), str):
+        return f"{where} must be a command handler with a command"
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
+        return f"{where}.{TIMEOUT_FIELD} must be a positive integer"
+    return unknown_keys(hook, CODEX_HANDLER_KEYS, where)
+
+
+def hooks_format_error(data: Any, codex: bool) -> str | None:
+    """Where a parsed hooks file departs from the format, or None.
+
+    Both agents: `hooks` maps events to lists of groups, each with a list of handlers. Codex
+    (hooks.json) also refuses keys it does not read and wants command handlers.
+    """
+    if not isinstance(data, dict):
+        return "not a JSON object"
+    error = unknown_keys(data, CODEX_TOP_KEYS, "top level") if codex else None
+    hooks = data.get(HOOKS_FIELD, {})
+    if error or not isinstance(hooks, dict):
+        return error or f"{HOOKS_FIELD} must be an object"
+    for event, groups in hooks.items():
+        where = f"{HOOKS_FIELD}.{event}"
+        if not isinstance(groups, list):
+            return f"{where} must be a list"
+        for i, group in enumerate(groups):
+            at = f"{where}[{i}]"
+            if not isinstance(group, dict) or not isinstance(group.get(HOOKS_FIELD), list):
+                return f"{at} must be an object with a list of {HOOKS_FIELD}"
+            error = unknown_keys(group, CODEX_GROUP_KEYS, at) if codex else None
+            error = error or next((e for j, hook in enumerate(group[HOOKS_FIELD])
+                                   if (e := handler_error(hook, f"{at}.{HOOKS_FIELD}[{j}]",
+                                                          codex))), None)
+            if error:
+                return error
+    return None
 
 
 def hook_commands(data: Any) -> dict[str, str]:
@@ -159,7 +223,8 @@ def runnable(program: str) -> bool:
 
 
 def hooks_checks(root: Path, locale: Locale, files: Iterable[Path]) -> list[Check]:
-    """The hooks of svod are registered and run an interpreter that exists."""
+    """The hooks of svod are registered in files the agents can read and run an interpreter
+    that exists."""
     files = list(files)
     found: list[Check] = []
     registered = False
@@ -171,6 +236,13 @@ def hooks_checks(root: Path, locale: Locale, files: Iterable[Path]) -> list[Chec
         except (OSError, ValueError) as exc:
             found.append(Check(CHECK_HOOKS, WARN, locale.text(
                 keys.DOCTOR_HOOKS_UNREADABLE, file=path, reason=exc)))
+            continue
+        codex = path.name == CODEX_HOOKS_FILE
+        error = hooks_format_error(data, codex)
+        if error:
+            # Codex refuses the whole file; Claude Code skips what it cannot read.
+            found.append(Check(CHECK_HOOKS, FAIL if codex else WARN, locale.text(
+                keys.DOCTOR_HOOKS_FORMAT, file=path, reason=error)))
             continue
         commands = hook_commands(data)
         if not commands:

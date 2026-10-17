@@ -6,8 +6,13 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Added
+
+- `integrations/setup-codex.sh --project <store>` registers the three hooks in `<store>/.codex/hooks.json` and links the skills to `<store>/.codex/skills`; `svod doctor` also reads `<store>/.codex/hooks.json` and `$CODEX_HOME/hooks.json` and checks the format of every hooks file (`doctor.hooks_format`; a Codex file Codex would refuse fails).
+
 ### Changed
 
+- Session start gives the session index (`svod.index`): the open records of every pipeline from their frontmatter and first heading, children under parents, at most `agent_context.index_lines` (40), and the hint to `svod status`/`svod next` a record; no position, gate, command, git or knowledge note. `agent_context.session_start: index|summary|off` chooses it, `index` by default, also in a store that sets nothing (set `summary` to keep the old summary); `session_summary: true|false` still means `summary|off`, a contradiction is a load error. New core keys `index.*`.
 - The sources hold no store any more: the work on Svod is recorded in the instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd), a standard-template store next to a clone of this repository, as every user's instance is.
 
 ## [0.5.0] - 2026-10-17

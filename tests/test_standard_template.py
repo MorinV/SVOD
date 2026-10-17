@@ -161,7 +161,7 @@ class StandardTemplateTest(unittest.TestCase):
             self.assertEqual(sb.cli("init", "--login", "tester").returncode, EXIT_OK)
             sb.edit(f"{EXAMPLE}/card.md", ARCHIVED, OPEN)
             sb.write("svod.yaml", (sb.store / "svod.yaml").read_text(encoding=ENCODING)
-                     + GATE_CHECKS)
+                     .replace("profile_config:\n", GATE_CHECKS, 1))
             sb.edit(f"{EXAMPLE}/card.md", "services: []", f"services: [{SERVICE}]")
             status = sb.cli("status", EXAMPLE).stdout
             self.assertIn(APPROVE_STEP, status)

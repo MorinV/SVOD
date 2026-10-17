@@ -41,6 +41,13 @@ ACTIVE_NO_LOCAL_CONFIG = "active.no_local_config"
 ACTIVE_NO_IDENTITY = "active.no_identity"
 ACTIVE_WORKTREE = "active.worktree"
 ACTIVE_NONE = "active.none"
+INDEX_HEAD = "index.head"
+INDEX_PIPELINE = "index.pipeline"
+INDEX_ITEM = "index.item"
+INDEX_ITEM_UNTITLED = "index.item_untitled"
+INDEX_KIND = "index.kind"
+INDEX_MORE = "index.more"
+INDEX_TAIL = "index.tail"
 INIT_WRITTEN = "init.written"
 INIT_EXISTS = "init.exists"
 INIT_NOT_CONFIGURED = "init.not_configured"
@@ -114,6 +121,7 @@ DOCTOR_HOOKS_NONE = "doctor.hooks_none"
 DOCTOR_HOOKS_PARTIAL = "doctor.hooks_partial"
 DOCTOR_HOOKS_PYTHON = "doctor.hooks_python"
 DOCTOR_HOOKS_UNREADABLE = "doctor.hooks_unreadable"
+DOCTOR_HOOKS_FORMAT = "doctor.hooks_format"
 DOCTOR_COPY_NONE = "doctor.copy_none"
 DOCTOR_COPY_OK = "doctor.copy_ok"
 DOCTOR_VERSION_OK = "doctor.version_ok"
@@ -288,6 +296,13 @@ CORE_KEYS = (
     ACTIVE_NO_IDENTITY,
     ACTIVE_WORKTREE,
     ACTIVE_NONE,
+    INDEX_HEAD,
+    INDEX_PIPELINE,
+    INDEX_ITEM,
+    INDEX_ITEM_UNTITLED,
+    INDEX_KIND,
+    INDEX_MORE,
+    INDEX_TAIL,
     INIT_WRITTEN,
     INIT_EXISTS,
     INIT_NOT_CONFIGURED,
@@ -361,6 +376,7 @@ CORE_KEYS = (
     DOCTOR_HOOKS_PARTIAL,
     DOCTOR_HOOKS_PYTHON,
     DOCTOR_HOOKS_UNREADABLE,
+    DOCTOR_HOOKS_FORMAT,
     DOCTOR_COPY_NONE,
     DOCTOR_COPY_OK,
     DOCTOR_VERSION_OK,
