@@ -331,6 +331,21 @@ class NextActionTest(unittest.TestCase):
         self.assertEqual(action["inputs"], [{"gate": "artifact", "purpose": "contract",
                                            "kind": "path", "ref": "planning/registration.yaml"}])
 
+    def test_children_are_projected_from_captured_positions(self):
+        collection, counter = self.capture()
+        item = collection.items[0]
+        self.assertEqual(to_json(collection)["positions"][0]["children"], [])
+        child = Subject("work/tasks/child", None)
+        captured = position(None, item.pipeline, child)
+        unsafe = position(None, item.pipeline, Subject("../escape", None))
+        calls = counter.calls
+        item.children = [captured, unsafe]
+        self.assertEqual(to_json(collection)["positions"][0]["children"], [
+            {"id": "work/tasks/child", "pipeline": "synthetic", "current": "outline",
+             "done": False},
+            {"id": None, "pipeline": "synthetic", "current": "outline", "done": False}])
+        self.assertEqual(counter.calls, calls)
+
     def test_safe_command_error_has_no_next_action(self):
         from svod.status_json import error_json
         self.assertEqual(error_json("invalid_load").get("next_action"), [])

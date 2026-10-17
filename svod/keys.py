@@ -22,6 +22,10 @@ STATUS_NOT_FOUND = "status.not_found"
 STATUS_AMBIGUOUS = "status.ambiguous"
 STATUS_CANDIDATE = "status.candidate"
 STATUS_RUN = "status.run"
+STATUS_CHILDREN = "status.children"
+STATUS_CHILD = "status.child"
+STATUS_CHILD_DONE = "status.child_done"
+STATUS_CHILD_OPEN = "status.child_open"
 MARK_PASS = "status.mark.pass"
 MARK_FAIL = "status.mark.fail"
 MARK_UNKNOWN = "status.mark.unknown"
@@ -190,6 +194,10 @@ CORE_KEYS = (
     STATUS_AMBIGUOUS,
     STATUS_CANDIDATE,
     STATUS_RUN,
+    STATUS_CHILDREN,
+    STATUS_CHILD,
+    STATUS_CHILD_DONE,
+    STATUS_CHILD_OPEN,
     MARK_PASS,
     MARK_FAIL,
     MARK_UNKNOWN,

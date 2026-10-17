@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from . import keys
 from .bindings import resolve_role
-from .gates import Status
+from .gates import Status, is_done
 
 if TYPE_CHECKING:
     from .context import Context
@@ -159,16 +159,36 @@ def mark_lines(locale: Locale, pos: Position) -> list[str]:
     return lines
 
 
+def child_line(locale: Locale, pos: Position) -> str:
+    """Line of one child: done, its current step, or open without a step."""
+    facts = subject_facts(pos)
+    if is_done(pos):
+        return locale.text(keys.STATUS_CHILD_DONE, **facts)
+    if pos.current is not None:
+        return locale.text(keys.STATUS_CHILD, step=pos.current.step.id, **facts)
+    return locale.text(keys.STATUS_CHILD_OPEN, **facts)
+
+
+def children_lines(locale: Locale, children: list[Position] | None) -> list[str]:
+    """The children block: a heading and one line per child; empty without children."""
+    if not children:
+        return []
+    return [locale.text(keys.STATUS_CHILDREN)] + [INDENT + child_line(locale, child)
+                                                  for child in children]
+
+
 def sentence(text: str) -> str:
     """The text without its final period, for a template that ends the sentence itself."""
     return text[:-1] if text.endswith(".") and not text.endswith(ELLIPSIS) else text
 
 
 def render_position(locale: Locale, pos: Position, skills: Skills | None = None,
-                    autonomy: str | None = None) -> list[str]:
+                    autonomy: str | None = None,
+                    children: list[Position] | None = None) -> list[str]:
     """Lines of the status block for one position; skills of the current step when resolved.
 
     autonomy: the level of the pipeline from svod.yaml, printed under the header when set.
+    children: positions of the children the pipeline lists, printed after the marks.
     """
     header = pos.pipeline.header or keys.STATUS_HEADER
     lines = [locale.text(header, **subject_facts(pos))]
@@ -177,6 +197,7 @@ def render_position(locale: Locale, pos: Position, skills: Skills | None = None,
     if pos.subject.checkout is not None:
         lines.append(INDENT + locale.text(keys.STATUS_CHECKOUT, dir=pos.subject.checkout.name))
     lines += [INDENT + line for line in mark_lines(locale, pos)]
+    lines += [INDENT + line for line in children_lines(locale, children)]
     text = step_text(locale, pos)
     body = []
     if text:

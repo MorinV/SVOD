@@ -277,7 +277,20 @@ An archived subject with a native `archived` terminal gate is historical: the en
 10. **Errors while reading** — an `OSError` raised by a gate becomes UNKNOWN with the error as reason; any other exception becomes UNKNOWN with the reason `gate <name> raised <error>`, so a broken gate leaves its step unpassed instead of failing the command or the hook.
 11. **Missing subject** — a subject the provider did not find (`exists: false`, see [Subject providers](#subject-providers)). When the pipeline declares `missing` and that gate FAILs, `status` prints its `text` on stderr instead of a position — only when the query shows no position at all: another pipeline presenting the same query is the answer; on PASS or UNKNOWN the position is computed. A position of a missing subject never has order violations (rule 5) nor the code freeze (rules 6 and 8): nothing has been done for it yet, so there is no order to break and no plan to wait for.
 
-Output order of a `status` block: header, the checkout line (`status.checkout`, for a subject of another checkout), marks, blank line, step line, skill line, code freeze, UNKNOWN lines, warnings, violations. A step text ending with a period loses it inside `status.next_step`, which ends the sentence itself.
+Output order of a `status` block: header, the checkout line (`status.checkout`, for a subject of another checkout), marks, children, blank line, step line, skill line, code freeze, UNKNOWN lines, warnings, violations. A step text ending with a period loses it inside `status.next_step`, which ends the sentence itself.
+
+**Children.** The pipeline lists children when its `active` block declares `children` (by the `parent` field), else when a step or the `done` gate uses [`has_children`](#has_children) or [`children_done`](#children_done): then the `pipelines` of those uses with their `field`, in the order of first mention. For an existing subject with at least one such child, the block `status.children` follows the marks with one line per child, in the order of the child pipelines, then of the provider: `status.child_done` when the child is done (as `children_done` decides), `status.child` with `{step}`, the id of its current step, or `status.child_open` when it has no current step (a blocking entry, or every step passed and `done` did not). Facts `{id}`, `{pipeline}` of the child. Archived children are listed too, as the gates count them. Without children, or for a pipeline that lists none, there is no block. The positions are computed once, when the status is collected; `--format json` gives every position `children: [{id, pipeline, current, done}]` (`current` the step id or `null`, an empty list without children).
+
+```text
+work/features/login
+  + split
+  - finish
+  Children:
+    work/tasks/form - done
+    work/tasks/token - check
+
+  Next step: finish the tasks.
+```
 
 ## Core gates
 
@@ -496,6 +509,7 @@ subject:
 | `in_progress` | no | gate use or gate name | when it passes (and its `fact`, if given, is a number > 0) the subject is "in progress" |
 | `item` | no | locale key / `active.item` | line of one subject; facts `{id}`, `{keys}` (or `active.no_keys`), `{pipeline}`, `{step}` (the step line), `{frontmatter}` |
 | `headings` | no | mapping of group to locale key | overrides of the group headings |
+| `children` | no | list of pipeline names / `[]` | pipelines whose open subjects are shown under a subject of this one, see below; also the children `status` lists |
 
 Groups, always in this order:
 
@@ -518,6 +532,26 @@ active:
   headings:
     mine_idle: note.active.mine
     theirs_collapsed: note.active.theirs_collapsed
+```
+
+**Tree.** A subject of a pipeline listed in `children` whose frontmatter `parent` names an open subject of this pipeline (compared as in [`has_children`](#has_children)) is printed right under the parent's line, indented one `INDENT` more per level, in its own pipeline's `item` (`active.item` when that pipeline has no `active` block), and is left out of its own group. Children come in the order of `children`, then of the provider; their own `children` nest further, at any depth (project → feature → task). Only open children are shown (archived and done ones are skipped, as are subjects shown under a checkout), and only under a parent whose line is printed: under a done parent, a parent shown by checkout or one hidden in `theirs_collapsed`, a child stays in its own group. A subject whose parents lead back to it (a cycle) is printed in its own group, and a subject is printed once. Subjects of every pipeline are enumerated once per run (`svod.relations`, shared with the relation gates); names in `children` that are not loaded are ignored.
+
+```yaml
+# project.yaml
+active: { children: [feature] }
+# feature.yaml
+active: { children: [task] }
+```
+
+```text
+Your work without progress:
+  - work/projects/shop (no key) - write the vision
+    - work/features/login (no key) - finish the tasks
+      - work/tasks/token (no key) - check
+    - work/features/search (no key) - split into tasks
+
+Your work without progress:
+  - work/tasks/loose (no key) - build
 ```
 
 ## Bindings file
@@ -634,6 +668,9 @@ Core keys (all required in every core locale file):
 | `status.not_found` | `{query}` |
 | `status.candidate` | `{id}` |
 | `status.run` | `{action}`, `{query}` (the subject id, quoted for the shell when needed) |
+| `status.children` | — |
+| `status.child` | `{id}`, `{pipeline}`, `{step}` |
+| `status.child_done`, `status.child_open` | `{id}`, `{pipeline}` |
 | `status.mark.pass`, `status.mark.fail`, `status.mark.unknown` | `{label}` |
 | `active.mine_active`, `active.mine_idle`, `active.theirs`, `active.no_keys`, `active.hook_tail`, `active.no_identity` | — |
 | `active.no_local_config` | `{file}` |

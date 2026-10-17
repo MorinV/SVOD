@@ -23,6 +23,10 @@ status:
   ambiguous: "Several subjects match:"
   candidate: "{id}"
   run: "Run: svod do {action} {query}"
+  children: "Children:"
+  child: "{id} - {step}"
+  child_done: "{id} - done"
+  child_open: "{id} - open, no current step"
   mark:
     pass: "+ {label}"
     fail: "- {label}"

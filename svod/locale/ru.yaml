@@ -23,6 +23,10 @@ status:
   ambiguous: "Под запрос подходят несколько субъектов:"
   candidate: "{id}"
   run: "Запустить: svod do {action} {query}"
+  children: "Дочерние работы:"
+  child: "{id} — {step}"
+  child_done: "{id} — готово"
+  child_open: "{id} — открыта, текущего шага нет"
   mark:
     pass: "+ {label}"
     fail: "- {label}"
