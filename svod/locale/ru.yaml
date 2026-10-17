@@ -79,6 +79,8 @@ do:
   list_item: "{name} — {description}"
   list_no_description: "без описания"
   list_none: "В профиле нет действий: добавить скрипты в {dir}"
+  not_current: "Действие {name} относится к шагу {step}, до которого {id} ещё не дошёл (текущий шаг: {current}); выполняется только с --force"
+  no_current: "нет, держит условие входа"
 wizard:
   not_tty: "svod init --wizard спрашивает в терминале; без него ответы даются флагами: --login <логин>, --email <почта>, --service <имя>=<путь>, --autonomy <пайплайн>=<уровень>, --checks <сервис>=\"<команда>\", --hooks project|global|none"
   prompt_login: "Логин [{default}]: "

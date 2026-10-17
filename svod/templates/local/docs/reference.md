@@ -372,7 +372,7 @@ A check by a script instead of a question to the agent: a linter, the tests, a l
 
 | param | req | type / default | meaning |
 |---|---|---|---|
-| `argv` | yes | non-empty list of strings | the command and its arguments, run without a shell |
+| `argv` | yes | non-empty list of strings | the command and its arguments, run without a shell; `{id}` (the subject id), `{path}` (the subject path relative to the store root, the id when it has none) and `{root}` (the absolute store root) are replaced in every item, other braces stay as written |
 | `service` | no, not with `cwd` | string | name from `services` of `svod.yaml`: the command runs in the work directory of the subject in that repository (found by the gate named in `workspace_gate`, by the subject's keys), else in the service directory itself |
 | `cwd` | no, not with `service` | string / the store root | directory relative to the store root |
 | `timeout` | no | positive number / `120` | seconds before the command and its process group are stopped |
@@ -380,7 +380,7 @@ A check by a script instead of a question to the agent: a linter, the tests, a l
 | `env` | no | mapping of strings / `{}` | added to the environment of the command |
 | `cache` | no | bool / `true` | `false` runs the command in every run of `svod`, never from the disk |
 
-The command runs as the local runner runs it: argv without a shell, stdout and stderr together, in a POSIX session of its own whose process group is stopped after it exits, with `PYTHONDONTWRITEBYTECODE=1`. PASS when it exits with 0, FAIL with any other code. UNKNOWN, never cached, when it does not finish within `timeout`, cannot start, its directory does not exist, `service` is not declared, or the system is not POSIX; the reason says which. Facts: `code` (the exit code), `detail` (the last 20 lines of the output, at most its last 2000 characters; the reason when UNKNOWN), `cached` (`true` when the result came from the disk), `duration` (seconds of the run that produced it); `code` and `duration` are empty when UNKNOWN. One run of `svod` evaluates one command in one directory once, however many steps and marks use it.
+The command runs as the local runner runs it: argv without a shell, stdout and stderr together, in a POSIX session of its own whose process group is stopped after it exits, with `PYTHONDONTWRITEBYTECODE=1`. A gate of a loaded pipeline adds the variables an [action](#actions) of the subject gets (`SVOD_ROOT`, `SVOD_ID`, `SVOD_KEY`, `SVOD_PIPELINE`, `SVOD_KIND`, `SVOD_SERVICES`, `SVOD_SERVICE_<NAME>`, `SVOD_CHECKS_<NAME>`, `SVOD_SUBJECT_PATH`, `SVOD_LOCALE`, `SVOD_FM_<NAME>`) with `SVOD_ACTION` empty, so a profile script behaves as under `svod do`; `env` comes on top. The substituted `argv` and these variables enter the cache key. PASS when it exits with 0, FAIL with any other code. UNKNOWN, never cached, when it does not finish within `timeout`, cannot start, its directory does not exist, `service` is not declared, or the system is not POSIX; the reason says which. Facts: `code` (the exit code), `detail` (the last 20 lines of the output, at most its last 2000 characters; the reason when UNKNOWN), `cached` (`true` when the result came from the disk), `duration` (seconds of the run that produced it); `code` and `duration` are empty when UNKNOWN. One run of `svod` evaluates one command in one directory once, however many steps and marks use it.
 
 **Cache.** `status` and the hooks show the result without running the command again while its source is unchanged. When the directory is in a git repository, the result is kept in `<git common dir>/svod-command-cache/<key>.json` (code, tail of the output, UTC start time, duration), shared by every worktree of the repository; the directory can be removed at any time. The key is sha256 over `argv`, `env`, the directory's path inside its repository, `HEAD`, `git status --porcelain --untracked-files=all`, the content of every file that differs from `HEAD` or is untracked and not ignored, and the content of the `watch` files. Files are hashed by content up to 1000 files and 8 MiB together, beyond that by size and modification time. A new commit, a changed, added or removed file, another argv or env each make a new key, and the command runs again. Outside git nothing is cached and `cached` is always `false`.
 
@@ -602,10 +602,11 @@ roles:
 An action is routine work of a step written once as a bash script of the profile, so the agent runs one command (`svod do start-task PROJ-1`) instead of reasoning through the same five steps every time. Actions run on Linux and macOS.
 
 - **Format.** `<profile>/actions/<name>.sh`, where `<name>` matches the step-id syntax `^[a-z][a-z0-9_-]*$`. The executable bit is not needed: the script is run as the argv `bash <script> [extra args]`, without a shell around it. The first non-empty line after the shebang, when it is a comment, is its description in `svod do --list`.
-- **Run.** `svod do <action> <query> [-- extra args]` resolves the query as `status` does (exact name, then tracker key, then substring, in the store and its other checkouts) and needs exactly one existing subject. The working directory is the store root; the output goes to the terminal as it is, not captured; the exit code of the script is the exit code of `svod do`. A script running longer than 600 s is stopped with its process group, `do.timeout` is printed and the exit code is 124. The run is meant for the evidence journal (`svod.actions.record_run`), a no-op until it lands.
+- **Run.** `svod do <action> <query> [-- extra args]` resolves the query as `status` does (exact name, then tracker key, then substring, in the store and its other checkouts) and needs exactly one existing subject. The working directory is the store root; the output goes to the terminal as it is, not captured; the exit code of the script is the exit code of `svod do`. A script running longer than 600 s (`--timeout <seconds>`, a positive number, sets another limit) is stopped with its process group, `do.timeout` is printed and the exit code is 124. Each run that started is an `action_run` line of the [evidence log](#evidence): the action, its exit code (124 after the timeout, null when interrupted), the seconds and the first step naming the action.
 - **Step.** A step may name its action with `action: <name>` (see [Step](#step)): `svod status` then prints `status.run` with the command for the subject, and `validate` reports a step whose script does not exist.
+- **Position.** When every applicable step naming the action lies ahead of the subject (after its current step, or an entry holds it before any step), `svod do` prints `do.not_current` on stderr and exits 2 without running; `--force` runs it after the same warning. A step already passed, the current one, one before it, a subject that is done and an action no step names run without a word: running a script again is safe, it is idempotent.
 
-Environment of the script: the environment of `svod`, without inherited `SVOD_SERVICE_*` and `SVOD_FM_*`, plus:
+Environment of the script: the environment of `svod`, without inherited `SVOD_SERVICE_*` and `SVOD_FM_*`, plus the variables below. `svod do` passes no record argument: the scripts read `SVOD_ID`. A script run by hand takes the record as its argument, which wins over the variables it inherited (see [the standard template's actions](#the-standard-templates-actions)).
 
 | variable | value |
 |---|---|
@@ -619,6 +620,7 @@ Environment of the script: the environment of `svod`, without inherited `SVOD_SE
 | `SVOD_CHECKS_<NAME>` | the check command of every service in `profile_config.checks` of `svod.yaml`, an argv list quoted as a shell line, a string as written; named as services are; a variable already set in the environment wins |
 | `SVOD_SUBJECT_PATH` | absolute path of the subject (in the checkout that holds its version), or empty |
 | `SVOD_LOCALE` | the locale of the store |
+| `SVOD_ACTION` | the name of the action: the marker of a run by `svod do`; empty when a [`command`](#command) gate runs a script |
 | `SVOD_FM_<NAME>` | every other scalar frontmatter field (strings, numbers, `true`/`false`, dates as ISO, empty for `null`), named as services are; lists and mappings are left out |
 
 **Idempotence is the script's job.** The engine does not remember that an action ran; the position comes from files and git. Every script first checks whether its work is already done (the branch exists, the file is written, the directory is created) and then says so and exits 0, so running it twice, or after a session that stopped half way, is safe. Exit non-zero only for a real failure, with a message on stderr saying what to do.
@@ -635,6 +637,21 @@ fi
 printf '# Work on %s (%s)\n' "$SVOD_ID" "${SVOD_KEY:-no key}" > "$note"
 echo "started: $note"
 ```
+
+### The standard template's actions
+
+`profile/actions/` of `svod new --template standard` holds `start-task.sh`, `checks.sh`, `pr.sh` and `cleanup.sh`, each sourcing `_env.sh`; they run under `svod do` and by hand as `bash profile/actions/<name>.sh work/<kind>/<name> [options]` from the store root.
+
+- **The record.** The first argument not starting with `--` is the record, the others are options. Under `svod do` (no record argument) the `SVOD_` variables are used. A record argument naming another record than `SVOD_ID`, or a `SVOD_ROOT` other than the working directory, makes the inherited variables stale: `SVOD_ACTION`, `SVOD_ROOT`, `SVOD_ID`, `SVOD_KEY`, `SVOD_KIND`, `SVOD_PIPELINE`, `SVOD_SERVICES`, `SVOD_SUBJECT_PATH`, `SVOD_SERVICE_*` and `SVOD_FM_*` are dropped and found again from the argument, `card.md` and `svod.yaml`. So `checks.sh` running a test suite that runs these scripts on another store acts on the record it was given there, never on the outer one.
+- **Names.** The worktree of service `<service>` for the record `work/<kind>/<name>` of pipeline `<pipeline>` is `<directory holding the service checkout>/<service>-<pipeline>-<name>`, on the branch `<pipeline>/<name>`. The checkout is the absolute path of the service (`SVOD_SERVICE_<NAME>`, else `services.<name>` of `svod.yaml`, else `../<name>`), so a store inside its service gets the worktree next to the checkout. `<pipeline>` is `SVOD_PIPELINE`, else `<kind>` without its final `s`. `work.yaml` lists `<service>: <path relative to the store root>` (`app: ../app-task-login`) and can be committed.
+- **`checks.sh --check`.** Writes nothing: it runs the checks of every service again (in the worktree of `work.yaml`, else the checkout) with their output on stdout and exits 0 when all pass. A record naming no services exits 0 printing `no services declared ...`; a record without `checks.md` exits 1 without running anything (`not checked yet ...`), which keeps the gate cheap before the first real run. The task step `checks` and the feature step `integration` use it next to `checks.md`:
+
+```yaml
+- { gate: artifact, params: { path: checks.md }, label: work.mark.checks }
+- { gate: command, params: { argv: [bash, profile/actions/checks.sh, "{id}", --check], cwd: . }, label: work.mark.checks_pass }
+```
+
+The result is cached by the state of the store repository (its `HEAD`, status and changed files), which holds `checks.md` with the commit of every service: the checks run again after each change in the store, a new `checks.md` included, and a commit in a service outside the store is seen once `checks.sh` runs again. No `watch` is needed. Without git around the store nothing is cached and every `status` runs the checks.
 
 ## Locale
 
@@ -711,12 +728,13 @@ Core keys (all required in every core locale file):
 | `approve.confirm_plan` | `{subject}`, `{step}`, `{marker}`, `{file}` |
 | `approve.confirm_files` | `{sha}` |
 | `approve.confirm_question`, `approve.not_confirmed` | `{subject}` |
-| `do.usage`, `do.list_no_description` | — |
+| `do.usage`, `do.list_no_description`, `do.no_current` | — |
 | `do.unknown` | `{name}`, `{script}` |
 | `do.failed` | `{name}`, `{reason}` |
 | `do.timeout` | `{name}`, `{seconds}` |
 | `do.list_item` | `{name}`, `{description}` |
 | `do.list_none` | `{dir}` |
+| `do.not_current` | `{name}`, `{step}`, `{id}`, `{current}` (`do.no_current` when an entry holds the subject) |
 | `wizard.not_tty`, `wizard.prompt_service`, `wizard.checks_auto`, `wizard.unchanged`, `wizard.aborted`, `wizard.next` | — |
 | `wizard.prompt_login`, `wizard.prompt_hooks` | `{default}` |
 | `wizard.services_current` | `{services}` (`name=path` joined by `, `) |
@@ -897,7 +915,7 @@ gate:
 | `approve <query>` | `--step <id>`, `--confirm` | records the ready selected applicable approval with date, approver and digest, consuming this subject's mark keys; refuses changed-after-answer inputs; with `--confirm` and no fresh mark asks the person at a terminal, see [Approval by a person](#approval-by-a-person); nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
 | `answer <query>` | `--q <n>`, `<text>` | writes the person's answer under question `n` of the subject's questions file with the approver, the date and the prompt digest of a fresh human mark; see [Questions before work](#questions-before-work); nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
 | `new <directory>` | `--template standard\|task\|local` | creates an absent directory from installed templates without a pre-existing store; default local, never merges or overwrites | 0 created, 1 refused |
-| `do <action> <query> [-- args]` | `--list` | runs the [action](#actions) script `<profile>/actions/<action>.sh` for the one existing subject the query resolves to, in the store root, with the output not captured; extra args after `--` go to the script; `--list` prints every action with its description | the exit code of the script (124 after the timeout); 2 unknown action, missing arguments, not found, ambiguous or the script did not start |
+| `do <action> <query> [-- args]` | `--list`, `--force`, `--timeout <seconds>` | runs the [action](#actions) script `<profile>/actions/<action>.sh` for the one existing subject the query resolves to, in the store root, with the output not captured; extra args after `--` go to the script; `--list` prints every action with its description; an action of a step the subject has not reached is refused with `do.not_current` unless `--force`; `--timeout` replaces the 600 s limit | the exit code of the script (124 after the timeout); 2 unknown action, missing arguments, not found, ambiguous, a step not reached without `--force`, a bad `--timeout` or the script did not start |
 | `local <action> <query>` | — | `prepare` diagnoses readiness, `checks` runs the chosen argv, `verify` validates the live result, `deliver` records and reads back local completion; see [local-workflow.md](local-workflow.md) | 0 success, 1 failed/refused, 2 invalid root/load/arguments |
 | `hook <event>` | — | answers one agent hook event, `session-start`, `prompt` or `pre-tool`, read as JSON on stdin; see [Hooks](#hooks) | 0 always |
 | `init` | `--login`, `--email`, `--force` | writes the local config; without `--login` asks at a terminal, and fails without one; the email defaults to `git config user.email`; an existing file is kept unless `--force` | 0 written, 1 exists, 2 no login or no `local_config` |
@@ -1031,8 +1049,8 @@ The evidence log keeps the facts of the course of each piece of work, for rules 
 | `approval_refused` | `approve`, any other refusal of an open subject | the step when known | `reason`: the locale key without `approve.` (`no_mark`, `not_ready`, …) |
 | `checks_run` | `local checks`, when it returns a result | — | `service` (from the receipt) or `workspace` (the name of the source directory), `code`: exit code or null, `seconds`, `passed` |
 | `delivered` | `local deliver`, recorded | — | — |
-| `hook_denied` | the `pre-tool` [hook](#hooks), each refusal; the subject is the one holding a path of the call, else the open subject of a key in the name of its work directory, else none | — | `rule`: `approval`, `plan`, `main`, `mark`, `broken` or `external` (null when the text is none of theirs), `tool` |
-| `action_run` | `svod.evidence_log.record_action(root, pipeline, subject_id, action, code, seconds, step=None)` | as given | `action`, `code`, `seconds` |
+| `hook_denied` | the `pre-tool` [hook](#hooks), each refusal; the subject is the one holding a path of the call, else the open subject of a key in the name of its work directory, else none | — | `rule`: `approval`, `plan`, `main`, `mark`, `broken`, `external`, `questions` (`hook.deny_questions`) or `human` (`hook.deny_human`), null when the text is none of theirs; `tool` |
+| `action_run` | `svod do`, each run that started, through `svod.evidence_log.record_action(root, pipeline, subject_id, action, code, seconds, step=None)` | the first step naming the action, or null | `action`, `code` (the exit code, 124 after the timeout, null when interrupted), `seconds` |
 
 A `not found` or ambiguous `approve`, a `local` command that raises and a hook without a store of the session write nothing.
 

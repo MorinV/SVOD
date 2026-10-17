@@ -79,6 +79,8 @@ do:
   list_item: "{name} - {description}"
   list_no_description: "no description"
   list_none: "The profile has no actions: add scripts to {dir}"
+  not_current: "Action {name} belongs to step {step}, which {id} has not reached (current step: {current}); it runs only with --force"
+  no_current: "none, an entry holds it"
 wizard:
   not_tty: "svod init --wizard asks at a terminal; without one give the answers as flags: --login <login>, --email <email>, --service <name>=<path>, --autonomy <pipeline>=<level>, --checks <service>=\"<command>\", --hooks project|global|none"
   prompt_login: "Login [{default}]: "

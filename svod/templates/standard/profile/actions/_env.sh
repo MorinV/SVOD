@@ -1,12 +1,54 @@
 # Shared environment of the actions, sourced by each: the record, its services and their checkouts.
-# Uses SVOD_ROOT, SVOD_ID, SVOD_KEY, SVOD_KIND, SVOD_SERVICES, SVOD_SERVICE_<NAME>, SVOD_SUBJECT_PATH
-# when set; otherwise the first argument (work/<kind>/<name>), card.md and svod.yaml fill them in.
+# The record is the first argument not starting with -- (work/<kind>/<name>, relative to the store
+# root, which is the working directory); the options go to OPTIONS. svod do passes no record: it
+# sets SVOD_ACTION=<action>, SVOD_ROOT, SVOD_ID, SVOD_KEY, SVOD_KIND, SVOD_PIPELINE, SVOD_SERVICES,
+# SVOD_SERVICE_<NAME>, SVOD_SUBJECT_PATH, which are used then. The argument wins over inherited
+# variables: when it names a record other than SVOD_ID, or SVOD_ROOT is not the working directory
+# (a nested run: checks running tests that run these scripts on another store), every inherited
+# record variable, SVOD_SERVICE_<NAME> and SVOD_FM_<NAME> is dropped and found again from the
+# argument, card.md and svod.yaml.
+#
+# Names: the worktree of service <service> for record work/<kind>/<name> of pipeline <pipeline>
+# is <directory holding the service checkout>/<service>-<pipeline>-<name>, on branch
+# <pipeline>/<name>; work.yaml lists it relative to the store root. <pipeline> is SVOD_PIPELINE,
+# else <kind> without its final s (tasks -> task, features -> feature, research -> research).
 set -euo pipefail
 
-SVOD_ROOT="${SVOD_ROOT:-$PWD}"
-SVOD_ID="${SVOD_ID:-${1:-}}"
+RECORD=""
+OPTIONS=""
+for arg in "$@"; do
+  case "$arg" in
+    --*) OPTIONS="$OPTIONS $arg" ;;
+    *) [ -n "$RECORD" ] || RECORD="$arg" ;;
+  esac
+done
+RECORD="${RECORD#./}"
+RECORD="${RECORD%/}"
+
+# has_option <--name>: whether the option was given.
+has_option() {
+  case "$OPTIONS " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
+
+HERE="$(pwd -P)"
+stale=""
+if [ -n "${SVOD_ROOT:-}" ] && [ "$(cd "$SVOD_ROOT" 2>/dev/null && pwd -P)" != "$HERE" ]; then
+  stale=1
+fi
+if [ -n "$RECORD" ] && [ -n "${SVOD_ID:-}" ] && [ "$RECORD" != "$SVOD_ID" ]; then
+  stale=1
+fi
+if [ -n "$stale" ]; then
+  unset SVOD_ACTION SVOD_ROOT SVOD_ID SVOD_KEY SVOD_KIND SVOD_PIPELINE SVOD_SERVICES SVOD_SUBJECT_PATH
+  for name in $(compgen -e); do
+    case "$name" in SVOD_SERVICE_*|SVOD_FM_*) unset "$name" ;; esac
+  done
+fi
+
+SVOD_ROOT="${SVOD_ROOT:-$HERE}"
+SVOD_ID="${RECORD:-${SVOD_ID:-}}"
 if [ -z "$SVOD_ID" ]; then
-  echo "usage: $0 work/<kind>/<name>  (run from the store root)" >&2
+  echo "usage: $0 work/<kind>/<name> [options]  (run from the store root)" >&2
   exit 2
 fi
 SVOD_SUBJECT_PATH="${SVOD_SUBJECT_PATH:-$SVOD_ID}"
@@ -30,6 +72,21 @@ abs() {
   case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s\n' "$SVOD_ROOT/$1" ;; esac
 }
 
+# rel <path>: an absolute path without symbolic links, relative to the store root.
+rel() {
+  local base target up=""
+  base="$(cd "$SVOD_ROOT" && pwd -P)"
+  target="$1"
+  while [ "$base" != / ] && [ "$target" != "$base" ] && [ "${target#"$base"/}" = "$target" ]; do
+    base="$(dirname "$base")"
+    up="../$up"
+  done
+  if [ "$target" = "$base" ]; then printf '%s\n' "${up%/}"
+  elif [ "$base" = / ]; then printf '%s%s\n' "$up" "${target#/}"
+  else printf '%s%s\n' "$up" "${target#"$base"/}"
+  fi
+}
+
 # service_path <name>: checkout of a service as configured, relative to the store root or absolute:
 # SVOD_SERVICE_<NAME>, else services.<name> of svod.yaml, else ../<name>.
 service_path() {
@@ -48,6 +105,11 @@ service_path() {
   printf '%s\n' "${path:-../$1}"
 }
 
+# service_dir <name>: absolute path of the service checkout without symbolic links; fails when missing.
+service_dir() {
+  (cd "$(abs "$(service_path "$1")")" 2>/dev/null && pwd -P)
+}
+
 # worktree_of <name>: the worktree of the service recorded in work.yaml, or nothing.
 worktree_of() {
   [ -f "$WORK" ] || return 0
@@ -59,5 +121,9 @@ SVOD_SERVICES="${SVOD_SERVICES//,/ }"
 SVOD_KEY="${SVOD_KEY:-$(card_field key)}"
 SVOD_KIND="${SVOD_KIND:-$(card_field kind)}"
 SLUG="$(basename "$SVOD_ID")"
-BRANCH="${SVOD_KEY:+${SVOD_KEY}_}$SLUG"
-export SVOD_ROOT SVOD_ID SVOD_SUBJECT_PATH SVOD_SERVICES SVOD_KEY SVOD_KIND SLUG BRANCH
+if [ -z "${SVOD_PIPELINE:-}" ]; then
+  SVOD_PIPELINE="$(basename "$(dirname "$SVOD_ID")")"
+  SVOD_PIPELINE="${SVOD_PIPELINE%s}"
+fi
+BRANCH="$SVOD_PIPELINE/$SLUG"
+export SVOD_ROOT SVOD_ID SVOD_SUBJECT_PATH SVOD_SERVICES SVOD_KEY SVOD_KIND SVOD_PIPELINE SLUG BRANCH

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from support import (EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, TEST_PROFILE, StoreTestCase, core_text,
                      doc)
 
-from svod import actions, keys
+from svod import actions, evidence_log, keys
 from svod.context import Context
 from svod.loader import load_runtime
 from svod.locale import FALLBACK_LOCALE, load_locale
@@ -71,6 +71,7 @@ class DoTest(StoreTestCase):
             actions.ENV_SERVICES: "api,web",
             actions.ENV_SUBJECT_PATH: str(note.resolve()),
             actions.ENV_LOCALE: "en",
+            actions.ENV_ACTION: SHOW_ENV,
             "SVOD_FM_OWNER": "me",
             "SVOD_FM_TYPE": "note",
             "SVOD_FM_UPDATED": "2026-09-01",
@@ -110,6 +111,62 @@ class DoTest(StoreTestCase):
         self.assertEqual(second.returncode, EXIT_OK, second.stderr)
         self.assertIn("already started", second.stdout)
         self.assertEqual((self.task / WORK_NOTE).read_text(encoding="utf-8"), written)
+
+    def test_step_not_reached(self):
+        """An action of a later step is refused with do.not_current; --force runs it anyway."""
+        self.sb.write(f"{DEFAULT_ROOT}/c-{TASK_KEY}/{METADATA_FILE}", f"ticket: {TASK_KEY}\n")
+        warning = core_text(keys.DO_NOT_CURRENT, name=START_TASK, step="build", id=TASK,
+                            current="approve")
+        refused = self.sb.cli_process("do", START_TASK, TASK)
+        self.assertEqual(refused.returncode, EXIT_USAGE)
+        self.assertIn(warning, refused.stderr)
+        self.assertFalse((self.task / WORK_NOTE).exists())
+        forced = self.sb.cli_process("do", START_TASK, TASK, "--force")
+        self.assertEqual(forced.returncode, EXIT_OK, forced.stderr)
+        self.assertIn(warning, forced.stderr)
+        self.assertTrue((self.task / WORK_NOTE).exists())
+
+    def test_step_passed_or_none_runs_quietly(self):
+        """An action of a passed step, or of no step, runs without a warning."""
+        with tempfile.TemporaryDirectory() as profile:
+            shutil.copytree(TEST_PROFILE, profile, dirs_exist_ok=True)
+            pipeline = Path(profile, "pipelines", "task.yaml")
+            title = "    title: task.title.spec\n"
+            pipeline.write_text(pipeline.read_text(encoding="utf-8").replace(
+                title, f"{title}    action: {SHOW_ENV}\n"), encoding="utf-8")
+            self.sb.write("svod.yaml", self.sb.store.joinpath("svod.yaml").read_text(
+                encoding="utf-8").replace(str(TEST_PROFILE), profile))
+            for query in (TASK, NOTE):
+                with self.subTest(query=query):
+                    result = self.sb.cli_process("do", SHOW_ENV, query)
+                    self.assertEqual(result.returncode, EXIT_OK, result.stderr)
+                    self.assertEqual(result.stderr, "")
+
+    def test_run_is_in_the_evidence_log(self):
+        """Each run is an action_run with the action, its exit code and the step naming it."""
+        self.assertEqual(self.sb.cli_process("do", START_TASK, TASK).returncode, EXIT_OK)
+        self.sb.write(f"notes/{NOTE}.md", doc("note", exit="3"))
+        self.assertEqual(self.sb.cli_process("do", SHOW_ENV, NOTE).returncode, 3)
+        runs = [(entry["step"], entry["facts"]["action"], entry["facts"]["code"])
+                for pipeline, subject in (("task", TASK), ("note", NOTE))
+                for entry in evidence_log.read(self.sb.store, pipeline, subject)
+                if entry["event"] == evidence_log.EVENT_ACTION_RUN]
+        self.assertEqual(runs, [("build", START_TASK, 0), (None, SHOW_ENV, 3)])
+
+    def test_timeout_option(self):
+        """--timeout stops the script after the given seconds; a bad value is a usage error."""
+        with tempfile.TemporaryDirectory() as profile:
+            shutil.copytree(TEST_PROFILE, profile, dirs_exist_ok=True)
+            Path(profile, actions.ACTIONS_DIR, "slow.sh").write_text("sleep 30\n")
+            self.sb.write("svod.yaml", self.sb.store.joinpath("svod.yaml").read_text(
+                encoding="utf-8").replace(str(TEST_PROFILE), profile))
+            result = self.sb.cli_process("do", "slow", NOTE, "--timeout", "0.3")
+            self.assertEqual(result.returncode, actions.EXIT_TIMEOUT)
+            self.assertIn(core_text(keys.DO_TIMEOUT, name="slow", seconds="0.3"), result.stderr)
+            for value in ("0", "-1", "soon"):
+                with self.subTest(value=value):
+                    bad = self.sb.cli("do", "slow", NOTE, "--timeout", value)
+                    self.assertEqual(bad.returncode, EXIT_USAGE)
 
     def test_list(self):
         """--list prints every action with the first comment line as its description."""

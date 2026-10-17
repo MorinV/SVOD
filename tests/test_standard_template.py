@@ -20,8 +20,8 @@ EXAMPLE = "work/tasks/example"
 HOTFIX = "work/tasks/hotfix-login"
 RESEARCH = "work/research/cache"
 SERVICE = "app"
-BRANCH = "EXAMPLE-1_example"
-WORKTREE = f"{SERVICE}-{BRANCH}"
+BRANCH = "task/example"
+WORKTREE = f"{SERVICE}-task-example"
 CHECK_FILE = "greeting.txt"
 SKILL_WORDS = 250
 AGENTS_WORDS = 150
@@ -42,6 +42,10 @@ CAUSE_STEP = "a hotfix names its cause in card.md"
 KNOWLEDGE_STEP = "write the answer to knowledge/<topic>.md"
 ARCHIVED = "status: archived"
 OPEN = "status: open"
+ACTIVE_ITEM = f"  - {EXAMPLE} - name the services"
+ACTIVE_HEADING = "Tasks:"
+NO_SERVICES = "no services declared"
+GATE_CHECKS = f"profile_config:\n  checks:\n    {SERVICE}: [test, -f, {CHECK_FILE}]\n"
 
 
 def placeholders(template):
@@ -81,11 +85,16 @@ class StandardStore:
         """Run svod in the store, in this process."""
         return run_cli(args, self.store, {**git_env(self.home), **CLI_ENV})
 
-    def action(self, name, record, **extra):
-        """Run an action script from the store root as an agent would."""
-        return subprocess.run(["bash", f"profile/actions/{name}", record], cwd=str(self.store),
-                              env={**self.env, **extra}, capture_output=True, text=True,
-                              encoding=ENCODING)
+    def action(self, name, record, *options, cwd=None, **extra):
+        """Run an action script from the store root as an agent would.
+
+        The SVOD_ variables of the process running the tests are left out, so a run of the
+        suite by an action never hands its own record to these scripts.
+        """
+        env = {k: v for k, v in self.env.items() if not k.startswith("SVOD_")}
+        return subprocess.run(["bash", f"profile/actions/{name}", record, *options],
+                              cwd=str(cwd or self.store), env={**env, **extra},
+                              capture_output=True, text=True, encoding=ENCODING)
 
     def edit(self, rel, old, new):
         """Replace a fragment of a store file."""
@@ -138,6 +147,8 @@ class StandardTemplateTest(unittest.TestCase):
             sb = StandardStore(temp)
             self.assertEqual(sb.cli("init", "--login", "tester").returncode, EXIT_OK)
             sb.edit(f"{EXAMPLE}/card.md", ARCHIVED, OPEN)
+            sb.write("svod.yaml", (sb.store / "svod.yaml").read_text(encoding=ENCODING)
+                     + GATE_CHECKS)
             sb.edit(f"{EXAMPLE}/card.md", "services: []", f"services: [{SERVICE}]")
             status = sb.cli("status", EXAMPLE).stdout
             self.assertIn(APPROVE_STEP, status)
@@ -169,7 +180,16 @@ class StandardTemplateTest(unittest.TestCase):
             checked = sb.action("checks.sh", EXAMPLE, **check)
             self.assertEqual(checked.returncode, EXIT_OK, checked.stderr)
             self.assertIn("passed", (sb.store / EXAMPLE / "checks.md").read_text(encoding=ENCODING))
-            self.assertIn(CLOSE_STEP, sb.cli("status", EXAMPLE).stdout)
+            written = {name: (sb.store / EXAMPLE / name).read_bytes()
+                       for name in ("checks.md", "checks.log")}
+            again = sb.action("checks.sh", EXAMPLE, "--check", **check)
+            self.assertEqual(again.returncode, EXIT_OK, again.stderr)
+            self.assertIn(f"{SERVICE} @ ", again.stdout)
+            self.assertEqual({name: (sb.store / EXAMPLE / name).read_bytes()
+                              for name in written}, written)
+            status = sb.cli("status", EXAMPLE).stdout
+            self.assertIn(CLOSE_STEP, status)
+            self.assertIn("checks pass", status)
 
             delivered = sb.approve(EXAMPLE, "deliver")
             self.assertEqual(delivered.returncode, EXIT_OK, delivered.stderr)
@@ -189,6 +209,52 @@ class StandardTemplateTest(unittest.TestCase):
             self.assertEqual(cleaned.returncode, EXIT_OK, cleaned.stderr)
             self.assertFalse(worktree.exists())
             self.assertEqual(sb.action("cleanup.sh", EXAMPLE).returncode, EXIT_OK)
+
+    def test_argument_wins_over_inherited_variables(self):
+        """Variables of another record or store, as a nested run inherits them, are dropped."""
+        with TemporaryDirectory() as temp:
+            sb = StandardStore(temp)
+            sb.edit(f"{EXAMPLE}/card.md", "services: []", f"services: [{SERVICE}]")
+            outer = sb.base / "outer"
+            stale = {"SVOD_ACTION": "checks", "SVOD_ID": "work/tasks/outer",
+                     "SVOD_SUBJECT_PATH": str(outer / "work/tasks/outer"),
+                     "SVOD_SERVICES": "ghost", "SVOD_PIPELINE": "feature",
+                     "SVOD_SERVICE_APP": str(outer / "nowhere"), "SVOD_FM_STATUS": "done"}
+            started = sb.action("start-task.sh", EXAMPLE, SVOD_ROOT=str(outer), **stale)
+            self.assertEqual(started.returncode, EXIT_OK, started.stderr)
+            self.assertTrue((sb.base / WORKTREE / ".git").exists())
+            self.assertEqual(sb.git(sb.base / WORKTREE, "branch", "--show-current").strip(),
+                             BRANCH)
+            checked = sb.action("checks.sh", EXAMPLE, "--check",
+                                SVOD_ROOT=str(sb.store), **stale)
+            self.assertNotEqual(checked.returncode, EXIT_OK)
+            self.assertIn(f"not checked yet: run bash profile/actions/checks.sh {EXAMPLE}",
+                          checked.stdout)
+
+    def test_store_inside_its_service(self):
+        """The worktree goes next to the service checkout; work.yaml holds a relative path."""
+        with TemporaryDirectory() as temp:
+            sb = StandardStore(temp)
+            store = scaffold(sb.service / "store", "standard")
+            sb.write("svod.yaml", (store / "svod.yaml").read_text(encoding=ENCODING)
+                     + "services:\n  app: ..\n", base=store)
+            sb.edit(f"../{SERVICE}/store/{EXAMPLE}/card.md", "services: []",
+                    f"services: [{SERVICE}]")
+            started = sb.action("start-task.sh", EXAMPLE, cwd=store)
+            self.assertEqual(started.returncode, EXIT_OK, started.stderr)
+            self.assertTrue((sb.base / WORKTREE / ".git").exists())
+            work = (store / EXAMPLE / "work.yaml").read_text(encoding=ENCODING)
+            self.assertEqual(work, f"{SERVICE}: ../../{WORKTREE}\n")
+
+    def test_check_mode_without_services_passes(self):
+        """--check of a record naming no services exits 0 and says so; a full run refuses."""
+        with TemporaryDirectory() as temp:
+            sb = StandardStore(temp)
+            checked = sb.action("checks.sh", EXAMPLE, "--check")
+            self.assertEqual(checked.returncode, EXIT_OK, checked.stderr)
+            self.assertIn(NO_SERVICES, checked.stdout)
+            self.assertFalse((sb.store / EXAMPLE / "checks.log").exists())
+            self.assertNotEqual(sb.action("checks.sh", EXAMPLE).returncode, EXIT_OK)
 
     def test_hotfix_skips_the_contract_and_its_approval(self):
         """kind: hotfix needs a cause, then goes from questions straight to the worktrees."""

@@ -72,6 +72,8 @@ DO_TIMEOUT = "do.timeout"
 DO_LIST_ITEM = "do.list_item"
 DO_LIST_NO_DESCRIPTION = "do.list_no_description"
 DO_LIST_NONE = "do.list_none"
+DO_NOT_CURRENT = "do.not_current"
+DO_NO_CURRENT = "do.no_current"
 WIZARD_NOT_TTY = "wizard.not_tty"
 WIZARD_PROMPT_LOGIN = "wizard.prompt_login"
 WIZARD_SERVICES_CURRENT = "wizard.services_current"
@@ -311,6 +313,8 @@ CORE_KEYS = (
     DO_LIST_ITEM,
     DO_LIST_NO_DESCRIPTION,
     DO_LIST_NONE,
+    DO_NOT_CURRENT,
+    DO_NO_CURRENT,
     WIZARD_NOT_TTY,
     WIZARD_PROMPT_LOGIN,
     WIZARD_SERVICES_CURRENT,
