@@ -86,13 +86,14 @@ svod active               # everything open, the summary an agent sees at sessio
 ## Connect an agent
 
 ```bash
-integrations/setup-claude.sh [<store>]    # hooks in ~/.claude/settings.json, skills in ~/.claude/skills
-integrations/setup-codex.sh  [<store>]    # hooks in ~/.codex/hooks.json, skills in ~/.codex/skills
+integrations/setup-claude.sh --project <store>  # hooks in <store>/.claude/settings.json, skills in <store>/.claude/skills
+integrations/setup-claude.sh [<store>]           # hooks in ~/.claude/settings.json, skills in ~/.claude/skills
+integrations/setup-codex.sh  [<store>]           # hooks in ~/.codex/hooks.json, skills in ~/.codex/skills
 ```
 
-Both scripts keep a backup of the file they change and do nothing on a second run. Codex asks to trust new hooks on the next start; until you do, they do not run.
+With `--project` the hooks run only in Claude Code sessions started in the store. Without it they run on every tool call in every project of yours, and the script warns about that; use it when sessions start in work directories outside the store. Both scripts keep a backup of the file they change and do nothing on a second run. Codex asks to trust new hooks on the next start; until you do, they do not run.
 
-The hooks are `svod hook <event>`:
+The hooks are `svod hook <event>`, registered as `<python> -m svod.cli hook <event>` with the absolute path of the Python that has `svod` installed (or with this clone on `PYTHONPATH` when none has); after switching to another Python or virtual environment, run the script again:
 
 | Event | What the agent gets |
 |---|---|

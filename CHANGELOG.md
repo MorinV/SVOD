@@ -23,6 +23,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 - `svod active` says when no pipeline declares `active` instead of printing nothing.
 - The reference documents `GitResult`, the type `ctx.cache.git` returns to a custom gate.
 - The examples, the skills and the docs are checked against the packaged templates by a test, so the copies cannot drift.
+- `setup-claude.sh --project <store>` registers the hooks in the store's `.claude/settings.json` only (without it the script warns that the hooks run in every project); the hooks call `<absolute python> -m svod.cli` instead of the path of a `svod` script, and both setup scripts are tested end to end and pass shellcheck.
 
 ### Migration
 

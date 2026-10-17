@@ -9,6 +9,7 @@
 # session runs outside any store. Running again changes nothing.
 
 set -eu
+# shellcheck source-path=SCRIPTDIR source=common.sh
 . "$(dirname "$0")/common.sh"
 
 HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
