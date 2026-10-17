@@ -1,5 +1,6 @@
 """The standard template: a dispatcher store with project, feature, task and research pipelines."""
 import datetime as dt
+import json
 import os
 import re
 import string
@@ -12,7 +13,11 @@ from tempfile import TemporaryDirectory
 from support import (CLI_ENV, ENCODING, EXIT_OK, ME, REPO_DIR, git_env, run_cli)
 
 from svod.approval import write_mark
+from svod.context import Context
+from svod.hooks import PROJECT_ENV
+from svod.loader import load_runtime
 from svod.locale import read_locale_file
+from svod.render import text_key
 from svod.scaffold import scaffold
 
 TEMPLATE = REPO_DIR / "svod" / "templates" / "standard"
@@ -42,6 +47,14 @@ CAUSE_STEP = "a hotfix names its cause in card.md"
 KNOWLEDGE_STEP = "write the answer to knowledge/<topic>.md"
 ACTIVE_ITEM = f"  - {EXAMPLE} - name the services"
 ACTIVE_HEADING = "Tasks:"
+GREET = "work/tasks/greet"
+SLUG = "work+tasks+example"
+FROZEN_TREE = f"{SERVICE}-{SLUG}"
+OLD_TREE = f"{SERVICE}-{BRANCH}"
+QUESTIONS_KEY = "work.step.questions"
+ASK_STEP = 'svod ask <record> "<question>"'
+UNANSWERED_STEP = "1 questions without an answer"
+DENY = "deny"
 
 
 def placeholders(template):
@@ -218,6 +231,99 @@ class StandardTemplateTest(unittest.TestCase):
             sb.edit(f"{RESEARCH}/card.md", "outcome:", "knowledge: knowledge/cache.md\noutcome:")
             self.assertIn("status: done in card.md of the research",
                           sb.cli("status", RESEARCH).stdout)
+
+    def test_questions_step_by_reason(self):
+        """The questions step asks for svod ask, then counts the questions without an answer."""
+        with TemporaryDirectory() as temp:
+            sb = StandardStore(temp)
+            card = (sb.store / EXAMPLE / "card.md").read_text(encoding=ENCODING)
+            sb.write(f"{GREET}/card.md", card.replace("services: []", f"services: [{SERVICE}]"))
+            self.assertIn(ASK_STEP, sb.cli("status", GREET).stdout)
+            asked = sb.cli("ask", GREET, "Which greeting?", "--context", "Hello or Hi")
+            self.assertEqual(asked.returncode, EXIT_OK, asked.stderr)
+            self.assertIn(UNANSWERED_STEP, sb.cli("status", GREET).stdout)
+            sb.write(f"{GREET}/questions.md", "# Questions\n")
+            self.assertIn(ASK_STEP, sb.cli("status", GREET).stdout)
+            self.assertEqual(sb.cli("ask", GREET, "--none").returncode, EXIT_OK)
+            self.assertNotIn(ASK_STEP, sb.cli("status", GREET).stdout)
+            locale = load_runtime(sb.store).locale
+            for reason, key in (("missing", f"{QUESTIONS_KEY}_missing"),
+                                ("unanswered", f"{QUESTIONS_KEY}_unanswered"),
+                                ("empty", QUESTIONS_KEY)):
+                with self.subTest(reason=reason):
+                    self.assertEqual(text_key(locale, QUESTIONS_KEY, {"reason": reason}), key)
+
+
+class StandardFreezeTest(unittest.TestCase):
+    """work_tree and work_id: pre-tool keeps edits out of a task worktree until its approval."""
+
+    def setUp(self):
+        """Standard store whose example task lists a worktree of the service named by its id."""
+        temp = TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.sb = StandardStore(temp.name)
+        self.sb.edit(f"{EXAMPLE}/card.md", "services: []", f"services: [{SERVICE}]")
+        self.tree = self.sb.base / FROZEN_TREE
+        self.sb.git(self.sb.service, "worktree", "add", "-q", "-b", BRANCH, str(self.tree))
+        self.sb.write("work.yaml", f"{SERVICE}: ../{FROZEN_TREE}\n", base=self.sb.store / EXAMPLE)
+
+    def context(self):
+        """Runtime and context of the store as loaded now."""
+        runtime = load_runtime(self.sb.store)
+        return runtime, Context(runtime.config, runtime.locale, pipelines=runtime.by_name())
+
+    def pre_tool(self, path):
+        """Hook answer to an Edit of the path, parsed, or None when the edit is let through."""
+        event = {"hook_event_name": "PreToolUse", "cwd": str(self.sb.store), "tool_name": "Edit",
+                 "tool_input": {"file_path": str(path), "old_string": "a", "new_string": "b"}}
+        out = run_cli(["hook", "pre-tool"], self.sb.store, {**git_env(self.sb.home), **CLI_ENV},
+                      drop=(PROJECT_ENV,), stdin=json.dumps(event))
+        self.assertEqual(out.returncode, EXIT_OK, out.stderr)
+        return json.loads(out.stdout) if out.stdout.strip() else None
+
+    def test_key_gate_reads_the_id_slug(self):
+        """work_id finds the id-slug ending a directory name; the old names name no record."""
+        runtime, ctx = self.context()
+        self.assertEqual(runtime.config.workspace_gate, "work_tree")
+        self.assertIsNone(runtime.config.workspaces)
+        gate = ctx.pipelines["task"].subject.key_impl
+        self.assertEqual(gate.name, "work_id")
+        self.assertEqual(gate.find(FROZEN_TREE), {SLUG})
+        self.assertEqual(gate.find("my-app-example tasks+"), set())
+        self.assertEqual(gate.find("my-app-work+tasks+fix-login"), {"work+tasks+fix-login"})
+        self.assertEqual(gate.find(OLD_TREE), set())
+        self.assertEqual(gate.match(f"../{FROZEN_TREE}/"), SLUG)
+        self.assertIsNone(gate.match("approved, go ahead"))
+        found = ctx.pipelines["task"].subject.impl.match_key(SLUG, ctx)
+        self.assertEqual([s.id for s in found], [EXAMPLE])
+        self.assertEqual(found[0].keys, frozenset({"EXAMPLE-1"}))
+
+    def test_workspace_gate_lists_work_yaml(self):
+        """work_tree returns the listed worktrees for the id, the id-slug or the card key."""
+        runtime, ctx = self.context()
+        gate = runtime.workspace_gate
+        expected = ([(self.tree.resolve(), SERVICE)], [])
+        for key in (EXAMPLE, SLUG, "EXAMPLE-1", "example-1"):
+            with self.subTest(key=key):
+                self.assertEqual(gate.worktrees(ctx, {key}), expected)
+        self.assertEqual(gate.worktrees(ctx, {"work/tasks/other"}), ([], []))
+        self.sb.write("work.yaml", "[broken\n", base=self.sb.store / EXAMPLE)
+        pairs, errors = gate.worktrees(ctx, {EXAMPLE})
+        self.assertEqual((pairs, len(errors)), ([], 1))
+
+    def test_hook_freezes_the_worktree_until_the_approval(self):
+        """An Edit in the worktree is refused before the contract approval, let through after."""
+        target = self.tree / CHECK_FILE
+        refused = self.pre_tool(target)
+        self.assertIsNotNone(refused)
+        output = refused["hookSpecificOutput"]
+        self.assertEqual(output["permissionDecision"], DENY)
+        self.assertIn(SLUG, output["permissionDecisionReason"])
+        self.assertIsNone(self.pre_tool(self.sb.service / CHECK_FILE))
+        self.assertEqual(self.sb.cli("init", "--login", "tester").returncode, EXIT_OK)
+        approved = self.sb.approve(EXAMPLE, "approve")
+        self.assertEqual(approved.returncode, EXIT_OK, approved.stderr)
+        self.assertIsNone(self.pre_tool(target))
 
 
 class StandardTemplateFilesTest(unittest.TestCase):

@@ -65,6 +65,12 @@ ANSWER_NO_MARK = "answer.no_mark"
 ANSWER_NO_FILE = "answer.no_file"
 ANSWER_NO_QUESTION = "answer.no_question"
 ANSWER_EMPTY = "answer.empty"
+ASK_DONE = "ask.done"
+ASK_NONE = "ask.none"
+ASK_EMPTY = "ask.empty"
+ASK_CONFLICT = "ask.conflict"
+ASK_MISREAD = "ask.misread"
+ASK_HAS_QUESTIONS = "ask.has_questions"
 DO_USAGE = "do.usage"
 DO_UNKNOWN = "do.unknown"
 DO_FAILED = "do.failed"
@@ -304,6 +310,12 @@ CORE_KEYS = (
     ANSWER_NO_FILE,
     ANSWER_NO_QUESTION,
     ANSWER_EMPTY,
+    ASK_DONE,
+    ASK_NONE,
+    ASK_EMPTY,
+    ASK_CONFLICT,
+    ASK_MISREAD,
+    ASK_HAS_QUESTIONS,
     DO_USAGE,
     DO_UNKNOWN,
     DO_FAILED,

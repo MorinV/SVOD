@@ -43,6 +43,7 @@ SIDE_BRANCH = "side"
 ELSEWHERE = "elsewhere"
 DENIED_HUMAN = "every message of a person"
 DENIED_QUESTIONS = "svod answer"
+DENIED_QUESTIONS_ASK = "svod ask"
 DENIED_EXTERNAL = "effect outside this machine"
 HUMAN_PATH = f".git/{HUMAN_FILE}"
 QUESTIONS = f"{te.CHANGE}/questions.md"
@@ -811,6 +812,7 @@ class MarkAndQuestionsGuardTest(PreToolTest):
             ("questions outside a store", write(self.sb.root / ELSEWHERE / "questions.md", "x"),
              NO_OUTPUT),
             ("questions at the store root", write(store / "questions.md", "x"), NO_OUTPUT),
+            ("svod ask adds a question", bash(f"svod ask {te.CHANGE} 'Which?'"), NO_OUTPUT),
         )
         for name, tool_input, expected in cases:
             with self.subTest(case=name):
@@ -819,6 +821,13 @@ class MarkAndQuestionsGuardTest(PreToolTest):
                     self.assertIsNone(reason)
                 else:
                     self.assertIn(expected, reason or "")
+
+    def test_questions_refusal_names_both_commands(self):
+        """A refused questions write names svod ask for questions, svod answer for answers."""
+        reason = self.run_case(self.sb.store, write(self.sb.store / QUESTIONS, "## Q: x"))
+        for command in (DENIED_QUESTIONS_ASK, DENIED_QUESTIONS):
+            with self.subTest(command=command):
+                self.assertIn(command, reason or "")
 
 
 class ExternalEffectsTest(PreToolTest):

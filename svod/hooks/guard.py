@@ -215,7 +215,10 @@ class Guard:
         return error_locale(self.root).text(key, file=name)
 
     def questions_text(self) -> str:
-        """Refusal of a direct write of the questions of a work record."""
+        """Refusal of a direct write of the questions of a work record.
+
+        svod ask adds the questions, svod answer the answers; the text names both.
+        """
         return error_locale(self.root).text(HOOK_DENY_QUESTIONS, file=QUESTIONS_FILE)
 
     def edit_reason(self, path: Path, touches: Touches) -> str | None:

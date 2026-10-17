@@ -1,6 +1,7 @@
 pipeline: task
 subject:
   provider: work
+  key_gate: work_id
   params: { roots: [work/tasks], head_type: card }
 active:
   in_progress: { gate: artifact, params: { path: work.yaml } }
