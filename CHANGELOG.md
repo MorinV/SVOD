@@ -17,6 +17,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 - `svod local checks` runs the command with `PYTHONDONTWRITEBYTECODE=1`, so the recommended test command leaves the checkout clean.
 - The local template's next-step texts name the command to run, show the gate's detail (for example `source workspace is dirty`) and tell a changed contract from a missing approval.
 - The setup scripts say that without a store argument the hooks guard only sessions started inside a store.
+- Hooks are cheaper and quieter: a shell command that only reads is answered before the store loads; every git call of an event goes through one cache (the approval mark included), the main checkout is recognised by its `.git` directory, and an edit in an approved work directory skips the workspace gate; the approval notice names the keys and their `svod approve` command (`hook.approval_marked`, new `hook.approval_marked_unnamed`), and the positions next to it no longer ask to wait for that approval (task template: `task.step.approve_marked`).
 - A gate that raises no longer fails `status` or a hook: the outcome is UNKNOWN with the reason `gate <name> raised <error>`, the step stays unpassed and the status says why.
 - `status` marks every step: a step without a labelled gate is shown as one mark by its `title` or `id`, so a profile without labels still shows where the work stands.
 - A step text ending with a period is no longer followed by a second one in the next-step line.

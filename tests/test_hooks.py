@@ -2,6 +2,7 @@
 import datetime as dt
 import json
 import os
+import shutil
 import subprocess
 import sys
 import unittest
@@ -10,8 +11,9 @@ from unittest import mock
 import task_example as te
 from support import CLI_MODULE, CONFIG_FILE, ENCODING, EXIT_OK
 
-from svod import hooks
+from svod import git, hooks
 from svod.approval import MARK_AT, MARK_KEYS, clear_mark, read_mark
+from svod.locale import Locale, load_core_locale
 from svod.gates import ExistsGate
 from svod.pipeline import parse_pipeline
 from svod.subject import Subject
@@ -26,7 +28,12 @@ DENIED_BROKEN = "writes outside the store are refused"
 MARK_PATH = ".git/svod-approval.json"
 ENGINE_BROKEN = "failed to load"
 POSITION = f"{te.CHANGE_NAME} ({te.KEY})"
-MARKED = "approval mark is recorded"
+MARKED = "is recorded and stays fresh"
+WAIT = "wait for the approval"
+UNNAMED_COMMAND = "svod approve <key>"
+COMMON_DIR = ("rev-parse", "--git-common-dir")
+MAX_EDIT_CALLS = 2
+NESTED = "nested"
 NOTES = "notes.md"
 LOCAL_CONFIG = ".svod.local.yaml"
 SIDE_CHECKOUT = "store-side"
@@ -58,6 +65,17 @@ def patch(text):
 def bash(command):
     """Bash tool input."""
     return "Bash", {"command": command}
+
+
+def counting_git(calls):
+    """run_git that records (directory, arguments) of every call before running git."""
+    real = git.run_git
+
+    def run(cwd, *args, **kwargs):
+        """Record the call, then run it."""
+        calls.append((str(cwd), args))
+        return real(cwd, *args, **kwargs)
+    return run
 
 
 class HookTestCase(unittest.TestCase):
@@ -332,12 +350,17 @@ PY"""),
         config = (store / CONFIG_FILE).read_text(encoding=ENCODING)
         self.addCleanup((store / CONFIG_FILE).write_text, config, encoding=ENCODING)
         te.set_config(sb, main_checkout_read_only="true")
+        nested = store / NESTED
+        sb.init_git(nested, remote=False)
+        self.addCleanup(shutil.rmtree, nested)
         cases = (
             ("tracked file", store / NOTES, DENIED_MAIN),
             ("plan of a change", self.meta, DENIED_MAIN),
             ("ignored local config", store / LOCAL_CONFIG, NO_OUTPUT),
             ("worktree of the store", side / NOTES, NO_OUTPUT),
             ("service checkout", sb.parent / te.SERVICE / te.CODE_FILE, NO_OUTPUT),
+            ("nested repository", nested / NOTES, NO_OUTPUT),
+            ("git directory", store / hooks.DOT_GIT / "description", NO_OUTPUT),
         )
         for name, path, expected in cases:
             with self.subTest(case=name):
@@ -479,6 +502,109 @@ class PromptTest(HookTestCase):
         self.assertIsNone(self.answer(hooks.EVENT_SESSION_START,
                                       {"hook_event_name": "SessionStart",
                                        "cwd": str(self.sb.store)}))
+
+
+class HookCostTest(HookTestCase):
+    """What one event costs: the store loaded only when needed, each git call made once."""
+
+    def calls(self, event_name, event):
+        """(answer, git calls) of one hook event, the store given as the fallback."""
+        calls = []
+        with mock.patch.object(git, "run_git", counting_git(calls)):
+            found = self.answer(event_name, event, self.sb.store)
+        return found, calls
+
+    def pre_tool(self, cwd, tool_input):
+        """Pre-tool event of a tool call in cwd."""
+        tool, data = tool_input
+        return {"cwd": str(cwd), "tool_name": tool, "tool_input": data}
+
+    def test_read_only_command_answers_before_loading(self):
+        """A command that only reads never loads the store; a writing one does."""
+        cases = (
+            ("reads", "cat main.go | grep main && git status && git log -1", False),
+            ("writes", "echo x > main.go", True),
+        )
+        for name, command, loads in cases:
+            with self.subTest(case=name):
+                with mock.patch.object(hooks, "load", wraps=hooks.load) as load:
+                    found, calls = self.calls(hooks.EVENT_PRE_TOOL,
+                                              self.pre_tool(self.worktree, bash(command)))
+                self.assertEqual(loads, load.called)
+                if not loads:
+                    self.assertIsNone(found)
+                    self.assertEqual([], calls)
+
+    def test_edits_cost_at_most_two_git_calls(self):
+        """An allowed edit of a work directory and a refused edit of a read-only main checkout."""
+        te.approve(self.sb)
+        found, calls = self.calls(hooks.EVENT_PRE_TOOL,
+                                  self.pre_tool(self.worktree, edit(self.worktree / te.CODE_FILE)))
+        self.assertIsNone(found)
+        self.assertLessEqual(len(calls), MAX_EDIT_CALLS, calls)
+        te.set_config(self.sb, main_checkout_read_only="true")
+        found, calls = self.calls(hooks.EVENT_PRE_TOOL,
+                                  self.pre_tool(self.sb.store, write(self.sb.store / NOTES, "x")))
+        self.assertIn(DENIED_MAIN, found[hooks.OUTPUT][hooks.DECISION_REASON])
+        self.assertLessEqual(len(calls), MAX_EDIT_CALLS, calls)
+
+    def test_no_git_call_is_repeated(self):
+        """Session start, a prompt and an approving prompt ask git each question once."""
+        store = str(self.sb.store)
+        cases = (
+            ("session start", hooks.EVENT_SESSION_START, {"cwd": store}),
+            ("prompt", hooks.EVENT_PROMPT, {"cwd": store, "prompt": f"what about {te.KEY}"}),
+            ("approval", hooks.EVENT_PROMPT, {"cwd": store, "prompt": f"approve {te.KEY}"}),
+            ("frozen edit", hooks.EVENT_PRE_TOOL,
+             self.pre_tool(self.worktree, edit(self.worktree / te.CODE_FILE))),
+        )
+        for name, event_name, event in cases:
+            with self.subTest(case=name):
+                _, calls = self.calls(event_name, event)
+                clear_mark(self.sb.store)
+                self.assertEqual(len(set(calls)), len(calls), calls)
+        _, calls = self.calls(hooks.EVENT_PROMPT, cases[2][2])
+        self.assertEqual(1, calls.count((store, COMMON_DIR)), calls)
+
+
+class ApprovalNoticeTest(HookTestCase):
+    """The notice of a recorded mark names the keys and never asks to wait for the approval."""
+
+    def context(self, prompt):
+        """Context the prompt hook adds for the prompt."""
+        found = self.answer(hooks.EVENT_PROMPT, {"cwd": str(self.sb.store), "prompt": prompt})
+        clear_mark(self.sb.store)
+        return found[hooks.OUTPUT][hooks.CONTEXT]
+
+    def test_named_and_unnamed(self):
+        """Named keys get their command; without keys the placeholder stays."""
+        named = self.context(f"approve {te.KEY}")
+        self.assertIn(MARKED, named)
+        self.assertIn(f"svod approve {te.KEY}", named)
+        self.assertNotIn(UNNAMED_COMMAND, named)
+        self.assertNotIn(WAIT, named)
+        self.assertIn(POSITION, named)
+        self.assertIn(WAIT, self.context(f"what about {te.KEY}"))
+        self.assertIn(UNNAMED_COMMAND, self.context("LGTM."))
+
+    def test_profile_without_variant_drops_the_next_step(self):
+        """Without <text>_marked in the locale the waiting next step is left out."""
+        runtime, _ = hooks.load(self.sb.store)
+        ctx = hooks.context_of(runtime)
+        ctx.locale = Locale({key: text for key, text in runtime.locale._strings.items()
+                             if not key.endswith(hooks.VARIANT_SEPARATOR + hooks.REASON_MARKED)})
+        found = hooks.positions(ctx, runtime.pipelines, [te.KEY], [te.KEY])
+        self.assertTrue(found)
+        self.assertNotIn(WAIT, found[0])
+        self.assertIn(WAIT, hooks.positions(ctx, runtime.pipelines, [te.KEY])[0])
+
+    def test_core_locales_have_both_notices(self):
+        """Every core locale has the named and the unnamed notice."""
+        for name in ("en", "ru"):
+            with self.subTest(locale=name):
+                locale = load_core_locale(name)
+                self.assertTrue(locale.has(hooks.HOOK_APPROVAL_MARKED_UNNAMED))
+                self.assertIn("{commands}", locale.text_template("hook.approval_marked"))
 
 
 class ConditionalFreezeTest(unittest.TestCase):

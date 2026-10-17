@@ -23,6 +23,7 @@ task:
     tasks: "write tasks.md of the change: the steps of the work"
     approve: "show the plan to the person and wait for the approval in the chat; then svod approve <key>"
     approve_missing: "show the plan (proposal, design, specs, tasks) to the person and wait for the approval in the chat; then svod approve <key>"
+    approve_marked: "the person approved the plan in the chat: record the approval with svod approve {keys}"
     approve_legacy: "the approval has no approver or version: show the plan again and record a fresh approval with svod approve <key>"
     approve_drift: "the plan changed after the approval: show what changed and record a fresh approval with svod approve <key>"
     workspace: "make the work directory next to the store: git worktree add ../<repo>-<KEY>_<slug> -b <KEY>_<slug>"

@@ -14,6 +14,7 @@ PORCELAIN_BRANCH = "branch "
 PORCELAIN_BARE = "bare"
 BRANCH_PREFIX = "refs/heads/"
 NUL = "\0"
+COMMON_DIR = ("rev-parse", "--git-common-dir")
 
 
 @dataclass(frozen=True)
@@ -44,12 +45,12 @@ def run_git(cwd, *args, timeout=GIT_TIMEOUT_SEC, env=None):
     return GitResult(ok=True, out=proc.stdout.strip())
 
 
-def common_dir_file(root, name):
+def common_dir_file(root, name, run=None):
     """File of the given name in the git common directory of root, shared by its worktrees.
 
-    None when root is not in a git repository.
+    None when root is not in a git repository. run replaces run_git.
     """
-    out = run_git(root, "rev-parse", "--git-common-dir")
+    out = (run or run_git)(root, *COMMON_DIR)
     if not out.ok:
         return None
     return (Path(root) / out.out).resolve() / name
