@@ -6,27 +6,35 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-17
+
+### Added
+
+- Tests run in GitHub Actions on Python 3.10 and 3.13.
+- A test keeps the docs of the local template equal to `docs/`, so the copies cannot drift.
+- The reference documents `GitResult`, the type `ctx.cache.git` returns to a custom gate.
+
 ### Changed
 
-- One code-freeze rule, `position.freeze()`, behind the readiness check of local `checks`; applicability and single-gate evaluation live in `pipeline`, so `workflow_policy` no longer imports `position` or `approve`.
-- The installed `svod` does not run a copy of the engine that differs from its MANIFEST: it runs itself and says so.
-- `examples/` and the root `skills/` are gone: the templates under `svod/templates/` are the one copy, `svod new --template task|local` creates a store from them, the vendored copy and the setup scripts take the skills from there.
-- README and the reference say what the hooks are: guard rails against a careless agent, not a security boundary against a determined one.
-- Tests run in GitHub Actions on Python 3.10 and 3.13.
-- Tests call the CLI in process (only launcher, stdin and setup-script tests start a real `svod`), check texts through locale keys, and CI fails under 85% line coverage.
 - The pre-tool hook checks shell commands against the code freeze and the read-only main checkout through the paths they name, not only file edits: a redirection, an interpreter, an in-place edit or `git checkout` into a frozen work directory is refused like an edit; commands known to only read pass. The approval mark file is refused to every write.
 - A store that does not load no longer lets every write through: writes outside the store are refused until it loads, writes inside it stay allowed so it can be repaired.
-- `svod local checks` runs the command with `PYTHONDONTWRITEBYTECODE=1`, so the recommended test command leaves the checkout clean.
-- The local template lists its tasks in `svod active` and ships `tasks/example/` (card, contract, plan with commented placeholders); a typo or non-bool value in `profile_config.agent_context` is a load error naming the key; the reference says where `field` gets the frontmatter for each provider.
-- The local template's next-step texts name the command to run, show the gate's detail (for example `source workspace is dirty`) and tell a changed contract from a missing approval.
-- The local template's `AGENTS.md`, skills and `docs/local-workflow.md` are rewritten as short imperative steps naming a command and a file; the workflow opens with a glossary (card, contract, plan, approval, checks, deliver, completion) and is the one place that explains `command: null`.
-- The setup scripts say that without a store argument the hooks guard only sessions started inside a store.
-- Hooks are cheaper and quieter: a shell command that only reads is answered before the store loads; every git call of an event goes through one cache (the approval mark included), the main checkout is recognised by its `.git` directory, and an edit in an approved work directory skips the workspace gate; the approval notice names the keys and their `svod approve` command (`hook.approval_marked`, new `hook.approval_marked_unnamed`), and the positions next to it no longer ask to wait for that approval (task template: `task.step.approve_marked`).
+- The installed `svod` does not run a copy of the engine that differs from its MANIFEST: it runs itself and says so.
 - A gate that raises no longer fails `status` or a hook: the outcome is UNKNOWN with the reason `gate <name> raised <error>`, the step stays unpassed and the status says why.
 - `status` marks every step: a step without a labelled gate is shown as one mark by its `title` or `id`, so a profile without labels still shows where the work stands.
 - A step text ending with a period is no longer followed by a second one in the next-step line.
 - `svod active` says when no pipeline declares `active` instead of printing nothing.
-- The reference documents `GitResult`, the type `ctx.cache.git` returns to a custom gate.
+- `svod local checks` runs the command with `PYTHONDONTWRITEBYTECODE=1`, so the recommended test command leaves the checkout clean.
+- The local template's next-step texts name the command to run, show the gate's detail (for example `source workspace is dirty`) and tell a changed contract from a missing approval.
+- `examples/` and the root `skills/` are gone: the templates under `svod/templates/` are the one copy, `svod new --template task|local` creates a store from them, the vendored copy and the setup scripts take the skills from `svod/templates/local/skills/`.
+- The setup scripts say that without a store argument the hooks guard only sessions started inside a store.
+- README and the reference say what the hooks are: guard rails against a careless agent, not a security boundary against a determined one.
+- The package version is declared once, in `svod/__init__.py`; `pyproject.toml` reads it from there.
+
+- One code-freeze rule, `position.freeze()`, behind the readiness check of local `checks`; applicability and single-gate evaluation live in `pipeline`, so `workflow_policy` no longer imports `position` or `approve`.
+- Tests call the CLI in process (only launcher, stdin and setup-script tests start a real `svod`), check texts through locale keys, and CI fails under 85% line coverage.
+- The local template lists its tasks in `svod active` and ships `tasks/example/` (card, contract, plan with commented placeholders); a typo or non-bool value in `profile_config.agent_context` is a load error naming the key; the reference says where `field` gets the frontmatter for each provider.
+- The local template's `AGENTS.md`, skills and `docs/local-workflow.md` are rewritten as short imperative steps naming a command and a file; the workflow opens with a glossary (card, contract, plan, approval, checks, deliver, completion) and is the one place that explains `command: null`.
+- Hooks are cheaper and quieter: a shell command that only reads is answered before the store loads; every git call of an event goes through one cache (the approval mark included), the main checkout is recognised by its `.git` directory, and an edit in an approved work directory skips the workspace gate; the approval notice names the keys and their `svod approve` command (`hook.approval_marked`, new `hook.approval_marked_unnamed`), and the positions next to it no longer ask to wait for that approval (task template: `task.step.approve_marked`).
 - The examples, the skills and the docs are checked against the packaged templates by a test, so the copies cannot drift.
 - The Russian locale (core and both templates) uses one set of terms (стор, чекаут, слияние/слито, одобрение, субъект), marks status as `+ - ?` like English, and a test keeps every en/ru pair on the same keys and placeholders.
 - Removed the unused `render.missing_text` and `versions.tag_of`; added a `[tool.ruff]` configuration (line length 100, rules E, F, W, B, UP, SIM) without mass reformatting.
@@ -34,7 +42,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ### Migration
 
-none
+Run the setup scripts again (`integrations/setup-claude.sh`, `integrations/setup-codex.sh`, with the store as the argument as before): the skills of a Svod clone moved from `skills/` to `svod/templates/local/skills/`, and the links `~/.claude/skills/svod-*` (and those of Codex) made by 0.3.0 from a clone point at the removed directory. Links to the copy of a store (`.svod/skills/`) keep working. Nothing else: no store file, profile or approval changes.
 
 ## [0.3.0] - 2026-10-17
 

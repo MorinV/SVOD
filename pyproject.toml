@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "svod"
-version = "0.3.0"
+dynamic = ["version"]
 description = "Declarative work pipelines for coding agents: steps, gates and a position computed from files and git"
 urls = { Homepage = "https://github.com/MorinV/SVOD" }
 readme = "README.md"
@@ -14,6 +14,9 @@ dependencies = ["PyYAML>=6"]
 
 [project.scripts]
 svod = "svod.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "svod.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["svod*"]

@@ -133,7 +133,7 @@ svod update           # later: replace the copy, migrate the store, show the cha
 
 ## Status
 
-Early. Version 0.3 adds the compact local workflow and per-store hook context settings, drawn from real project use. New features, the local template among them, are opt-in for an existing profile; expect the format to change before 1.0. Compatibility and migration notes: [CHANGELOG.md](CHANGELOG.md). Version 0.3.0 in `pyproject.toml` has no release tag yet.
+Early. Version 0.4 hardens the hooks (shell commands, the approval mark, a store that does not load), makes the templates the one copy, and ships the local template with an example task. New features, the local template among them, are opt-in for an existing profile; expect the format to change before 1.0. Compatibility and migration notes: [CHANGELOG.md](CHANGELOG.md). The release is tagged `v0.4.0` once it is published; until then `svod install` needs `--to <ref>`.
 
 ## License
 
