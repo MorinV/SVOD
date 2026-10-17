@@ -85,7 +85,8 @@ class DoctorTest(unittest.TestCase):
             (copy / "lib" / "svod" / "__init__.py").write_text("x = 1\n", encoding=ENCODING)
             (copy / "MANIFEST").write_text("", encoding=ENCODING)
             (ds.store / "evidence").write_text("not a directory\n", encoding=ENCODING)
-            (ds.store / "knowledge" / "late.md").write_text("# Late\n\nNew.\n", encoding=ENCODING)
+            (ds.store / "knowledge" / "late.md").write_text("---\ntitle: Late\n---\nNew.\n",
+                                                             encoding=ENCODING)
             result = ds.doctor("--format", "json", latest="9.9.9")
             self.assertEqual(result.returncode, EXIT_FINDINGS, result.stderr)
             data = json.loads(result.stdout)

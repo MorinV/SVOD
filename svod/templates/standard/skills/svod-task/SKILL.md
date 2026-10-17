@@ -6,7 +6,7 @@ description: Use for a record in work/tasks/<name>/ (kind task or hotfix) when s
 # Running a task
 
 1. Run `svod status work/tasks/<name>` and do only its next step.
-2. card: copy `work/tasks/example/` or run `bash profile/actions/start-task.sh work/tasks/<name>`; fill `card.md`: `kind`, `services`, `parent`, a hotfix also `cause`; description and acceptance.
+2. card: copy `work/tasks/example/` and set `status: open`, or run `bash profile/actions/start-task.sh work/tasks/<name>`; fill `card.md`: `kind`, `services`, `parent`, a hotfix also `cause`; description and acceptance.
 3. questions: follow `skills/svod-questions/SKILL.md`.
 4. contract: write `contract.md`: result, boundaries per service, effects, checks, risks. A hotfix skips this and the approval.
 5. approve: show `card.md`, `questions.md` and `contract.md`; after the person writes "Approved", run `svod approve work/tasks/<name> --step approve`. Never write `approval.yaml`; editing a bound file voids the approval.

@@ -45,6 +45,15 @@ SETTINGS_FILE = "settings.json"
 HOOKS_FILE = "hooks.json"
 SKILLS_DIR = "skills"
 SKILL = "svod-pipeline"
+SKILL_FILE = "SKILL.md"
+STORE_SKILL = "svod-task"
+VENDORED_SKILL = "svod-vendored"
+VENDORED_SKILLS = ".svod/skills"
+ENGINE_FLAG = "--engine"
+ENGINE_LINE = "-> engine: "
+ENGINE_PACKAGE = "svod"
+ENGINE_INIT = "__init__.py"
+CLONE_DIR = "clone"
 BACKUP_SUFFIX = ".bak-svod"
 UP_TO_DATE = "-> hooks: up to date"
 WARNING = "Warning:"
@@ -296,6 +305,92 @@ class CodexTest(IntegrationTestCase):
         out = self.codex()
         self.assertIn(UP_TO_DATE, out.stdout)
         self.assertEqual(hooks_file.read_bytes(), written)
+
+
+class SkillsSourceTest(IntegrationTestCase):
+    """The store's own skills first, else its copy in .svod/skills, else those of the clone."""
+
+    def linked(self):
+        """Names of the skills linked into the project directory of the store."""
+        out = self.setup(CLAUDE_SETUP, PROJECT_FLAG, self.store, CLAUDE_CONFIG_DIR=str(self.agent))
+        self.assertEqual(out.returncode, EXIT_OK, out.stderr)
+        return sorted(p.name for p in (self.store / PROJECT_DIR / SKILLS_DIR).iterdir())
+
+    def test_store_skills_win(self):
+        """A store with skills/<name>/SKILL.md links those, not the copy nor the clone's."""
+        self.sb.write(f"{VENDORED_SKILLS}/{VENDORED_SKILL}/{SKILL_FILE}", "# vendored\n")
+        own = self.sb.write(f"{SKILLS_DIR}/{STORE_SKILL}/{SKILL_FILE}", "# own\n")
+        self.sb.write(f"{SKILLS_DIR}/notes/README.md", "# not a skill\n")
+        self.assertEqual(self.linked(), [STORE_SKILL])
+        link = self.store / PROJECT_DIR / SKILLS_DIR / STORE_SKILL
+        self.assertEqual(link.resolve(), own.parent.resolve())
+
+    def test_vendored_copy_without_store_skills(self):
+        """A skills directory without SKILL.md files falls back to .svod/skills."""
+        (self.store / SKILLS_DIR).mkdir()
+        self.sb.write(f"{VENDORED_SKILLS}/{VENDORED_SKILL}/{SKILL_FILE}", "# vendored\n")
+        self.assertEqual(self.linked(), [VENDORED_SKILL])
+
+
+class EngineTest(IntegrationTestCase):
+    """The scripts name the engine the hooks import; --engine puts a clone on PYTHONPATH."""
+
+    def engine_line(self, out):
+        """The file named by the engine line of a script's output."""
+        lines = [line for line in out.stdout.splitlines() if line.startswith(ENGINE_LINE)]
+        self.assertEqual(len(lines), 1, out.stdout)
+        return Path(lines[0][len(ENGINE_LINE):])
+
+    def clone(self):
+        """A copy of the engine package in a directory of its own, as another checkout."""
+        clone = self.agent / CLONE_DIR
+        shutil.copytree(REPO_DIR / ENGINE_PACKAGE, clone / ENGINE_PACKAGE,
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        return clone
+
+    def test_engine_line(self):
+        """The line names the package file the registered command imports."""
+        out = self.setup(CODEX_SETUP, self.store, CODEX_HOME=str(self.agent))
+        self.assertEqual(out.returncode, EXIT_OK, out.stderr)
+        engine = self.engine_line(out)
+        self.assertEqual(engine.name, ENGINE_INIT)
+        command = svod_commands(read_json(self.agent / HOOKS_FILE), TOOL_EVENT)[0]
+        words = shlex.split(command)
+        if words[0].startswith(PYTHONPATH_PREFIX):
+            self.assertEqual(engine.parent.parent, Path(words[0][len(PYTHONPATH_PREFIX):]))
+
+    def test_forced_engine(self):
+        """--engine <clone>: PYTHONPATH of that clone in every hook, named by the line, run."""
+        clone = self.clone()
+        out = self.setup(CLAUDE_SETUP, ENGINE_FLAG, clone, PROJECT_FLAG, self.store,
+                         CLAUDE_CONFIG_DIR=str(self.agent))
+        self.assertEqual(out.returncode, EXIT_OK, out.stderr)
+        self.assertEqual(self.engine_line(out), clone / ENGINE_PACKAGE / ENGINE_INIT)
+        data = read_json(self.store / PROJECT_DIR / SETTINGS_FILE)
+        self.assert_registered(data)
+        for event in EVENTS:
+            with self.subTest(event=event):
+                command = svod_commands(data, event)[0]
+                self.assertEqual(shlex.split(command)[0], PYTHONPATH_PREFIX + str(clone))
+                self.assert_hook_runs(command, event, PYTHONPATH="")
+        again = self.setup(CODEX_SETUP, self.store, ENGINE_FLAG, clone, CODEX_HOME=str(self.agent))
+        self.assertEqual(again.returncode, EXIT_OK, again.stderr)
+        command = svod_commands(read_json(self.agent / HOOKS_FILE), TOOL_EVENT)[0]
+        self.assertEqual(shlex.split(command)[0], PYTHONPATH_PREFIX + str(clone))
+
+    def test_engine_usage(self):
+        """--engine without a value or naming a directory without the engine: nothing written."""
+        empty = Path(tempfile.mkdtemp(prefix="svod-empty-"))
+        self.addCleanup(shutil.rmtree, empty, ignore_errors=True)
+        for name, args in (("no value", [PROJECT_FLAG, self.store, ENGINE_FLAG]),
+                           ("no engine", [ENGINE_FLAG, empty, PROJECT_FLAG, self.store])):
+            with self.subTest(case=name):
+                out = self.setup(CLAUDE_SETUP, *args, CLAUDE_CONFIG_DIR=str(self.agent))
+                self.assertEqual(out.returncode, EXIT_USAGE, out.stderr)
+                self.assertFalse((self.store / PROJECT_DIR).exists())
+        out = self.setup(CODEX_SETUP, ENGINE_FLAG, CODEX_HOME=str(self.agent))
+        self.assertEqual(out.returncode, EXIT_USAGE, out.stderr)
+        self.assertFalse((self.agent / HOOKS_FILE).exists())
 
 
 class InterpreterTest(IntegrationTestCase):

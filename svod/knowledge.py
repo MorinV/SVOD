@@ -1,7 +1,8 @@
 """Knowledge of the store: notes in knowledge/<topic>.md, their index and the lines for the agent.
 
 A note is a markdown file with the frontmatter fields title, tags (a list), source (the id of the
-work it came from, or empty), date and status (current or superseded). The index is a table in
+work it came from, or empty), date and status (current or superseded); a file whose frontmatter
+names neither a title nor tags, and README.md, are not notes. The index is a table in
 knowledge/INDEX.md between two marker lines; text outside the markers is kept. The hooks give the
 agent the current notes whose tags meet the tags of the work at hand.
 """
@@ -31,6 +32,8 @@ if TYPE_CHECKING:
     from .subject import Subject
 
 INDEX_FILE = "INDEX.md"
+README_FILE = "README.md"
+SKIPPED_FILES = frozenset({INDEX_FILE, README_FILE})
 INDEX_TITLE = "# Knowledge"
 MARKER_BEGIN = "<!-- knowledge:index:begin -->"
 MARKER_END = "<!-- knowledge:index:end -->"
@@ -134,13 +137,15 @@ def knowledge_dir(root: str | Path, directory: str = DEFAULT_KNOWLEDGE_DIR) -> P
 
 
 def read_entry(root: Path, path: Path) -> Entry | None:
-    """Entry of one note, or None when the file is unreadable."""
+    """Entry of one note; None when unreadable or its frontmatter names neither title nor tags."""
     try:
         text = path.read_text(encoding=ENCODING)
     except (OSError, UnicodeDecodeError):
         return None
     _, body = split_document(text)
     fields = read_frontmatter(path) or {}
+    if FIELD_TITLE not in fields and FIELD_TAGS not in fields:
+        return None
     title = text_field(fields.get(FIELD_TITLE)) or first_heading(body) or path.stem
     try:
         rel = path.resolve().relative_to(root.resolve()).as_posix()
@@ -154,10 +159,10 @@ def read_entry(root: Path, path: Path) -> Entry | None:
 
 
 def entries(root: str | Path, directory: str = DEFAULT_KNOWLEDGE_DIR) -> list[Entry]:
-    """Every note under the knowledge directory, INDEX.md skipped; newest date first."""
+    """Every note under the knowledge directory, INDEX.md and README.md skipped; newest first."""
     root = Path(root)
     found = [entry for path in documents(knowledge_dir(root, directory))
-             if path.name != INDEX_FILE and (entry := read_entry(root, path)) is not None]
+             if path.name not in SKIPPED_FILES and (entry := read_entry(root, path)) is not None]
     found.sort(key=lambda e: (e.title.casefold(), e.rel))
     found.sort(key=lambda e: e.date, reverse=True)
     return found

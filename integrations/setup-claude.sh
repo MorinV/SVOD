@@ -1,16 +1,18 @@
 #!/bin/bash
-# Connect svod to Claude Code: hooks in settings.json and the skills, those of the copy kept
-# by the store when it has one, else of this repository.
+# Connect svod to Claude Code: hooks in settings.json and the skills, those of the store when it
+# has its own, else of the copy kept by the store, else of this repository.
 #
-#   integrations/setup-claude.sh --project <store>
-#   integrations/setup-claude.sh [store]
+#   integrations/setup-claude.sh [--engine <clone>] --project <store>
+#   integrations/setup-claude.sh [--engine <clone>] [store]
 #
 # With --project the hooks go to the project settings of the store, <store>/.claude/settings.json,
 # and the skills to <store>/.claude/skills: they run only in sessions started in that store,
 # with the store as --root. Without it they go to the Claude Code directory, CLAUDE_CONFIG_DIR,
 # ~/.claude by default, and run in every project of the user; the optional store is then the
-# one the hooks use when a session runs outside any store. The original settings.json is
-# copied to settings.json.bak-svod before each change. Running again changes nothing.
+# one the hooks use when a session runs outside any store. --engine puts that Svod clone on
+# PYTHONPATH of the hooks; the line "-> engine:" names the engine they import. The original
+# settings.json is copied to settings.json.bak-svod before each change. Running again changes
+# nothing.
 
 set -eu
 # shellcheck source-path=SCRIPTDIR source=common.sh
@@ -20,13 +22,16 @@ PROJECT_FLAG="--project"
 PROJECT_DIR=".claude"
 SETTINGS_FILE="settings.json"
 SKILLS_DIR="skills"
-USAGE="usage: setup-claude.sh $PROJECT_FLAG <store> | setup-claude.sh [store]"
+USAGE="usage: setup-claude.sh [$ENGINE_FLAG <clone>] $PROJECT_FLAG <store> | setup-claude.sh [$ENGINE_FLAG <clone>] [store]"
 
 # Prints the usage and stops with the usage exit code.
 usage() {
     echo "$USAGE" >&2
     exit "$EXIT_USAGE"
 }
+
+engine_flag "$@" || usage
+set -- "${ARGS[@]+"${ARGS[@]}"}"
 
 PROJECT=""
 case "${1:-}" in
@@ -44,6 +49,7 @@ else
     [ -n "$STORE" ] || echo "Note: without a store argument the hooks guard only sessions started inside a store; to guard work directories next to a store, run again with its path." >&2
 fi
 
+show_engine
 register_hooks "$HOME_DIR/$SETTINGS_FILE" "$BASE"
 link_skills "$HOME_DIR/$SKILLS_DIR" "$STORE"
 

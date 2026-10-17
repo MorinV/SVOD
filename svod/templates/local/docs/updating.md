@@ -21,7 +21,7 @@ svod install                     # the newest release of the Svod repository
 git add .svod && git commit -m "Svod engine copy"
 ```
 
-`svod install` refuses when `.svod/` already exists; then it is `svod update`. Run the setup scripts again with the store as the argument (`integrations/setup-claude.sh <store>`) to link the skills of the copy instead of those of your Svod clone.
+`svod install` refuses when `.svod/` already exists; then it is `svod update`. Run the setup scripts again with the store as the argument (`integrations/setup-claude.sh <store>`) to link the skills of the copy instead of those of your Svod clone; a store with its own `skills/<name>/SKILL.md` (the standard template) keeps linking those.
 
 What lands in the store:
 

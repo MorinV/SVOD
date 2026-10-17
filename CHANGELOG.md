@@ -29,6 +29,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 - Removed the unused `gates.build_registry`, `ApprovalGate.effective_bind` and `document.stale_blocks` with the tests that were their only callers.
 - `svod.hooks` is a package (`protocol`, `shell`, `store`, `prompt`, `guard`, `events`) with the same public names; the pre-tool code freeze uses `svod.position.freeze`, and `hook.approval_marked_unnamed` is a core locale key (`svod.keys`).
 - Code style: `ruff check` passes on the repository config outside three files under parallel edit, `mypy --ignore-missing-imports svod` passes, the core and hook modules carry type annotations, and the local workflow raises `LocalWorkflowError` and `PolicyError` (`svod.errors`, subclasses of both `SvodError` and `ValueError`) instead of bare `ValueError`.
+- Polish of the first dogfooding run: `knowledge/README.md` and files whose frontmatter has neither `title` nor `tags` are not knowledge notes; the setup scripts link the store's own `skills/*/SKILL.md` before `.svod/skills` and the clone's, print `-> engine: <file>` and take `--engine <clone>` to put a clone on `PYTHONPATH` of the hooks; the example task of the standard template is `status: archived`, so a new store has no open work; the reference has one paragraph on the human mark.
 
 ## [0.4.0] - 2026-10-17
 
