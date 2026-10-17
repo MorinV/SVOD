@@ -8,6 +8,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ### Added
 
+- `svod new <dir> --template standard`: a store next to the service repositories with project, feature, task (hotfix by `kind`) and research pipelines on `card.md` records in `work/`, one skill per pipeline plus `svod-questions`, and the actions `start-task.sh`, `checks.sh`, `pr.sh`, `cleanup.sh` in `profile/actions/`.
 - `svod approve <query> --confirm` records an approval that a person confirms with y at a terminal when there is no fresh mark, for agents without a prompt hook; all YAML is read by one loader that refuses repeated keys, and the approval fields are read and written only through `svod.approval.read_fields` and `write_fields`.
 
 ### Changed

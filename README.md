@@ -43,6 +43,19 @@ Ask for the position of one task with `svod status tasks/<name>` (`--format json
 
 The store ships `AGENTS.md` and two skills: `svod-efficient-execution` for running a task, `svod-pipeline` for changing the process.
 
+### Standard template: a store next to your services
+
+```bash
+svod new work-store --template standard   # next to ../app and your other service repositories
+cd work-store && git init
+svod init --login your-login
+svod validate
+svod status work/tasks/example            # stops at the card until it names its services
+svod active                               # projects, features, tasks, research
+```
+
+The store is a dispatcher: records live in `work/projects`, `work/features`, `work/tasks` (a hotfix is a task with `kind: hotfix`, without contract and approval) and `work/research`; the code stays in the services. A task goes card → questions → contract → approval → worktrees (`bash profile/actions/start-task.sh work/tasks/<name>`) → checks (`profile/actions/checks.sh`) → delivery → `status: done`. Each step names its skill: `svod-task`, `svod-feature`, `svod-project`, `svod-research`, `svod-questions`. Details: the `README.md` of the new store.
+
 ## OpenSpec/Git example
 
 Requires Python 3.10+ and git.

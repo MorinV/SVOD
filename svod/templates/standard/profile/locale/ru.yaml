@@ -1,0 +1,148 @@
+doc:
+  attr:
+    hotfix: "для хотфикса (kind: hotfix)"
+    planned: "для плановой задачи (kind не hotfix)"
+    to_work: "когда outcome равен hotfix или feature"
+    to_knowledge: "когда outcome равен knowledge"
+work:
+  title:
+    card: "Карточка"
+    questions: "Вопросы"
+    approve: "Одобрение"
+    breakdown: "Декомпозиция"
+    children: "Дочерние готовы"
+    checks: "Проверки"
+    deliver: "Сдача"
+  mark:
+    card: "card.md"
+    services: "сервисы названы"
+    questions: "questions.md"
+    answered: "на вопросы ответили"
+    breakdown: "breakdown.md"
+    children: "дочерние записи есть"
+    children_done: "дочерние записи готовы"
+    checks: "checks.md"
+    checks_pass: "проверки проходят"
+    result: "результат одобрен"
+  step:
+    questions: "записать в questions.md всё, чего не знаешь, спросить человека в чате и ждать; каждый ответ записать через svod answer <запись> (до тех пор под его вопросом)"
+  active:
+    item: "- {id} - {step}"
+task:
+  title:
+    contract: "Контракт"
+    hotfix_approve: "Одобрение хотфикса"
+    implement: "Реализация"
+  mark:
+    cause: "причина названа"
+    contract: "contract.md"
+    approved: "контракт одобрен"
+    worktrees: "worktree (work.yaml)"
+  step:
+    card: "написать work/tasks/<имя>/card.md по образцу work/tasks/example: frontmatter type: card, kind, services; описание и приёмка"
+    services: "назвать сервисы в card.md: services: [app], имена из services в svod.yaml"
+    cause: "хотфикс называет причину в card.md: cause: <инцидент или запись>"
+    contract: "написать contract.md: результат, границы по сервисам, эффекты, проверки, риски"
+    approve: "показать человеку card.md, questions.md и contract.md и дождаться Одобряю в чате; затем svod approve work/tasks/<имя> --step approve"
+    approve_drift: "card.md, questions.md или contract.md изменились после одобрения: показать изменения, дождаться свежего Одобряю, затем svod approve work/tasks/<имя> --step approve"
+    approve_legacy: "у одобрения нет одобрившего или версии: показать контракт снова, дождаться Одобряю, затем svod approve work/tasks/<имя> --step approve"
+    hotfix_approve: "хотфиксу одобрение не нужно; если человек всё же одобрил: svod approve work/tasks/<имя> --step hotfix_approve"
+    implement: "завести worktree на каждый сервис через bash profile/actions/start-task.sh work/tasks/<имя>, затем реализовать там и коммитить с ключом задачи"
+    checks: "закоммитить во всех worktree, затем запустить bash profile/actions/checks.sh work/tasks/<имя>; при сбое прочитать checks.log, исправить и запустить снова"
+    deliver: "напечатать описание PR через bash profile/actions/pr.sh work/tasks/<имя>, открыть PR и показать человеку; после Одобряю: svod approve work/tasks/<имя> --step deliver"
+    deliver_drift: "checks.md изменился после одобрения результата: показать новый результат, дождаться Одобряю, затем svod approve work/tasks/<имя> --step deliver"
+    close: "после слияния поставить status: done в card.md, затем удалить чистые worktree через bash profile/actions/cleanup.sh work/tasks/<имя>"
+  done: "готово: status: done в card.md; чистые worktree удаляет bash profile/actions/cleanup.sh work/tasks/<имя>"
+  violation:
+    implement_approve: "worktree заведены до одобрения контракта"
+  active:
+    mine_active: "Задачи в работе:"
+    mine_idle: "Задачи:"
+    theirs: "Задачи команды:"
+    theirs_collapsed: "Задачи команды: {count} ({who}) · развернуть: svod active --all"
+    worktree: "Задачи, изменённые в чекауте {dir}:"
+feature:
+  title:
+    brief: "Бриф"
+    integration: "Интеграция"
+  mark:
+    brief: "brief.md"
+    approved: "бриф одобрен"
+  step:
+    card: "написать work/features/<имя>/card.md: frontmatter type: card, services, parent, tags"
+    brief: "написать brief.md: проблема, пользователи, что входит и что нет, приёмка"
+    breakdown: "разбить фичу на задачи: work/tasks/<имя>/card.md с parent: work/features/<фича>, перечислить в breakdown.md"
+    approve: "показать человеку brief.md, questions.md и breakdown.md и дождаться Одобряю в чате; затем svod approve work/features/<имя> --step approve"
+    approve_drift: "brief.md, questions.md или breakdown.md изменились после одобрения: показать изменения, дождаться свежего Одобряю, затем svod approve work/features/<имя> --step approve"
+    approve_legacy: "у одобрения нет одобрившего или версии: показать бриф снова, дождаться Одобряю, затем svod approve work/features/<имя> --step approve"
+    children: "довести каждую задачу из breakdown.md до done: svod status work/tasks/<имя> для каждой"
+    integration: "прогнать проверки всех сервисов на слитой работе: bash profile/actions/checks.sh work/features/<имя>"
+    deliver: "показать человеку, что фича даёт относительно brief.md; после Одобряю: svod approve work/features/<имя> --step deliver"
+    deliver_drift: "checks.md изменился после одобрения результата: показать снова, дождаться Одобряю, затем svod approve work/features/<имя> --step deliver"
+    close: "поставить status: done в card.md фичи"
+  done: "готово: status: done в card.md фичи"
+  violation:
+    integration_approve: "интеграцию прогнали до одобрения брифа"
+  active:
+    mine_idle: "Фичи:"
+    theirs: "Фичи команды:"
+    theirs_collapsed: "Фичи команды: {count} ({who}) · развернуть: svod active --all"
+    worktree: "Фичи, изменённые в чекауте {dir}:"
+project:
+  title:
+    vision: "Видение"
+    researches: "Исследования готовы"
+    architecture: "Архитектура"
+  mark:
+    vision: "vision.md"
+    adr: "ADR (type: adr)"
+    approved: "дизайн одобрен"
+  step:
+    card: "написать work/projects/<имя>/card.md: frontmatter type: card, services, tags"
+    vision: "написать vision.md: цель, кто выигрывает, мера успеха, ограничения"
+    researches: "ответить на каждый открытый вопрос исследованием: work/research/<имя>/card.md с parent: work/projects/<проект>; довести каждое до done"
+    architecture: "записать каждое решение в adr/<nnn>-<slug>.md с frontmatter type: adr: контекст, решение, последствия"
+    approve: "показать человеку vision.md, questions.md и adr/ и дождаться Одобряю в чате; затем svod approve work/projects/<имя> --step approve"
+    approve_drift: "vision.md, questions.md или ADR изменились после одобрения: показать изменения, дождаться свежего Одобряю, затем svod approve work/projects/<имя> --step approve"
+    approve_legacy: "у одобрения нет одобрившего или версии: показать дизайн снова, дождаться Одобряю, затем svod approve work/projects/<имя> --step approve"
+    breakdown: "разбить проект на фичи и задачи с parent: work/projects/<имя>, перечислить в breakdown.md"
+    children: "довести каждую фичу и задачу из breakdown.md до done: svod status <запись> для каждой"
+    deliver: "записать итог каждой дочерней записи в breakdown.md, показать человеку; после Одобряю: svod approve work/projects/<имя> --step deliver"
+    deliver_drift: "breakdown.md изменился после одобрения результата: показать снова, дождаться Одобряю, затем svod approve work/projects/<имя> --step deliver"
+    deliver_legacy: "у одобрения результата нет одобрившего или версии: показать breakdown.md снова, дождаться Одобряю, затем svod approve work/projects/<имя> --step deliver"
+    close: "поставить status: done в card.md проекта"
+  done: "готово: status: done в card.md проекта"
+  violation:
+    breakdown_approve: "проект разбит до одобрения дизайна"
+  active:
+    mine_idle: "Проекты:"
+    theirs: "Проекты команды:"
+    theirs_collapsed: "Проекты команды: {count} ({who}) · развернуть: svod active --all"
+    worktree: "Проекты, изменённые в чекауте {dir}:"
+research:
+  title:
+    question: "Вопрос"
+    findings: "Находки"
+    outcome: "Итог"
+  mark:
+    question: "question.md"
+    findings: "findings.md"
+    outcome: "outcome заполнен"
+    leads_to: "leads_to заполнен"
+    leads_to_exists: "leads_to существует"
+    knowledge: "knowledge заполнен"
+    knowledge_exists: "документ знаний существует"
+  step:
+    card: "написать work/research/<имя>/card.md: frontmatter type: card, parent, tags"
+    question: "написать question.md: вопрос, почему он важен, какой ответ изменит план"
+    findings: "написать findings.md: источники, эксперименты и ответ, у каждого утверждения его источник"
+    outcome: "заполнить outcome в card.md: hotfix, feature или knowledge"
+    leads_to: "завести хотфикс или фичу, к которой ведёт исследование, и назвать её в card.md: leads_to: work/<вид>/<имя>"
+    knowledge: "записать ответ в knowledge/<тема>.md и назвать его в card.md: knowledge: knowledge/<тема>.md"
+    close: "поставить status: done в card.md исследования"
+  done: "готово: status: done в card.md исследования"
+  active:
+    mine_idle: "Исследования:"
+    theirs: "Исследования команды:"
+    theirs_collapsed: "Исследования команды: {count} ({who}) · развернуть: svod active --all"
+    worktree: "Исследования, изменённые в чекауте {dir}:"
