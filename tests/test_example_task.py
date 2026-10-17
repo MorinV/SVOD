@@ -4,12 +4,15 @@ import unittest
 from unittest import mock
 
 import task_example as te
-from support import CONFIG_FILE, ENCODING, EXIT_FINDINGS, EXIT_OK
+from support import CONFIG_FILE, ENCODING, EXIT_FINDINGS, EXIT_OK, core_lead
 
+from svod import keys
 from svod.config import load_config
 from svod.gates import build_registry
+from svod.locale import load_locale
 
-STEP_LINE = "Next step: {text}."
+EN = "en"
+PROFILE_DIR = "profile"
 NO_KEY = None
 
 
@@ -59,26 +62,22 @@ class ExampleTaskTest(unittest.TestCase):
 
     def test_position_moves_by_steps(self):
         """Each action moves the position to the next step of the pipeline."""
+        locale = load_locale(EN, te.EXAMPLE / PROFILE_DIR)
+
+        def step(key):
+            """Next step line of a step text of the example profile."""
+            return locale.text(keys.STATUS_NEXT_STEP, step=locale.text(key))
+
         stages = (
-            ("nothing", None,
-             STEP_LINE.format(text="create the change openspec/changes/<name> with the task "
-                                   "key in .openspec.yaml")),
-            ("proposed", te.propose,
-             STEP_LINE.format(text="write proposal.md of the change: why and what changes")),
-            ("specified", te.specify,
-             "show the plan (proposal, design, specs, tasks) to the person"),
-            ("approved", te.approve,
-             STEP_LINE.format(text="make the work directory next to the store: git worktree "
-                                   "add ../<repo>-<KEY>_<slug> -b <KEY>_<slug>")),
-            ("worktree", te.make_worktree,
-             STEP_LINE.format(text="implement the tasks in the work directory and commit with "
-                                   "the task key in the message")),
+            ("nothing", None, step("task.step.propose")),
+            ("proposed", te.propose, step("task.step.proposal")),
+            ("specified", te.specify, step("task.step.approve_missing")),
+            ("approved", te.approve, step("task.step.workspace")),
+            ("worktree", te.make_worktree, step("task.step.implement")),
             ("implemented", te.implement,
-             f"the work directories {te.WORKTREE} are not merged yet"),
-            ("merged", te.merge,
-             STEP_LINE.format(text="archive the change: move it to openspec/changes/archive")),
-            ("archived", te.archive,
-             STEP_LINE.format(text="nothing left, the change is archived")),
+             locale.text("task.step.merge_open", open=te.WORKTREE)),
+            ("merged", te.merge, step("task.step.archive")),
+            ("archived", te.archive, step("task.done")),
         )
         for name, action, expected in stages:
             if action is not None:
@@ -98,7 +97,8 @@ class ExampleTaskTest(unittest.TestCase):
                 action(self.sb)
             out = self.sb.cli("status", te.KEY)
             with self.subTest(stage=name):
-                self.assertEqual(frozen, "Do not touch the code" in out.stdout, out.stdout)
+                frozen_line = core_lead(keys.STATUS_DO_NOT_TOUCH)
+                self.assertEqual(frozen, frozen_line in out.stdout, out.stdout)
 
 
 class TaskKeyGateTest(unittest.TestCase):

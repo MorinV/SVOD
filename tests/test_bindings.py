@@ -1,13 +1,15 @@
 """Role bindings: the skill line of status and the validation of bindings files."""
 import unittest
 
-from support import StoreTestCase, dedent, doc
+from support import TEST_PROFILE, StoreTestCase, dedent, doc
 
+from svod import keys
 from svod.context import Context
 from svod.errors import LoadError
 from svod.loader import load_runtime
+from svod.locale import FALLBACK_LOCALE, load_locale
 from svod.providers.openspec_change import DEFAULT_ROOT, METADATA_FILE
-from svod.render import status_report
+from svod.render import INDENT, SKILLS_SEPARATOR, status_report
 
 BINDINGS_FILE = "bindings.yaml"
 BINDINGS = """
@@ -25,9 +27,30 @@ BINDINGS = """
 SKILL_FILE = "skills/impl-py/SKILL.md"
 PYTHON_MARK = "pyproject.toml"
 GO_MARK = "go.mod"
-NEXT_BUILD = "  Next step: start building in a workspace."
-NEXT_VERIFY = "  Next step: run the mandatory cases, report in the change."
-SKILL_PREFIX = "  Step skill:"
+TEXTS = load_locale(FALLBACK_LOCALE, TEST_PROFILE)
+
+
+def next_step(key):
+    """Indented next step line of a text of the test profile."""
+    return INDENT + TEXTS.text(keys.STATUS_NEXT_STEP, step=TEXTS.text(key))
+
+
+def skill_line(key, **facts):
+    """Indented skill line of status."""
+    return INDENT + TEXTS.text(key, **facts)
+
+
+def per_dir(*pairs):
+    """Indented skill line naming a skill per directory, None for no skill."""
+    none = TEXTS.text(keys.STATUS_SKILL_NONE)
+    items = (TEXTS.text(keys.STATUS_SKILL_ITEM, dir=d, skill=s or none) for d, s in pairs)
+    return skill_line(keys.STATUS_SKILL, skill=SKILLS_SEPARATOR.join(items))
+
+
+NEXT_BUILD = next_step("task.step.build")
+NEXT_VERIFY = next_step("task.step.verify")
+SKILL_PREFIX = INDENT + TEXTS.text_template(keys.STATUS_SKILL).split("{", 1)[0].strip()
+UNASSIGNED_BUILDER = skill_line(keys.STATUS_SKILL_UNASSIGNED, role="builder")
 
 
 def change(sb, key, approved=True, progress=None, repos=()):
@@ -78,12 +101,13 @@ class SkillLineTest(StoreTestCase):
     def test_skill_line(self):
         """One skill, a skill per directory, not assigned, external."""
         cases = (
-            ("tk-1", NEXT_BUILD, "  Step skill: impl-py"),
-            ("tk-2", NEXT_BUILD, "  Step skill: one -> impl-py, two -> none"),
-            ("tk-3", NEXT_BUILD, "  Step skill: not assigned (role builder)"),
-            ("tk-4", NEXT_BUILD, "  Step skill: not assigned (role builder)"),
-            ("tk-5", NEXT_VERIFY, "  Step skill: ext-check"),
-            ("ready", "  Next step: close the container.", "  Step skill: ext-close"),
+            ("tk-1", NEXT_BUILD, skill_line(keys.STATUS_SKILL, skill="impl-py")),
+            ("tk-2", NEXT_BUILD, per_dir(("one", "impl-py"), ("two", None))),
+            ("tk-3", NEXT_BUILD, UNASSIGNED_BUILDER),
+            ("tk-4", NEXT_BUILD, UNASSIGNED_BUILDER),
+            ("tk-5", NEXT_VERIFY, skill_line(keys.STATUS_SKILL, skill="ext-check")),
+            ("ready", next_step("project.step.close"),
+             skill_line(keys.STATUS_SKILL, skill="ext-close")),
         )
         for key, step, line in cases:
             with self.subTest(key=key):

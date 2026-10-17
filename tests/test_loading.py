@@ -4,8 +4,10 @@ import unittest
 from pathlib import Path
 
 import support
-from support import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, TempStore, make_profile
+from support import (EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, TempStore, core_lead, core_text,
+                     make_profile)
 
+from svod import keys
 from svod.config import DEFAULT_BRANCH_FALLBACK, find_root, load_config
 from svod.errors import LoadError, LocaleError
 from svod.loader import load_runtime
@@ -283,7 +285,7 @@ class ValidateCommandTest(unittest.TestCase):
         self.addCleanup(sb.cleanup)
         out = sb.cli("validate", cwd=support.TESTS_DIR)
         self.assertEqual(out.returncode, EXIT_OK, out.stderr)
-        self.assertIn("Configuration is valid", out.stdout)
+        self.assertIn(core_lead(keys.VALIDATE_OK), out.stdout)
 
     def test_invalid_profile_lists_errors(self):
         """Validation errors are listed and the exit code is 1."""
@@ -295,7 +297,7 @@ class ValidateCommandTest(unittest.TestCase):
         self.addCleanup(sb.cleanup)
         out = sb.cli("validate")
         self.assertEqual(out.returncode, EXIT_FINDINGS)
-        self.assertIn("Configuration errors: 1", out.stderr)
+        self.assertIn(core_text(keys.VALIDATE_FAILED, count=1), out.stderr)
         self.assertIn("unknown gate: nope", out.stderr)
 
     def test_not_store_root(self):
@@ -304,7 +306,7 @@ class ValidateCommandTest(unittest.TestCase):
         self.addCleanup(sb.cleanup)
         out = sb.cli("validate", cwd=sb.parent)
         self.assertEqual(out.returncode, EXIT_USAGE)
-        self.assertIn("svod.yaml not found", out.stderr)
+        self.assertIn(core_text(keys.ERROR_NOT_ROOT), out.stderr)
         explicit = sb.cli("--root", str(sb.parent), "validate", cwd=sb.store)
         self.assertEqual(explicit.returncode, EXIT_USAGE)
 
@@ -315,7 +317,7 @@ class ValidateCommandTest(unittest.TestCase):
         sb.env["SVOD_LOCALE"] = "ru"
         out = sb.cli("validate", cwd=sb.parent)
         self.assertEqual(out.returncode, EXIT_USAGE)
-        self.assertNotIn("svod.yaml not found", out.stderr)
+        self.assertNotIn(core_text(keys.ERROR_NOT_ROOT), out.stderr)
         self.assertTrue(out.stderr.strip())
 
 

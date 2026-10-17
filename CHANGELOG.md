@@ -13,6 +13,7 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 - `examples/` and the root `skills/` are gone: the templates under `svod/templates/` are the one copy, `svod new --template task|local` creates a store from them, the vendored copy and the setup scripts take the skills from there.
 - README and the reference say what the hooks are: guard rails against a careless agent, not a security boundary against a determined one.
 - Tests run in GitHub Actions on Python 3.10 and 3.13.
+- Tests call the CLI in process (only launcher, stdin and setup-script tests start a real `svod`), check texts through locale keys, and CI fails under 85% line coverage.
 - The pre-tool hook checks shell commands against the code freeze and the read-only main checkout through the paths they name, not only file edits: a redirection, an interpreter, an in-place edit or `git checkout` into a frozen work directory is refused like an edit; commands known to only read pass. The approval mark file is refused to every write.
 - A store that does not load no longer lets every write through: writes outside the store are refused until it loads, writes inside it stay allowed so it can be repaired.
 - `svod local checks` runs the command with `PYTHONDONTWRITEBYTECODE=1`, so the recommended test command leaves the checkout clean.

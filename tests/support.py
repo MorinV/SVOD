@@ -1,4 +1,5 @@
-"""Shared helpers for svod tests: temporary stores and git."""
+"""Shared helpers for svod tests: temporary stores, git and the CLI run in this process."""
+import io
 import os
 import shutil
 import subprocess
@@ -8,6 +9,9 @@ import textwrap
 import unittest
 from pathlib import Path
 from unittest import mock
+
+from svod import cli as svod_cli
+from svod.locale import FALLBACK_LOCALE, load_core_locale
 
 TESTS_DIR = Path(__file__).resolve().parent
 REPO_DIR = TESTS_DIR.parent
@@ -29,6 +33,81 @@ DOC_UPDATED = "2026-09-01"
 EXIT_OK = 0
 EXIT_FINDINGS = 1
 EXIT_USAGE = 2
+EXIT_UNCAUGHT = 1
+PYTHONPATH_ENV = "PYTHONPATH"
+CLI_ENV = {"PYTHONDONTWRITEBYTECODE": "1", "PYTHONUTF8": "1"}
+
+
+def child_env(base=None, **extra):
+    """Environment of a child process importing svod from this checkout first.
+
+    The checkout may be a worktree while svod is installed in editable mode from elsewhere.
+    """
+    env = dict(os.environ if base is None else base, **extra)
+    inherited = env.get(PYTHONPATH_ENV)
+    env[PYTHONPATH_ENV] = os.pathsep.join(filter(None, (str(REPO_DIR), inherited)))
+    return env
+
+
+def core_text(key, **facts):
+    """Text of a core locale key in the locale the test stores use."""
+    return load_core_locale(FALLBACK_LOCALE).text(key, **facts)
+
+
+def core_lead(key):
+    """Template of a core locale key up to its first placeholder, for texts with unknown facts."""
+    return load_core_locale(FALLBACK_LOCALE).text_template(key).split("{", 1)[0].strip()
+
+
+def exit_code(code):
+    """Process exit code of a SystemExit argument, printing a text argument as Python does."""
+    if code is None:
+        return EXIT_OK
+    if isinstance(code, int):
+        return code
+    print(code, file=sys.stderr)
+    return EXIT_UNCAUGHT
+
+
+def piped_run(run):
+    """subprocess.run whose children write into sys.stdout and sys.stderr.
+
+    A child inheriting the descriptors (the copy of the engine run by the launcher) would bypass
+    the streams captured by an in-process run, so its output is collected and written there.
+    """
+    def piped(*args, **kwargs):
+        """Run, collecting the output of a child that would inherit the descriptors."""
+        if kwargs.get("capture_output") or {"stdout", "stderr"} & kwargs.keys():
+            return run(*args, **kwargs)
+        done = run(*args, capture_output=True, **kwargs)
+        for text, stream in ((done.stdout, sys.stdout), (done.stderr, sys.stderr)):
+            stream.write(text if isinstance(text, str) else text.decode(ENCODING, "replace"))
+        return done
+    return piped
+
+
+def run_cli(args, cwd, env, drop=(), stdin=None):
+    """Run svod.cli.main in this process as a command line would; return a CompletedProcess.
+
+    The working directory, the environment (env set, drop removed) and the standard streams are
+    replaced for the call and restored after it.
+    """
+    out, err = io.StringIO(), io.StringIO()
+    previous = os.getcwd()
+    with mock.patch.dict(os.environ, env), \
+            mock.patch.object(sys, "stdout", out), mock.patch.object(sys, "stderr", err), \
+            mock.patch.object(sys, "stdin", io.StringIO(stdin or "")), \
+            mock.patch.object(subprocess, "run", piped_run(subprocess.run)):
+        for name in drop:
+            os.environ.pop(name, None)
+        os.chdir(cwd)
+        try:
+            code = svod_cli.main(list(args))
+        except SystemExit as exc:
+            code = exit_code(exc.code)
+        finally:
+            os.chdir(previous)
+    return subprocess.CompletedProcess([CLI_MODULE, *args], code, out.getvalue(), err.getvalue())
 
 
 def git_env(home):
@@ -121,12 +200,21 @@ class TempStore:
         """Push the main branch to origin."""
         self.git(repo or self.store, "push", "-q", "-u", REMOTE, MAIN_BRANCH)
 
-    def cli(self, *args, cwd=None):
-        """Run the CLI as a black box from the store."""
-        env = dict(os.environ, **self.env, PYTHONDONTWRITEBYTECODE="1", PYTHONUTF8="1")
+    def cli(self, *args, cwd=None, stdin=None, drop=(), **extra):
+        """Run the CLI from the store in this process, as a command line would run it."""
+        return run_cli(args, cwd or self.store, {**self.env, **CLI_ENV, **extra}, drop, stdin)
+
+    def cli_process(self, *args, cwd=None, stdin=None, drop=(), **extra):
+        """Run the CLI as a black box in a child process, for the launcher and the interpreter.
+
+        The child imports svod from this checkout first, whatever svod is installed.
+        """
+        env = child_env(**self.env, **CLI_ENV, **extra)
+        for name in drop:
+            env.pop(name, None)
         return subprocess.run([sys.executable, "-m", CLI_MODULE, *args], cwd=str(cwd or self.store),
-                              env=env, capture_output=True, text=True, encoding=ENCODING,
-                              timeout=CLI_TIMEOUT_SEC)
+                              env=env, input=stdin, capture_output=True, text=True,
+                              encoding=ENCODING, timeout=CLI_TIMEOUT_SEC)
 
 
 class StoreTestCase(unittest.TestCase):
