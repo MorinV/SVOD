@@ -38,6 +38,7 @@ Its presence marks the store root: the CLI walks up from the working directory t
 | `autonomy` | no | mapping / `{}` | level of each pipeline: which approval steps become optional; see [Autonomy](#autonomy) |
 | `external_effects` | no | mapping / none | extends and exempts the commands the `pre-tool` hook holds for a person; see [External effects](#external-effects) |
 | `cache_ignore` | no | list of strings / `[]` | paths or globs, relative and without `..`, left out of the cache key of the [`command`](#command) gate besides `evidence/`, `*.log` and `knowledge/INDEX.md`; read as `.gitignore` reads its lines |
+| `retro` | no | mapping / `{}` | `thresholds`: a core rule of the [retrospective](#retrospective) to a non-negative integer replacing its default, 0 turns the rule off; an unknown rule, another value or another key is a load error |
 
 ```yaml
 locale: en
@@ -827,6 +828,21 @@ Core keys (all required in every core locale file):
 | `retro.no_number` | `{number}`, `{count}` |
 | `retro.recorded` | `{decision}`, `{number}`, `{rule}`, `{path}` |
 | `retro.rule_failed` | `{reason}` |
+| `retro.explain` | `{rule}`, `{subject}`, `{threshold}` (`-` without one), `{verdict}` (one of the four below) |
+| `retro.explain_silent` | `{rule}` |
+| `retro.explain_proposed`, `retro.explain_decided`, `retro.explain_below`, `retro.explain_off` | — |
+| `report.usage`, `report.no_evidence`, `report.approvals`, `report.checks`, `report.denials`, `report.unknown_rule` | — |
+| `report.record` | `{id}`, `{pipeline}` |
+| `report.pipeline` | `{pipeline}`, `{records}` |
+| `report.step` | `{step}` |
+| `report.action` | `{action}` |
+| `report.time`, `report.open` | `{time}` (`H:MM:SS`) |
+| `report.approvals_value` | `{rounds}`, `{recorded}`, `{drift}` |
+| `report.checks_value` | `{failed}`, `{runs}` |
+| `report.action_value` | `{runs}`, `{failed}`, `{time}` |
+| `report.sum` | `{sum}`, `{median}` |
+| `report.step_sum` | `{sum}`, `{median}`, `{records}` |
+| `report.action_sum` | `{runs}`, `{failed}`, `{sum}`, `{median}` |
 | `retro.rule.dirty_checks` | `{count}`, `{runs}` |
 | `retro.rule.approval_drift`, `retro.rule.approval_drift_questions` | `{step}`, `{count}` |
 | `retro.rule.hook_denials` | `{hook_rule}`, `{count}`, `{step}` |
@@ -941,7 +957,8 @@ gate:
 | `install` | `--from`, `--to` | puts a copy of the engine into `.svod/` of the store, see [Vendored copy](#vendored-copy); refuses when `.svod/` exists | 0 done, 1 refused or the store does not validate after it, 2 nothing fetched (the store is unchanged) |
 | `update` | `--from`, `--to` | replaces the copy in `.svod/`, migrates the store, validates it with the new engine, prints the changelog between the versions and the migration notes; refuses without `.svod/` | as `install` |
 | `knowledge <action>` | `--tags`, `--title`, `--source` | `index`, `add <file>`, `note "<text>"`, `list`: see [Knowledge](#knowledge) | 0 done, 1 the note exists, 2 no such file or the config does not load |
-| `retro <query>` | `--all`, `--accept <n>`, `--reject <n>`, `--note <text>` | prints the proposals of the [retrospective](#retrospective) for the works the query resolves to, or with `--all` for every open work: number, rule, facts, proposed change; `--accept` or `--reject` records the decision on proposal `n` in `evidence/decisions.yaml` (with `--note`), after which it is not shown again; `--accept` prints the diff to apply by hand, no file is changed | 0 listed or recorded; 2 wrong arguments, not found, ambiguous, no such number, or profile rules or decisions that do not load |
+| `retro <query>` | `--all`, `--accept <n>`, `--reject <n>`, `--note <text>`, `--explain` | prints the proposals of the [retrospective](#retrospective) for the works the query resolves to, or with `--all` for every open work: number, rule, facts, proposed change; `--accept` or `--reject` records the decision on proposal `n` in `evidence/decisions.yaml` (with `--note`), after which it is not shown again; `--accept` prints the diff to apply by hand, no file is changed; `--explain` prints, for every rule, the facts it saw and the threshold it compared them with, whether it proposed or not | 0 listed, explained or recorded; 2 wrong arguments (`--explain` with a decision too), not found, ambiguous, no such number, or profile rules or decisions that do not load |
+| `report <query>` | `--all`, `--format text\|json` | prints from the [evidence log](#evidence), for the records the query resolves to, the time in each step, approval rounds, failed checks, hook denials and actions run; `--all` reports every pipeline: its sums and medians, then each record with a log; `--format json` gives the same data; see **Report** in [Evidence](#evidence) | 0 printed; 2 neither or both of query and `--all`, not found, ambiguous |
 | `migrate` | `--since <version>` | applies the [migrations](#migrations) of the versions after `<version>` up to the running engine and prints what they changed; `update` runs it in the new copy | 0 done, 1 a migration failed, 2 not a version |
 
 `init`, `install`, `update` and `migrate` read `svod.yaml` at most for the locale (`init --wizard` reads and edits it, and asks for the pipelines only when the store loads), `knowledge` reads only `svod.yaml`, `doctor` reports a store that does not load as one failed check, so they work while the store does not load. Every other command except `validate` and `hook` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. PyYAML is a dependency of the package: without it the engine does not import, so neither the CLI nor `hook` answers.
@@ -1081,28 +1098,47 @@ evidence:
 
 **API.** `svod.evidence_log`: `record(root, pipeline, subject_id, event, step=None, **facts)` appends one event and returns whether a line was written (an unknown event code is a `ValueError`); `read(root, pipeline, subject_id)` returns the events in order, leaving out a torn line; `summary(root, pipeline, subject_id)` returns `{"events": {<code>: <count>}, "seconds": <sum of the seconds facts>}`. With `pipeline` or `subject_id` None they use the store log.
 
+**Report.** `svod report <query>` reads the log of each existing record the query resolves to (as for `status`: none, or an ambiguous name, exits with 2); `svod report --all` reads every non-empty log in `evidence/<pipeline>/` of every pipeline, finished and removed records included, oldest last line first. It reads the events above and writes none. Per record:
+
+| item | from |
+|---|---|
+| time in each step | consecutive `position_changed` lines: a step runs from the move onto it to the next move, summed when it was current more than once; the step of the last move counts up to now and is marked open (`report.open`); a move to no step closes it; a move without a time is left out. A step never seen current through `status` has no time |
+| approval rounds | `approval_recorded` plus `approval_drift` |
+| failed checks | `checks_run` with `passed: false` (a result the source check refused) or a non-zero `code`, of all `checks_run` |
+| hook denials | `hook_denied` by `rule`; a null rule is `report.unknown_rule` |
+| actions run | `action_run`: name, `code`, `seconds`; in text grouped by name with runs, those that did not exit with 0 and the total time |
+
+Per pipeline (`--all`): the number of records, for each step and action the sum and median over the records having it, for approval rounds, failed checks and hook denials the sum and median over every record. Text is a header (`report.record`, `report.pipeline`) and a few lines of label and value in two columns, times as `H:MM:SS`; a record with an empty log prints `report.no_evidence`. `--format json` prints one object: `now` (ISO time the open steps count to) and `records` (a query), or `pipelines` (`--all`: `pipeline`, `summary`, `records`). A record is `{pipeline, id, events, steps: [{step, seconds, open}], approvals: {rounds, recorded, drift}, checks: {runs, failed: [{at, service, workspace, code, passed, seconds}]}, denials: [{rule, count}], actions: [{at, step, action, code, seconds}]}`; a summary is `{records, steps: [{step, records, sum, median}], approval_rounds: {sum, median}, failed_checks: {sum, median}, denials: {sum, median, rules}, actions: [{action, records, runs, failed, sum, median}]}`, seconds as integers. `svod.report` holds `collect`, `collect_all`, `record_report`, `step_times`, `pipeline_summary` and `render`.
+
 ## Retrospective
 
 At the end of a work `svod retro <query>` reads the [evidence log](#evidence) and the relations between works and proposes changes of the profile, each with the facts behind it. No model is asked and nothing is applied: the agent shows the list to the person, the person decides, and `svod retro <query> --accept <n>` or `--reject <n>` records the decision, after which the proposal is not shown again.
 
 **Works.** The query resolves as for `status`: every existing subject it names (none, or an ambiguous name, exits with 2). `--all` takes every existing, not archived subject of every pipeline. Every rule runs for every work; a proposal with the same rule, code and subject is listed once.
 
-**Core rules** (`svod.retro.rules.RULES`; the thresholds are constants of that module):
+**Core rules** (`svod.retro.rules.RULES`). The threshold of each is `threshold` of its class, the default below; `retro: {thresholds: {<rule>: <n>}}` in `svod.yaml` replaces it, and 0 turns the rule off. The seconds of `instant_steps` and the share of `long_step` are fixed.
+
+```yaml
+retro:
+  thresholds: { dirty_checks: 1, hook_denials: 5, long_step: 0 }
+```
 
 | rule | the decision is about | proposes when | proposal | change |
 |---|---|---|---|---|
-| `dirty_checks` | the work | at least `DIRTY_MIN` = 2 `checks_run` with `passed: false` on a dirty tree: a `reason` fact containing `dirty`, or, without a reason, a command that exited with 0 (the source check refused the result) | keep what the checks write out of git, or run them with `PYTHONDONTWRITEBYTECODE=1` | `.gitignore`, line `__pycache__/` |
-| `approval_drift` | the work | at least `DRIFT_MIN` = 2 `approval_drift` on one step; the variant `approval_drift_questions` when a questions step (a `questions_answered` gate or the role `questions`) was current or passed after the first `approval_recorded` or `approval_drift` of that step | split the contract; ask the questions before writing it | the skill of the step, a note |
-| `hook_denials` | the work | at least `DENIALS_MIN` = 3 `hook_denied` of one `rule` in the log of the work; the step is the one current at most of them | the skill of the step does not make the rule clear | the skill of the step, a note |
-| `hotfix_cause` | the work named as the cause | at least `HOTFIX_MIN` = 2 subjects with `kind: hotfix` whose `cause` names one existing work; found from that work or from any of its hotfixes | the decision there was weak: a research, or a knowledge note | `<knowledge dir>/<name of the work>.md`, a note |
-| `instant_steps` | the pipeline | a step that is not optional (as declared or by [autonomy](#autonomy)) passed in each of the last `INSTANT_WORKS` = 3 works whose log saw it current or passed, current for less than `INSTANT_SECONDS` = 60 s each time, or never | make the step optional | the pipeline file at `steps: <id>`, line `optional: true` |
-| `long_step` | the pipeline | in at least `LONG_WORKS` = 3 works one step was current for more than `LONG_SHARE` = 50% of the time of the work | split the step or give it an [action](#actions) | the pipeline file at `steps: <id>`, a note |
+| `dirty_checks` | the work | at least the threshold (`DIRTY_MIN` = 2) of `checks_run` with `passed: false` on a dirty tree: a `reason` fact containing `dirty`, or, without a reason, a command that exited with 0 (the source check refused the result) | keep what the checks write out of git, or run them with `PYTHONDONTWRITEBYTECODE=1` | `.gitignore`, line `__pycache__/` |
+| `approval_drift` | the work | at least the threshold (`DRIFT_MIN` = 2) of `approval_drift` on one step; the variant `approval_drift_questions` when a questions step (a `questions_answered` gate or the role `questions`) was current or passed after the first `approval_recorded` or `approval_drift` of that step | split the contract; ask the questions before writing it | the skill of the step, a note |
+| `hook_denials` | the work | at least the threshold (`DENIALS_MIN` = 3) of `hook_denied` of one `rule` in the log of the work; the step is the one current at most of them | the skill of the step does not make the rule clear | the skill of the step, a note |
+| `hotfix_cause` | the work named as the cause | at least the threshold (`HOTFIX_MIN` = 2) of subjects with `kind: hotfix` whose `cause` names one existing work; found from that work or from any of its hotfixes | the decision there was weak: a research, or a knowledge note | `<knowledge dir>/<name of the work>.md`, a note |
+| `instant_steps` | the pipeline | a step that is not optional (as declared or by [autonomy](#autonomy)) passed in each of the last works whose log saw it current or passed, as many as the threshold (`INSTANT_WORKS` = 3), current for less than `INSTANT_SECONDS` = 60 s each time, or never | make the step optional | the pipeline file at `steps: <id>`, line `optional: true` |
+| `long_step` | the pipeline | in at least the threshold (`LONG_WORKS` = 3) of works one step was current for more than `LONG_SHARE` = 50% of the time of the work | split the step or give it an [action](#actions) | the pipeline file at `steps: <id>`, a note |
 
 The time of a step runs from the `position_changed` onto it to the next one; the step current at the end counts up to the last line of the log. The step of an event without its own is the one current at it. The works of a pipeline are all the logs in `evidence/<pipeline>/`, finished and removed works included, ordered by their last line. The skill of a step is the first skill bound to its role in the [bindings file](#bindings-file), at its `skill_path`; without bindings, or for no step, the pipeline file.
 
 **Relations.** `svod.retro.engine.build_graph(ctx)` builds, once per run, the graph of every existing subject of `ctx.pipelines` by the frontmatter fields `parent`, `cause` and `leads_to` (a reference read as `ref_exists` reads it): `graph.nodes` (id to `(pipeline, subject)`), `graph.target(id, field)` (the id the field of a work names, or empty) and `graph.pointing(field, id)` (every work whose field names the id).
 
 **Output.** Each proposal is `retro.item` (number, rule, what the decision is about, text), `retro.facts` and, with a change, `retro.proposed`; `retro.none` when there is nothing. `--accept <n>` prints `retro.recorded`, then `retro.hint` and a diff to apply by hand (`--- a/<file>`, `+++ b/<file>`, `@@ <anchor> @@` when known, `+<line>`); in this version no file is changed. `--reject <n>` prints `retro.recorded` only. `--note "<text>"` goes with either and is kept in the decision. A rule that raises is left out with `retro.rule_failed` on stderr; the others still run.
+
+**Explain.** `svod retro <query>|--all --explain` prints, for every rule and work, what the rule compared with its threshold, whether it proposed or not: `retro.explain` (rule, what it is about, threshold, verdict: `retro.explain_proposed`, `retro.explain_decided` when a decision on the proposal was taken, `retro.explain_below`, or `retro.explain_off` for threshold 0), then `retro.facts`. The facts are those of the proposal, plus what was counted short of it: `dirty_checks` `count`, `runs`; `approval_drift` `step`, `count` per step (`count=0` without drifts); `hook_denials` `hook_rule`, `count`, `step` per hook rule; `hotfix_cause` `work`, `count`; `instant_steps` per step that is not optional `step`, `count` (works looked at), `passed`, `seconds` (the longest), `limit_seconds`; `long_step` `step`, `count`, `works`, `share`, `limit_share`. A rule over a pipeline is shown once per pipeline. A profile rule that compares nothing through `reaches` is shown with the facts of its proposals and threshold `-`, or with `retro.explain_silent`. Nothing is recorded.
 
 **decisions.yaml.** `evidence/decisions.yaml` is a YAML list, one item per decision, appended in order:
 
@@ -1125,6 +1161,8 @@ A proposal with the `rule`, `code` and `subject` of a decision, whatever it was,
 |---|---|
 | `name` | registry name |
 | `scope` | `subject` (default) or `pipeline`: what a proposal is about when it does not say |
+| `threshold` | the default threshold, `None` (default) for none; `retro.thresholds` of `svod.yaml` sets the one of a core rule on the instance |
+| `reaches(self, code, value, facts, also=True, subject=None)` | whether `value` reaches the threshold (never at 0; without a threshold only `also` decides) and `also` holds; keeps an `Observation(rule, code, facts, value, threshold, fired, subject)` in `self.observed` for `--explain` |
 | `evaluate(self, ctx, subject, log, graph)` | returns a list of `Proposal`; only reads |
 | `propose(self, code, facts, change=None, subject=None, text_key=None)` | a `Proposal` of the rule, text key `retro.rule.<name>` unless given |
 

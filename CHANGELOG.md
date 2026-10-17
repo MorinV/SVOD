@@ -6,6 +6,11 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Added
+
+- `svod report <query>|--all [--format json]` (`svod.report`): from the evidence log, per record the time in each step (the current one counted until now, marked open), approval rounds, failed checks, hook denials by rule and actions run; per pipeline with `--all` their sums and medians; new core keys `report.*`.
+- `svod retro --explain` prints for every rule the facts it saw and the threshold it compared them with, whether it proposed or not (`retro.explain*`); the thresholds are per-rule defaults (`Rule.threshold`, `Rule.reaches`) that `retro: {thresholds: {<rule>: <n>}}` in `svod.yaml` overrides, 0 turning a rule off.
+
 ### Changed
 
 - A cheap `svod status`: the cache key of the `command` gate leaves out `evidence/`, `*.log`, `knowledge/INDEX.md` and the new `cache_ignore` of `svod.yaml`; the gate's new `on: current` (default; `always` as before) runs the command only while its step is current or under `svod status --fresh`, and elsewhere shows the last result with `stale`, `age` and the mark `status.mark.stale` (`status.mark.not_run` when it never ran); 50 records take about 0.2 s instead of 3 s.

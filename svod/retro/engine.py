@@ -15,7 +15,7 @@ from ..errors import LoadError
 from ..gates import (GATES_GLOB, PRIVATE_PREFIX, load_module, pipeline_subjects, registered,
                      relation_field)
 from .rules import (CHANGE_ANCHOR, CHANGE_FILE, CHANGE_KIND, CHANGE_TEXT, RULES,
-                    SCOPE_PIPELINE, Proposal, Rule, moment)
+                    SCOPE_PIPELINE, Observation, Proposal, Rule, moment)
 
 if TYPE_CHECKING:
     from ..context import Context
@@ -35,6 +35,7 @@ DIFF_NEW = "+++ b/{file}"
 DIFF_HUNK = "@@ {anchor} @@"
 DIFF_ADD = "+{line}"
 RULE_FAILED = "{rule}: {error}"
+NO_THRESHOLD = "-"
 
 Work = tuple["Pipeline", "Subject"]
 
@@ -179,35 +180,66 @@ def identity(proposal: Proposal) -> tuple[str, str, str]:
     return proposal.rule, proposal.code, proposal.subject or ""
 
 
-def review(ctx: Context, works: list[Work],
-           rules: dict[str, type[Rule]]) -> tuple[list[Proposal], list[str]]:
-    """(proposals, failures) of the rules over the works, each proposal once.
+@dataclass
+class Outcome:
+    """What the rules made of the works: proposals, observations, failure lines.
+
+    `observations` holds (rule, observations of one evaluate) in the order the rules ran, so a
+    rule that observed nothing still has its place.
+    """
+
+    proposals: list[Proposal] = field(default_factory=list)
+    observations: list[tuple[str, list[Observation]]] = field(default_factory=list)
+    failures: list[str] = field(default_factory=list)
+
+
+def make_rule(cls: type[Rule], thresholds: dict[str, int]) -> Rule:
+    """An instance of the rule with the threshold of svod.yaml when it names the rule."""
+    rule = cls()
+    if rule.name in thresholds:
+        rule.threshold = thresholds[rule.name]
+    if not isinstance(getattr(rule, "observed", None), list):
+        rule.observed = []
+    return rule
+
+
+def run_rules(ctx: Context, works: list[Work], rules: dict[str, type[Rule]]) -> Outcome:
+    """Proposals (each once) and observations of the rules over the works, and failures.
 
     Proposals come work by work, rule by rule in registry order. A rule that raises adds a
     failure line and nothing else: a profile rule with a bug does not stop the review.
     """
     graph = build_graph(ctx)
     reader = Reader(ctx.root)
-    found: list[Proposal] = []
+    outcome = Outcome()
     seen: set[tuple[str, str, str]] = set()
-    failures: list[str] = []
     for pipeline, subject in works:
         log = Log(reader, pipeline, subject.id)
         for name, cls in rules.items():
             try:
-                rule = cls()
+                rule = make_rule(cls, ctx.config.retro_thresholds)
                 proposals = rule.evaluate(ctx, subject, log, graph)
             except Exception as exc:
-                failures.append(RULE_FAILED.format(rule=name, error=f"{exc!r}"))
+                outcome.failures.append(RULE_FAILED.format(rule=name, error=f"{exc!r}"))
                 continue
+            default = pipeline.name if rule.scope == SCOPE_PIPELINE else subject.id
+            for observation in rule.observed:
+                observation.subject = observation.subject or default
+            outcome.observations.append((name, rule.observed))
             for proposal in proposals:
                 if proposal.subject is None:
-                    proposal.subject = (pipeline.name if rule.scope == SCOPE_PIPELINE
-                                        else subject.id)
+                    proposal.subject = default
                 if identity(proposal) not in seen:
                     seen.add(identity(proposal))
-                    found.append(proposal)
-    return found, failures
+                    outcome.proposals.append(proposal)
+    return outcome
+
+
+def review(ctx: Context, works: list[Work],
+           rules: dict[str, type[Rule]]) -> tuple[list[Proposal], list[str]]:
+    """(proposals, failures) of the rules over the works, each proposal once."""
+    outcome = run_rules(ctx, works, rules)
+    return outcome.proposals, outcome.failures
 
 
 def pending(proposals: list[Proposal], decided: set[tuple[str, str, str]]) -> list[Proposal]:
@@ -241,6 +273,64 @@ def render(locale: Locale, proposals: list[Proposal]) -> list[str]:
                                      kind=proposal.change[CHANGE_KIND],
                                      text=change_text(locale, proposal)))
     return lines
+
+
+def explain(locale: Locale, outcome: Outcome, decided: set[tuple[str, str, str]]) -> list[str]:
+    """Lines of --explain: per rule and what it saw, the threshold, the verdict, the facts.
+
+    An observation with the rule, code and subject of an earlier one is shown once (a rule over
+    a pipeline sees the same in each of its works). A rule that observed nothing (a rule of the
+    profile not calling reaches) is shown with the facts of its proposals, or as silent.
+    """
+    from .. import keys
+
+    lines: list[str] = []
+    shown: set[tuple[str, str, str]] = set()
+    silent: set[str] = set()
+    for name, observations in outcome.observations:
+        if not observations:
+            own = [p for p in outcome.proposals if p.rule == name]
+            for proposal in own:
+                key = identity(proposal)
+                if key not in shown:
+                    shown.add(key)
+                    lines += explain_lines(locale, name, proposal.subject or "",
+                                           proposal.facts, None,
+                                           verdict(key, True, None, decided))
+            if not own and name not in silent:
+                silent.add(name)
+                lines.append(locale.text(keys.RETRO_EXPLAIN_SILENT, rule=name))
+            continue
+        for seen in observations:
+            key = (seen.rule, seen.code, seen.subject or "")
+            if key in shown:
+                continue
+            shown.add(key)
+            lines += explain_lines(locale, name, seen.subject or "", seen.facts,
+                                   seen.threshold,
+                                   verdict(key, seen.fired, seen.threshold, decided))
+    return lines
+
+
+def verdict(key: tuple[str, str, str], fired: bool, threshold: int | None,
+            decided: set[tuple[str, str, str]]) -> str:
+    """Locale key of what came of one comparison."""
+    from .. import keys
+
+    if fired:
+        return keys.RETRO_EXPLAIN_DECIDED if key in decided else keys.RETRO_EXPLAIN_PROPOSED
+    return keys.RETRO_EXPLAIN_OFF if threshold == 0 else keys.RETRO_EXPLAIN_BELOW
+
+
+def explain_lines(locale: Locale, rule: str, subject: str, facts: dict[str, Any],
+                  threshold: int | None, outcome_key: str) -> list[str]:
+    """Two lines of --explain: the rule, what it is about, the threshold, the verdict; facts."""
+    from .. import keys
+
+    return [locale.text(keys.RETRO_EXPLAIN, rule=rule, subject=subject,
+                        threshold=NO_THRESHOLD if threshold is None else threshold,
+                        verdict=locale.text(outcome_key)),
+            locale.text(keys.RETRO_FACTS, facts=facts_line(facts))]
 
 
 def change_text(locale: Locale, proposal: Proposal) -> str:

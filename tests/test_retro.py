@@ -8,7 +8,8 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest import mock
 
-from support import CLI_ENV, ENCODING, EXIT_OK, EXIT_USAGE, ME, dedent, git_env, run_cli
+from support import (CLI_ENV, ENCODING, EXIT_OK, EXIT_USAGE, ME, core_text, dedent, git_env,
+                     run_cli)
 
 from svod import evidence_log as ev
 from svod.retro import decisions, rules
@@ -415,6 +416,100 @@ class ProfileRulesTest(RetroTestCase):
         self.assertEqual(EXIT_OK, done.returncode, done.stderr)
         self.assertIn("always: ValueError('x')", done.stderr)
         self.assertIn("1. dirty_checks", done.stdout)
+
+
+class ExplainTest(RetroTestCase):
+    def explained(self, out):
+        """(header, facts) line pairs of the --explain output."""
+        lines = out.splitlines()
+        return list(zip(lines[::2], lines[1::2], strict=True))
+
+    def test_every_rule_with_its_facts_and_threshold(self):
+        """Each core rule is shown whether it proposed or not; the facts follow."""
+        for second in (0, 60):
+            self.sb.record(second, WORK_A, ev.EVENT_CHECKS_RUN, code=0, passed=False)
+        self.sb.record(90, WORK_A, ev.EVENT_APPROVAL_DRIFT, "approve")
+        pairs = self.explained(self.retro(WORK_A, "--explain"))
+        shown = {header.split(" ", 1)[0] for header, _ in pairs}
+        self.assertEqual(set(rules.RULES), shown)
+        headers = dict(pairs)
+        dirty = explain_text("dirty_checks", WORK_A, 2, "explain_proposed")
+        self.assertEqual(core_text("retro.facts", facts="count=2, runs=2"), headers[dirty])
+        drift = explain_text("approval_drift", WORK_A, 2, "explain_below")
+        self.assertEqual(core_text("retro.facts", facts="step=approve, count=1"), headers[drift])
+        self.assertIn(explain_text("long_step", TASK, 3, "explain_below"), headers)
+
+    def test_a_decided_proposal_is_marked(self):
+        """After a decision the rule still explains itself and says it was decided."""
+        for second in (0, 60):
+            self.sb.record(second, WORK_A, ev.EVENT_CHECKS_RUN, code=0, passed=False)
+        self.retro(WORK_A, "--reject", "1")
+        out = self.retro(WORK_A, "--explain")
+        self.assertIn(explain_text("dirty_checks", WORK_A, 2, "explain_decided"), out)
+
+    def test_a_profile_rule_without_observations(self):
+        """A profile rule not calling reaches shows the facts of its proposals, threshold -."""
+        path = self.sb.store / "profile" / "retro" / "always.py"
+        path.parent.mkdir(parents=True)
+        path.write_text(dedent(ALWAYS_RULE), encoding=ENCODING)
+        out = self.retro(WORK_A, "--explain")
+        self.assertIn(explain_text("always", WORK_A, "-", "explain_proposed") + "\n"
+                      + core_text("retro.facts", facts="entries=0"), out)
+
+    def test_explain_takes_no_decision(self):
+        """--explain with --accept is a usage error."""
+        done = self.sb.cli("retro", WORK_A, "--explain", "--accept", "1")
+        self.assertEqual(EXIT_USAGE, done.returncode)
+
+
+class ThresholdsTest(RetroTestCase):
+    def configure(self, block):
+        """Append a retro block to svod.yaml of the store."""
+        path = self.sb.store / "svod.yaml"
+        path.write_text(path.read_text(encoding=ENCODING) + block, encoding=ENCODING)
+
+    def test_svod_yaml_overrides_the_default(self):
+        """A lower threshold proposes from one dirty failure; 0 turns a rule off."""
+        self.sb.record(0, WORK_A, ev.EVENT_CHECKS_RUN, code=0, passed=False)
+        for second in (10, 20, 30):
+            self.sb.record(second, WORK_A, ev.EVENT_HOOK_DENIED, rule="plan", tool="Edit")
+        self.assertIn("1. hook_denials", self.retro(WORK_A))
+        self.configure("retro:\n  thresholds: {dirty_checks: 1, hook_denials: 0}\n")
+        out = self.retro(WORK_A)
+        self.assertIn("1. dirty_checks", out)
+        self.assertNotIn("hook_denials", out)
+        explained = self.retro(WORK_A, "--explain")
+        self.assertIn(explain_text("dirty_checks", WORK_A, 1, "explain_proposed"), explained)
+        self.assertIn(explain_text("hook_denials", WORK_A, 0, "explain_off"), explained)
+
+    def test_instant_steps_counts_works(self):
+        """The threshold of instant_steps is the number of recent works."""
+        self.sb.move(0, WORK_A, None, "questions", passed=["card"])
+        self.configure("retro: {thresholds: {instant_steps: 1}}\n")
+        self.assertEqual(1, len(self.rule_lines(self.retro(WORK_A), "instant_steps")))
+
+    def test_bad_thresholds_do_not_load(self):
+        """An unknown rule, a negative number, a bool, a non-mapping, an unknown key."""
+        cases = {"retro: {thresholds: {nope: 1}}\n": "unknown rule: nope",
+                 "retro: {thresholds: {long_step: -1}}\n": "long_step must be a non-negative",
+                 "retro: {thresholds: {long_step: true}}\n": "long_step must be a non-negative",
+                 "retro: {thresholds: [1]}\n": "thresholds must be a mapping",
+                 "retro: {limits: {}}\n": "retro: unknown key: limits",
+                 "retro: 3\n": "retro must be a mapping"}
+        path = self.sb.store / "svod.yaml"
+        original = path.read_text(encoding=ENCODING)
+        for block, message in cases.items():
+            with self.subTest(block=block):
+                path.write_text(original + block, encoding=ENCODING)
+                done = self.sb.cli("retro", WORK_A)
+                self.assertEqual(EXIT_USAGE, done.returncode)
+                self.assertIn(message, done.stderr)
+
+
+def explain_text(rule, subject, threshold, verdict):
+    """Header line of --explain for one rule."""
+    return core_text("retro.explain", rule=rule, subject=subject, threshold=threshold,
+                     verdict=core_text("retro." + verdict))
 
 
 def line_text(name, prefix="retro.rule.", **facts):

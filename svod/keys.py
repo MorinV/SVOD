@@ -206,6 +206,36 @@ RETRO_NO_NUMBER = "retro.no_number"
 RETRO_RECORDED = "retro.recorded"
 RETRO_HINT = "retro.hint"
 RETRO_RULE_FAILED = "retro.rule_failed"
+RETRO_EXPLAIN = "retro.explain"
+RETRO_EXPLAIN_SILENT = "retro.explain_silent"
+RETRO_EXPLAIN_PROPOSED = "retro.explain_proposed"
+RETRO_EXPLAIN_DECIDED = "retro.explain_decided"
+RETRO_EXPLAIN_BELOW = "retro.explain_below"
+RETRO_EXPLAIN_OFF = "retro.explain_off"
+REPORT_USAGE = "report.usage"
+REPORT_RECORD = "report.record"
+REPORT_NO_EVIDENCE = "report.no_evidence"
+REPORT_PIPELINE = "report.pipeline"
+REPORT_STEP = "report.step"
+REPORT_TIME = "report.time"
+REPORT_OPEN = "report.open"
+REPORT_APPROVALS = "report.approvals"
+REPORT_APPROVALS_VALUE = "report.approvals_value"
+REPORT_CHECKS = "report.checks"
+REPORT_CHECKS_VALUE = "report.checks_value"
+REPORT_DENIALS = "report.denials"
+REPORT_UNKNOWN_RULE = "report.unknown_rule"
+REPORT_ACTION = "report.action"
+REPORT_ACTION_VALUE = "report.action_value"
+REPORT_SUM = "report.sum"
+REPORT_STEP_SUM = "report.step_sum"
+REPORT_ACTION_SUM = "report.action_sum"
+REPORT_KEYS = (
+    REPORT_USAGE, REPORT_RECORD, REPORT_NO_EVIDENCE, REPORT_PIPELINE, REPORT_STEP, REPORT_TIME,
+    REPORT_OPEN, REPORT_APPROVALS, REPORT_APPROVALS_VALUE, REPORT_CHECKS, REPORT_CHECKS_VALUE,
+    REPORT_DENIALS, REPORT_UNKNOWN_RULE, REPORT_ACTION, REPORT_ACTION_VALUE, REPORT_SUM,
+    REPORT_STEP_SUM, REPORT_ACTION_SUM,
+)
 RETRO_RULE_PREFIX = "retro.rule."
 RETRO_CHANGE_PREFIX = "retro.change."
 # Texts of the core retrospective rules (svod.retro.rules) and of the changes they propose.
@@ -456,6 +486,13 @@ CORE_KEYS = (
     RETRO_RECORDED,
     RETRO_HINT,
     RETRO_RULE_FAILED,
+    RETRO_EXPLAIN,
+    RETRO_EXPLAIN_SILENT,
+    RETRO_EXPLAIN_PROPOSED,
+    RETRO_EXPLAIN_DECIDED,
+    RETRO_EXPLAIN_BELOW,
+    RETRO_EXPLAIN_OFF,
     *RETRO_TEXT_KEYS,
+    *REPORT_KEYS,
     *DESCRIBE_KEYS,
 )

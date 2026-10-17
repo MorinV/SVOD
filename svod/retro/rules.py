@@ -2,7 +2,9 @@
 
 A rule is a class with a name and evaluate(ctx, subject, log, graph) returning proposals. It
 only reads: the log of the subject and of the other works of its pipeline, and the graph of
-relations. Thresholds are the constants of this module.
+relations. Each rule has a default threshold, `threshold` of its class; svod.yaml overrides it
+with retro.thresholds.<rule>, and 0 turns the rule off. Every comparison with the threshold is
+kept as an observation for `svod retro --explain`.
 """
 from __future__ import annotations
 
@@ -40,6 +42,8 @@ ANCHOR_STEP = "steps: {step}"
 
 # dirty_checks: failed checks on a dirty source tree, at least this many in one work.
 DIRTY_MIN = 2
+# Thresholds of the other rules: approval_drift DRIFT_MIN, hook_denials DENIALS_MIN, hotfix_cause
+# HOTFIX_MIN, instant_steps INSTANT_WORKS, long_step LONG_WORKS. Seconds and shares are fixed.
 DIRTY_WORD = "dirty"
 DIRTY_CODE = "dirty_tree"
 GITIGNORE = ".gitignore"
@@ -77,6 +81,9 @@ FACT_HOOK_RULE = "hook_rule"
 FACT_RUNS = "runs"
 FACT_SECONDS = "seconds"
 FACT_SHARE = "share"
+FACT_PASSED = "passed"
+FACT_LIMIT_SECONDS = "limit_seconds"
+FACT_LIMIT_SHARE = "limit_share"
 NO_STEP = "-"
 IDS_SEPARATOR = ", "
 
@@ -100,10 +107,50 @@ class Proposal:
     subject: str | None = None
 
 
+@dataclass
+class Observation:
+    """What a rule compared with its threshold, fired or not: the facts behind `--explain`.
+
+    `value` is the number compared; `threshold` is None for a rule without one; `subject` is
+    filled by the engine like that of a proposal when the rule leaves it None.
+    """
+
+    rule: str
+    code: str
+    facts: dict[str, Any]
+    value: float
+    threshold: int | None
+    fired: bool
+    subject: str | None = None
+
+
 class Rule(Configurable):
-    """A retrospective rule: evaluate(ctx, subject, log, graph) returns proposals."""
+    """A retrospective rule: evaluate(ctx, subject, log, graph) returns proposals.
+
+    `threshold` is the default of the rule; the engine sets the one of svod.yaml on the
+    instance. `observed` collects what reaches() compared during one evaluate.
+    """
 
     scope = SCOPE_SUBJECT
+    threshold: int | None = None
+
+    def __init__(self, params: dict[str, Any] | None = None) -> None:
+        """Params as for any configurable; nothing observed yet."""
+        super().__init__(params)
+        self.observed: list[Observation] = []
+
+    def reaches(self, code: str, value: float, facts: dict[str, Any], also: bool = True,
+                subject: str | None = None) -> bool:
+        """Whether the value reaches the threshold and the other condition holds; kept as seen.
+
+        A threshold of 0 turns the rule off: nothing reaches it. Without a threshold only the
+        other condition decides.
+        """
+        threshold = self.threshold
+        fired = also and (threshold is None or (threshold > 0 and value >= threshold))
+        self.observed.append(Observation(self.name, code, dict(facts), value, threshold, fired,
+                                         subject))
+        return fired
 
     def evaluate(self, ctx: Context, subject: Subject, log: Log,
                  graph: Graph) -> list[Proposal]:
@@ -231,13 +278,14 @@ class DirtyChecksRule(Rule):
     """Checks failed again and again on a dirty tree: ignore what they write."""
 
     name = "dirty_checks"
+    threshold = DIRTY_MIN
 
     def evaluate(self, ctx: Context, subject: Subject, log: Log,
                  graph: Graph) -> list[Proposal]:
-        """One proposal when at least DIRTY_MIN runs failed on a dirty tree."""
+        """One proposal when at least the threshold of runs failed on a dirty tree."""
         runs = of_event(log.entries, ev.EVENT_CHECKS_RUN)
         count = sum(1 for entry in runs if is_dirty(entry))
-        if count < DIRTY_MIN:
+        if not self.reaches(DIRTY_CODE, count, {FACT_COUNT: count, FACT_RUNS: len(runs)}):
             return []
         return [self.propose(DIRTY_CODE, {FACT_COUNT: count, FACT_RUNS: len(runs)},
                              change(GITIGNORE, GITIGNORE_LINE, KIND_LINE))]
@@ -254,12 +302,13 @@ class ApprovalDriftRule(Rule):
     """The contract changed after the answer again and again: split it or ask earlier."""
 
     name = "approval_drift"
+    threshold = DRIFT_MIN
     APPROVALS = frozenset({ev.EVENT_APPROVAL_RECORDED, ev.EVENT_APPROVAL_DRIFT})
     MOVES = frozenset({ev.EVENT_POSITION_CHANGED, ev.EVENT_STEP_PASSED})
 
     def evaluate(self, ctx: Context, subject: Subject, log: Log,
                  graph: Graph) -> list[Proposal]:
-        """One proposal per step with at least DRIFT_MIN drifts.
+        """One proposal per step with at least the threshold of drifts; 0 seen without any.
 
         The variant asking the questions before the contract is chosen when a questions step
         was current or passed after the first approval event of the step.
@@ -268,9 +317,11 @@ class ApprovalDriftRule(Rule):
         drifts = Counter(str(entry[ev.FIELD_STEP])
                          for entry in of_event(entries, ev.EVENT_APPROVAL_DRIFT)
                          if entry.get(ev.FIELD_STEP))
+        if not drifts:
+            self.reaches(NO_STEP, 0, {FACT_COUNT: 0})
         found = []
         for step, count in sorted(drifts.items()):
-            if count < DRIFT_MIN:
+            if not self.reaches(step, count, {FACT_STEP: step, FACT_COUNT: count}):
                 continue
             first = next(i for i, entry in enumerate(entries)
                          if entry.get(ev.FIELD_EVENT) in self.APPROVALS
@@ -290,10 +341,11 @@ class HookDenialsRule(Rule):
     """The hook refused by one rule again and again: the skill of the step is not clear."""
 
     name = "hook_denials"
+    threshold = DENIALS_MIN
 
     def evaluate(self, ctx: Context, subject: Subject, log: Log,
                  graph: Graph) -> list[Proposal]:
-        """One proposal per hook rule refusing at least DENIALS_MIN times in the work.
+        """One proposal per hook rule refusing at least the threshold of times in the work.
 
         The step is the one most of those refusals happened at; the change names its skill.
         """
@@ -303,12 +355,15 @@ class HookDenialsRule(Rule):
             rule = facts_of(entry).get(EVENT_FACT_RULE)
             if entry.get(ev.FIELD_EVENT) == ev.EVENT_HOOK_DENIED and rule:
                 steps.setdefault(str(rule), Counter())[step_at(entries, i) or NO_STEP] += 1
+        if not steps:
+            self.reaches(NO_STEP, 0, {FACT_COUNT: 0})
         found = []
         for rule, counter in sorted(steps.items()):
             count = sum(counter.values())
-            if count < DENIALS_MIN:
-                continue
             step = counter.most_common(1)[0][0]
+            if not self.reaches(rule, count, {FACT_HOOK_RULE: rule, FACT_COUNT: count,
+                                              FACT_STEP: step}):
+                continue
             target = skill_file(ctx, log.pipeline, None if step == NO_STEP else step)
             found.append(self.propose(rule, {FACT_HOOK_RULE: rule, FACT_COUNT: count,
                                              FACT_STEP: step},
@@ -325,13 +380,14 @@ class HotfixCauseRule(Rule):
     """Several hotfixes name one work as their cause: the decision there was weak."""
 
     name = "hotfix_cause"
+    threshold = HOTFIX_MIN
 
     def evaluate(self, ctx: Context, subject: Subject, log: Log,
                  graph: Graph) -> list[Proposal]:
         """A proposal about the subject, or about the cause of a hotfix subject.
 
-        The work must be a subject of the store with at least HOTFIX_MIN hotfixes naming it;
-        the decision is about that work.
+        The work must be a subject of the store with at least the threshold of hotfixes naming
+        it; the decision is about that work.
         """
         targets = {subject.id}
         cause = graph.target(subject.id, FIELD_CAUSE)
@@ -340,7 +396,9 @@ class HotfixCauseRule(Rule):
         found = []
         for work in sorted(targets):
             hotfixes = sorted(s.id for _, s in graph.pointing(FIELD_CAUSE, work) if is_hotfix(s))
-            if work not in graph.nodes or len(hotfixes) < HOTFIX_MIN:
+            if not self.reaches(HOTFIX_CODE, len(hotfixes),
+                                {FACT_WORK: work, FACT_COUNT: len(hotfixes)},
+                                also=work in graph.nodes, subject=work):
                 continue
             note = f"{ctx.config.knowledge_dir}/{Path(work).name}{KNOWLEDGE_SUFFIX}"
             found.append(self.propose(
@@ -355,30 +413,35 @@ class InstantStepsRule(Rule):
 
     name = "instant_steps"
     scope = SCOPE_PIPELINE
+    threshold = INSTANT_WORKS
 
     def evaluate(self, ctx: Context, subject: Subject, log: Log,
                  graph: Graph) -> list[Proposal]:
         """One proposal per step that is not optional yet (as declared or by autonomy).
 
-        The works are the last INSTANT_WORKS of the pipeline whose log saw the step current or
-        passed; in each it passed and was current for less than INSTANT_SECONDS, or never.
+        The works are the last ones of the pipeline, as many as the threshold, whose log saw
+        the step current or passed; in each it passed and was current for less than
+        INSTANT_SECONDS, or never.
         """
         works = log.works()
+        size = self.threshold or 0
         found = []
         for step in log.pipeline.steps:
             if step.optional:
                 continue
             seen = [entries for entries in works
                     if step.id in passed_steps(entries) | current_steps(entries)]
-            recent = seen[-INSTANT_WORKS:]
-            if len(recent) < INSTANT_WORKS:
-                continue
+            recent = seen[-size:] if size else []
             seconds = [durations(entries).get(step.id, 0.0) for entries in recent]
-            if all(step.id in passed_steps(entries) for entries in recent) \
-                    and max(seconds) < INSTANT_SECONDS:
+            passed = sum(1 for entries in recent if step.id in passed_steps(entries))
+            longest = round(max(seconds, default=0.0))
+            facts = {FACT_STEP: step.id, FACT_COUNT: len(recent), FACT_PASSED: passed,
+                     FACT_SECONDS: longest, FACT_LIMIT_SECONDS: INSTANT_SECONDS}
+            also = bool(recent) and passed == len(recent) and max(seconds) < INSTANT_SECONDS
+            if self.reaches(step.id, len(recent), facts, also=also):
                 found.append(self.propose(
                     step.id, {FACT_PIPELINE: log.pipeline.name, FACT_STEP: step.id,
-                              FACT_COUNT: len(recent), FACT_SECONDS: round(max(seconds))},
+                              FACT_COUNT: len(recent), FACT_SECONDS: longest},
                     change(pipeline_file(ctx, log.pipeline), OPTIONAL_LINE, KIND_LINE,
                            ANCHOR_STEP.format(step=step.id))))
         return found
@@ -389,10 +452,14 @@ class LongStepRule(Rule):
 
     name = "long_step"
     scope = SCOPE_PIPELINE
+    threshold = LONG_WORKS
 
     def evaluate(self, ctx: Context, subject: Subject, log: Log,
                  graph: Graph) -> list[Proposal]:
-        """One proposal per step longer than LONG_SHARE of the work in at least LONG_WORKS."""
+        """One proposal per step longer than LONG_SHARE of the work in the threshold of works.
+
+        A pipeline whose works have no such step is seen as one count of 0.
+        """
         works = log.works()
         shares: dict[str, list[float]] = {}
         for entries in works:
@@ -403,9 +470,15 @@ class LongStepRule(Rule):
             step, seconds = max(spent.items(), key=lambda item: item[1])
             if seconds / total > LONG_SHARE:
                 shares.setdefault(step, []).append(seconds / total)
+        if not shares:
+            self.reaches(NO_STEP, 0, {FACT_COUNT: 0, FACT_WORKS: len(works),
+                                      FACT_LIMIT_SHARE: round(LONG_SHARE * PERCENT)})
         found = []
         for step, values in sorted(shares.items()):
-            if len(values) < LONG_WORKS:
+            if not self.reaches(step, len(values), {
+                    FACT_STEP: step, FACT_COUNT: len(values), FACT_WORKS: len(works),
+                    FACT_SHARE: round(min(values) * PERCENT),
+                    FACT_LIMIT_SHARE: round(LONG_SHARE * PERCENT)}):
                 continue
             found.append(self.propose(
                 step, {FACT_PIPELINE: log.pipeline.name, FACT_STEP: step,
