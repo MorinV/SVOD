@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from . import keys
 from .bindings import resolve_role
 from .gates import Status
-from .position import evaluate
 
 INDENT = "  "
 MARK_SEPARATOR = "   "
@@ -172,21 +171,6 @@ def render_position(locale, pos, skills=None):
                                            text=violation_text(locale, v))
                   for v in pos.violations]
     return lines
-
-
-def missing_text(ctx, pipeline, subject):
-    """Text of the missing gate when the subject was not found and nothing else is known of it.
-
-    None for a found subject, a pipeline without a missing gate, or a gate that did not fail.
-    """
-    ref = pipeline.missing
-    if subject.exists or ref is None:
-        return None
-    outcome = evaluate(ctx, ref, subject)
-    if outcome.result.status is not Status.FAIL:
-        return None
-    return ctx.locale.text(ref.text, **{**subject_facts_of(pipeline, subject),
-                                        **outcome.result.facts})
 
 
 def status_report(ctx, pipelines, query):

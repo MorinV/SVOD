@@ -25,11 +25,6 @@ def tag_version(tag):
     return version if parse(version) else None
 
 
-def tag_of(version):
-    """Release tag of a version."""
-    return f"{TAG_PREFIX}{version}"
-
-
 def is_newer(candidate, current):
     """Whether candidate is a later version than current; False when either is not X.Y.Z."""
     a, b = parse(candidate), parse(current)
