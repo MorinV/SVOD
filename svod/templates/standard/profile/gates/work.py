@@ -13,15 +13,13 @@ worktrees of the record until it passes; the pre-tool hook finds them through tw
   work_tree  workspace_gate of svod.yaml: the worktrees work.yaml of a record lists, one
              `<service>: <directory>` line each, relative to the store root (start-task.sh)
   work_id    key_gate of the task pipeline: the record a worktree directory name names
-Naming of a worktree. start-task.sh names it <repo>-<branch> on the branch <KEY>_<name>, or
-<name> without a key: neither the kind of the record (tasks, features) nor the boundary of
-the repository, the key and the name, each of which may hold "-", can be read back from it.
-These gates take an unambiguous name instead: the directory ends with -<id-slug>, the record
-id with every "/" replaced by "+": ../app-work+tasks+login for work/tasks/login and the
-service ../app (the branch stays as it is). Root directories hold neither "-" nor "+", record
-names no "+". A worktree named the old way names no record, so its edits are not frozen.
+Naming of a worktree. start-task.sh names it <service>-<pipeline>-<name> next to the service
+checkout, on the branch <pipeline>/<name>: ../app-task-login for work/tasks/login. A service
+or a record name may hold "-", so work_id reads every "-<pipeline>-" of the directory name as
+a possible boundary and names every record id it could mean; work_tree keeps only those whose
+work.yaml lists that directory. A directory with no "-<pipeline>-" names no record and is not
+frozen.
 """
-import re
 from pathlib import Path
 
 from svod.errors import LoadError
@@ -40,7 +38,10 @@ OUTCOME_KNOWLEDGE = "knowledge"
 WORK_FILE = "work.yaml"
 ID_SEPARATOR = "/"
 SLUG_SEPARATOR = "+"
-SLUG_RE = re.compile(r"(?:^|(?<=-))((?:[^\s/+-]+\+)+[^\s/+]+)$")
+# Pipeline name in a worktree directory name -> root directory of its records.
+ROOTS = {"task": "work/tasks", "feature": "work/features", "project": "work/projects",
+         "research": "work/research"}
+NAME_SEPARATOR = "-"
 FACT_COUNT = "count"
 FACT_WORKTREES = "worktrees"
 ITEM_SEPARATOR = ", "
@@ -63,14 +64,24 @@ def slug_id(key):
     return key.replace(SLUG_SEPARATOR, ID_SEPARATOR)
 
 
-def slugs(text):
-    """Id-slugs that end the words of the text, a word read as a path by its last part."""
+def record_ids(text):
+    """Record ids a worktree directory name may mean, a word read as a path by its last part.
+
+    <service>-<pipeline>-<name> names work/<root of pipeline>/<name>; with "-" allowed in the
+    service and the name, every "-<pipeline>-" is tried, in order of appearance.
+    """
     found = []
     for word in text.split():
-        match = SLUG_RE.search(word.rstrip(ID_SEPARATOR).rsplit(ID_SEPARATOR, 1)[-1])
-        if match:
-            found.append(match.group(1))
-    return found
+        name = word.rstrip(ID_SEPARATOR).rsplit(ID_SEPARATOR, 1)[-1]
+        for pipeline, root in ROOTS.items():
+            marker = f"{NAME_SEPARATOR}{pipeline}{NAME_SEPARATOR}"
+            start = name.find(marker)
+            while start > 0:
+                rest = name[start + len(marker):]
+                if rest and NAME_SEPARATOR * 2 not in rest:
+                    found.append(f"{root}{ID_SEPARATOR}{rest}")
+                start = name.find(marker, start + 1)
+    return list(dict.fromkeys(found))
 
 
 class WorkProvider(ContainerProvider):
@@ -96,23 +107,28 @@ class WorkProvider(ContainerProvider):
         return subject
 
     def match_key(self, key, ctx):
-        """The record whose id the id-slug names."""
-        return self.match_exact(slug_id(key), ctx) if SLUG_SEPARATOR in key else []
+        """The record whose id (or id-slug) the key names; a tracker key is matched elsewhere."""
+        if SLUG_SEPARATOR in key or ID_SEPARATOR in key:
+            return self.match_exact(slug_id(key), ctx)
+        return []
 
 
 class WorkIdGate(KeyGate):
-    """Records by their id-slug at the end of a worktree directory name: app-work+tasks+login."""
+    """Records a worktree directory name may mean: app-task-login names work/tasks/login."""
 
     name = "work_id"
 
     def match(self, query):
-        """First id-slug the query names, or None."""
-        found = slugs(query)
+        """The record id the query is, else the first one a directory name in it may mean."""
+        wanted = query.strip().strip(ID_SEPARATOR)
+        if any(wanted.startswith(f"{root}{ID_SEPARATOR}") for root in ROOTS.values()):
+            return wanted
+        found = record_ids(query)
         return found[0] if found else None
 
     def find(self, text):
-        """Id-slugs the text names."""
-        return set(slugs(text))
+        """Record ids the text may name; work_tree keeps the one whose work.yaml agrees."""
+        return set(record_ids(text))
 
 
 def listed(ctx, subject):

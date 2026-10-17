@@ -53,8 +53,8 @@ NO_SERVICES = "no services declared"
 GATE_CHECKS = f"profile_config:\n  checks:\n    {SERVICE}: [test, -f, {CHECK_FILE}]\n"
 GREET = "work/tasks/greet"
 SLUG = "work+tasks+example"
-FROZEN_TREE = f"{SERVICE}-{SLUG}"
-OLD_TREE = f"{SERVICE}-{BRANCH}"
+FROZEN_TREE = f"{SERVICE}-task-example"
+OLD_TREE = f"{SERVICE}-EXAMPLE-1_example"
 QUESTIONS_KEY = "work.step.questions"
 ASK_STEP = 'svod ask <record> "<question>"'
 UNANSWERED_STEP = "1 questions without an answer"
@@ -304,7 +304,8 @@ class StandardTemplateTest(unittest.TestCase):
         with TemporaryDirectory() as temp:
             sb = StandardStore(temp)
             card = (sb.store / EXAMPLE / "card.md").read_text(encoding=ENCODING)
-            sb.write(f"{GREET}/card.md", card.replace("services: []", f"services: [{SERVICE}]"))
+            sb.write(f"{GREET}/card.md", card.replace("services: []", f"services: [{SERVICE}]")
+                     .replace(ARCHIVED, OPEN))
             self.assertIn(ASK_STEP, sb.cli("status", GREET).stdout)
             asked = sb.cli("ask", GREET, "Which greeting?", "--context", "Hello or Hi")
             self.assertEqual(asked.returncode, EXIT_OK, asked.stderr)
@@ -330,6 +331,7 @@ class StandardFreezeTest(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.sb = StandardStore(temp.name)
         self.sb.edit(f"{EXAMPLE}/card.md", "services: []", f"services: [{SERVICE}]")
+        self.sb.edit(f"{EXAMPLE}/card.md", ARCHIVED, OPEN)
         self.tree = self.sb.base / FROZEN_TREE
         self.sb.git(self.sb.service, "worktree", "add", "-q", "-b", BRANCH, str(self.tree))
         self.sb.write("work.yaml", f"{SERVICE}: ../{FROZEN_TREE}\n", base=self.sb.store / EXAMPLE)
@@ -348,21 +350,24 @@ class StandardFreezeTest(unittest.TestCase):
         self.assertEqual(out.returncode, EXIT_OK, out.stderr)
         return json.loads(out.stdout) if out.stdout.strip() else None
 
-    def test_key_gate_reads_the_id_slug(self):
-        """work_id finds the id-slug ending a directory name; the old names name no record."""
+    def test_key_gate_reads_the_directory_name(self):
+        """work_id names the records <service>-<pipeline>-<name> may mean; other names none."""
         runtime, ctx = self.context()
         self.assertEqual(runtime.config.workspace_gate, "work_tree")
         self.assertIsNone(runtime.config.workspaces)
         gate = ctx.pipelines["task"].subject.key_impl
         self.assertEqual(gate.name, "work_id")
-        self.assertEqual(gate.find(FROZEN_TREE), {SLUG})
-        self.assertEqual(gate.find("my-app-example tasks+"), set())
-        self.assertEqual(gate.find("my-app-work+tasks+fix-login"), {"work+tasks+fix-login"})
+        self.assertEqual(gate.find(FROZEN_TREE), {EXAMPLE})
+        self.assertEqual(gate.find("my-app-task-fix-login"), {"work/tasks/fix-login"})
+        self.assertEqual(gate.find("my-task-app-task-login"),
+                         {"work/tasks/app-task-login", "work/tasks/login"})
+        self.assertEqual(gate.find("app-feature-login"), {"work/features/login"})
         self.assertEqual(gate.find(OLD_TREE), set())
-        self.assertEqual(gate.match(f"../{FROZEN_TREE}/"), SLUG)
+        self.assertEqual(gate.match(f"../{FROZEN_TREE}/"), EXAMPLE)
         self.assertIsNone(gate.match("approved, go ahead"))
-        found = ctx.pipelines["task"].subject.impl.match_key(SLUG, ctx)
-        self.assertEqual([s.id for s in found], [EXAMPLE])
+        for key in (EXAMPLE, SLUG):
+            found = ctx.pipelines["task"].subject.impl.match_key(key, ctx)
+            self.assertEqual([s.id for s in found], [EXAMPLE], key)
         self.assertEqual(found[0].keys, frozenset({"EXAMPLE-1"}))
 
     def test_workspace_gate_lists_work_yaml(self):
@@ -385,7 +390,7 @@ class StandardFreezeTest(unittest.TestCase):
         self.assertIsNotNone(refused)
         output = refused["hookSpecificOutput"]
         self.assertEqual(output["permissionDecision"], DENY)
-        self.assertIn(SLUG, output["permissionDecisionReason"])
+        self.assertIn(EXAMPLE, output["permissionDecisionReason"])
         self.assertIsNone(self.pre_tool(self.sb.service / CHECK_FILE))
         self.assertEqual(self.sb.cli("init", "--login", "tester").returncode, EXIT_OK)
         approved = self.sb.approve(EXAMPLE, "approve")
