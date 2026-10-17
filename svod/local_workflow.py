@@ -69,7 +69,8 @@ def delivery(ctx, subject):
     policy(ctx, subject, recorded=True)
     result = evidence.validate(ctx, subject, recorded=True)
     required_prerequisites(ctx, subject,
-                           exclude=lambda ref: is_local_phase(ref, {'contract', 'result', 'complete'}))
+                           exclude=lambda ref: is_local_phase(
+                               ref, {'contract', 'result', 'complete'}))
     if value != {'result_sha': evidence.fingerprint(result)}:
         raise ValueError('completion is missing or stale')
     return value
@@ -91,7 +92,8 @@ class CurrentProcessGate(Gate):
     def evaluate(self, ctx, subject):
         try:
             phase = self.params['phase']
-            if phase in {'contract', 'result'} and evidence.confined(subject.path, DELIVERY).is_file():
+            delivered = evidence.confined(subject.path, DELIVERY).is_file()
+            if phase in {'contract', 'result'} and delivered:
                 try:
                     delivery(ctx, subject)
                     return verdict(True)
@@ -99,7 +101,8 @@ class CurrentProcessGate(Gate):
                     pass
             {'contract': policy, 'result': checks, 'complete': delivery}[phase](ctx, subject)
             if phase == 'complete':
-                return verdict(True, git_ref=evidence.validate(ctx, subject, recorded=True)['git_ref'])
+                recorded = evidence.validate(ctx, subject, recorded=True)
+                return verdict(True, git_ref=recorded['git_ref'])
             return verdict(True)
         except ERRORS as exc:
             return verdict(False, reason='process_contract', detail=str(exc))

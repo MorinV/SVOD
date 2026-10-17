@@ -8,8 +8,7 @@ store (finding and loading the store), prompt (the prompt hook), guard (the pre-
 events (the answer to each event).
 """
 from ..keys import HOOK_APPROVAL_MARKED_UNNAMED
-from .events import (HANDLERS, MISSING_YAML, YAML_MODULE, answer, pre_tool, run,
-                     session_start)
+from .events import HANDLERS, answer, pre_tool, run, session_start
 from .guard import (DOT_GIT, Guard, Guarded, approval_lines, broken_reason, checkout_dir,
                     edit_touches, existing_dir, guarded_files, ignored_paths, inside,
                     main_checkout, main_reason, main_text, patch_targets, read_text, tool_paths,
@@ -29,7 +28,7 @@ from .store import (ENGINE_BROKEN_FALLBACK, agent_context_setting, broken_text, 
 
 __all__ = [
     "HOOK_APPROVAL_MARKED_UNNAMED",
-    "HANDLERS", "MISSING_YAML", "YAML_MODULE", "answer", "pre_tool", "run", "session_start",
+    "HANDLERS", "answer", "pre_tool", "run", "session_start",
     "DOT_GIT", "Guard", "Guarded", "approval_lines", "broken_reason", "checkout_dir",
     "edit_touches", "existing_dir", "guarded_files", "ignored_paths", "inside", "main_checkout",
     "main_reason", "main_text", "patch_targets", "read_text", "tool_paths", "tool_reason",

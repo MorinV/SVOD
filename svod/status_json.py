@@ -176,7 +176,7 @@ def to_json(collection):
 
 def error_json(code, query=None, exit_code=2):
     """Safe command failure without exceptions/configuration/report text."""
-    if code not in {"invalid_root", "invalid_load", "invalid_arguments", "missing_runtime"}:
+    if code not in {"invalid_root", "invalid_load", "invalid_arguments"}:
         code = "invalid_load"
     return {"version": 1, "query": query[:512] if isinstance(query, str) else None,
             "resolution": {"kind": "not_evaluated", "ambiguous": False, "candidates": []},

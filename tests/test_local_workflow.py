@@ -55,7 +55,8 @@ class LocalWorkflowTest(unittest.TestCase):
         self.declaration = {
             'pipeline': 'portable',
             'subject': {'provider': 'container', 'params': {'roots': ['tasks']}},
-            'done': {'gate': 'current_process', 'params': {'phase': 'complete'}, 'text': 'local.done'},
+            'done': {'gate': 'current_process', 'params': {'phase': 'complete'},
+                     'text': 'local.done'},
             'steps': [
                 {'id': 'contract', 'required': True, 'text': 'local.contract',
                  'gates': [{'gate': 'current_process', 'params': {'phase': 'contract'}}]},
@@ -71,8 +72,10 @@ class LocalWorkflowTest(unittest.TestCase):
             'gate.current_process': 'Local process: {phase}',
             'local.contract': 'Prepare the compact contract.',
             'local.approve': 'Obtain contract approval.',
-            'local.result': 'Run the selected command.', 'local.done': 'Local completion recorded.'}))
-        self.write('tasks/demo-task/contract.md', '# Contract\nObserve the selected command on exact clean source.\n')
+            'local.result': 'Run the selected command.',
+            'local.done': 'Local completion recorded.'}))
+        self.write('tasks/demo-task/contract.md',
+                   '# Contract\nObserve the selected command on exact clean source.\n')
         self.plan = {'version': 1, 'kind': 'process', 'contract': 'contract.md',
                      'workspace': str(self.source),
                      'command': [sys.executable, '-c', 'print("observed result")']}
@@ -217,7 +220,8 @@ class LocalWorkflowTest(unittest.TestCase):
         self.assertTrue(local.deliver(self.root, 'demo-task')['passed'])
 
     def test_failure_is_retained_but_cannot_complete(self):
-        self.plan['command'] = [sys.executable, '-c', 'print("actual failure"); raise SystemExit(7)']
+        self.plan['command'] = [sys.executable, '-c',
+                                'print("actual failure"); raise SystemExit(7)']
         self.save_plan()
         self.consent()
         result = local.checks(self.root, 'demo-task')
@@ -261,7 +265,8 @@ class LocalWorkflowTest(unittest.TestCase):
         """Importing a module of the source writes no __pycache__: the checkout stays clean."""
         (self.source / 'helper.py').write_text('VALUE = 1\n', encoding='utf-8')
         self.git(self.source, 'add', '-A')
-        self.git(self.source, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'helper')
+        self.git(self.source, '-c', 'user.name=t', '-c', 'user.email=t@t',
+                 'commit', '-qm', 'helper')
         self.plan['command'] = [sys.executable, '-c', 'import helper; print(helper.VALUE)']
         self.save_plan()
         self.consent()
@@ -340,7 +345,8 @@ class LocalWorkflowTest(unittest.TestCase):
     def test_declared_entry_and_result_side_conditions_are_not_skipped(self):
         self.declaration['entry'] = [{'gate': 'artifact', 'params': {'path': 'permit'},
                                       'severity': 'block', 'text': 'local.contract'}]
-        self.declaration['steps'][2]['gates'].append({'gate': 'artifact', 'params': {'path': 'review'}})
+        self.declaration['steps'][2]['gates'].append(
+            {'gate': 'artifact', 'params': {'path': 'review'}})
         self.save_declaration()
         (self.task / 'permit').touch()
         self.consent()
@@ -416,9 +422,9 @@ class LocalWorkflowTest(unittest.TestCase):
         child = subprocess.Popen([sys.executable, '-c', f'import time; time.sleep({HOLD_SECONDS})'],
                                  start_new_session=True)
         self.addCleanup(lambda: child.kill() if child.poll() is None else None)
-        with patch.object(local.os, 'killpg', side_effect=PermissionError('group denied')):
-            with self.assertRaises(PermissionError):
-                local._stop_owned_group(child)
+        with patch.object(local.os, 'killpg', side_effect=PermissionError('group denied')), \
+                self.assertRaises(PermissionError):
+            local._stop_owned_group(child)
         self.assertIsNotNone(child.poll())
 
     def test_timeout_retains_actual_failure_log(self):
@@ -442,7 +448,8 @@ class LocalWorkflowTest(unittest.TestCase):
             'os.setpgid(0, 0), exit(0))); '
             f'print("ready", flush=True); time.sleep({HOLD_SECONDS})')
         parent_code = ('import subprocess, sys; '
-            f'p = subprocess.Popen([sys.executable, "-c", {child_code!r}], stdout=subprocess.PIPE); '
+            f'p = subprocess.Popen([sys.executable, "-c", {child_code!r}], '
+            'stdout=subprocess.PIPE); '
             'assert p.stdout.readline() == b"ready\\n"; print("leader exited")')
         self.plan['command'] = [sys.executable, '-c', parent_code]
         self.save_plan()

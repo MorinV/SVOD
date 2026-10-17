@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import io
 import json
 import sys
@@ -25,7 +24,6 @@ EXIT_OK = 0
 EXIT_FINDINGS = 1
 EXIT_USAGE = 2
 HOOK_FLAG = "--hook"
-MISSING_YAML = "PyYAML is required: python3 -m pip install pyyaml"
 CMD_VALIDATE = "validate"
 CMD_STATUS = "status"
 CMD_ACTIVE = "active"
@@ -39,7 +37,6 @@ CMD_MIGRATE = "migrate"
 CMD_NEW = "new"
 CMD_LOCAL = "local"
 DELIVERY_COMMANDS = (CMD_INSTALL, CMD_UPDATE)
-YAML_MODULE = "yaml"
 ERROR_INDENT = "  "
 
 
@@ -331,13 +328,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     launched = launch(argv)
     if launched.code is not None:
         return launched.code
-    if importlib.util.find_spec(YAML_MODULE) is None and CMD_HOOK not in argv:
-        if json_status:
-            return emit_json_error("missing_runtime")
-        if HOOK_FLAG in argv:
-            return EXIT_OK
-        print(MISSING_YAML, file=sys.stderr)
-        return EXIT_USAGE
     parser = build_parser()
     parser.json_errors = json_status
     for action in parser._actions:

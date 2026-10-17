@@ -11,10 +11,6 @@ from .protocol import (BASH_TOOL, EVENT_PRE_TOOL, EVENT_PROMPT, EVENT_SESSION_ST
 from .shell import bash_reads_only
 from .store import agent_context_setting, broken_text, context_of, load, store_root
 
-# Re-exported by svod.hooks; answer() has no branch for a missing PyYAML, since importing this
-# package already needs it.
-YAML_MODULE = "yaml"
-MISSING_YAML = "PyYAML is not installed (python3 -m pip install pyyaml)"
 SETTING_SUMMARY = "session_summary"
 
 

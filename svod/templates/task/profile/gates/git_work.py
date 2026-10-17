@@ -124,7 +124,8 @@ class TaskKeyGate(KeyGate):
             self.text_re = re.compile(pattern)
             self.query_re = re.compile(pattern, re.IGNORECASE)
         except re.error as exc:
-            raise ParamError(f"{self.name}: {PARAM_PATTERN} is not a regular expression: {exc}")
+            raise ParamError(
+                f"{self.name}: {PARAM_PATTERN} is not a regular expression: {exc}") from None
 
     def match(self, query):
         """First key named by the query, or None."""
@@ -219,9 +220,9 @@ class WorktreeGate(Gate):
                  FACT_AHEAD_MAX: max(known) if known else None, FACT_COUNT: len(ahead),
                  FACT_WORKTREES: self.items(ctx, ahead, total), FACT_PATHS: paths}
         status = self.status(ahead, known, reasons)
-        if status is not Status.PASS and self.params.get(PARAM_OR_MERGED):
-            if MergedGate().evaluate(ctx, subject).passed:
-                return Result(Status.PASS, facts, self.display(ctx, Status.PASS, facts, True))
+        if (status is not Status.PASS and self.params.get(PARAM_OR_MERGED)
+                and MergedGate().evaluate(ctx, subject).passed):
+            return Result(Status.PASS, facts, self.display(ctx, Status.PASS, facts, True))
         return Result(status, facts, self.display(ctx, status, facts),
                       REASON_SEPARATOR.join(dict.fromkeys(reasons)) or None)
 
@@ -295,7 +296,8 @@ class MergedGate(Gate):
                      FACT_OPEN: facts[FACT_OPEN] or none}
             display = mark(ctx, status, MERGED_DISPLAY, **shown)
         return Result(status, facts, display,
-                      REASON_SEPARATOR.join(dict.fromkeys(reasons)) if status is Status.UNKNOWN else None)
+                      REASON_SEPARATOR.join(dict.fromkeys(reasons))
+                      if status is Status.UNKNOWN else None)
 
     @staticmethod
     def repositories(ctx):
