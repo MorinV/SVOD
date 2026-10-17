@@ -104,6 +104,15 @@ def load_locale(name, profile_dir, required=()):
     return locale
 
 
+def error_locale(root):
+    """Core locale for reporting errors: the configured one when readable."""
+    from .config import load_config
+    try:
+        return load_core_locale(load_config(root, local=False).locale)
+    except LoadError:
+        return bootstrap_locale()
+
+
 def bootstrap_locale():
     """Core locale chosen by the environment, used before any config is found."""
     return load_core_locale(os.environ.get(LOCALE_ENV) or FALLBACK_LOCALE)

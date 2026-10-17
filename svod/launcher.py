@@ -23,6 +23,7 @@ CMD_HOOK = "hook"
 OWN_COMMANDS = ("install", "update")
 ENCODING = "utf-8"
 PACKAGE_HOME = Path(__file__).resolve().parent
+COPY_REFUSED = "svod: not running the copy of the engine in the store: {reason}; running the installed engine"
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,7 @@ def launch(argv, stdin=None):
     """Run the command in the copy of the store when it has one and this is not it.
 
     install and update are run by the engine at hand, so a broken copy can still be replaced.
+    A copy that differs from its MANIFEST is not run either: the engine at hand runs and says so.
     """
     root_arg, command = split_argv(argv)
     text = (stdin or sys.stdin).read() if command == CMD_HOOK else None
@@ -108,6 +110,11 @@ def launch(argv, stdin=None):
     if root is None or command in OWN_COMMANDS or not package_dir(root).is_dir():
         return Launch(stdin=text)
     if handed_over(root):
+        return Launch(stdin=text)
+    from .vendor import copy_errors
+    errors = copy_errors(root)
+    if errors:
+        print(COPY_REFUSED.format(reason=errors[0]), file=sys.stderr)
         return Launch(stdin=text)
     try:
         return Launch(code=run_copy(root, argv, text), stdin=text)

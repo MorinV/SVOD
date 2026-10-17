@@ -9,6 +9,7 @@ from pathlib import Path
 from svod import __version__
 from svod.hooks import EVENTS, run as run_hook
 from svod.launcher import launch
+from svod.locale import error_locale
 
 PROG = "svod"
 EXIT_OK = 0
@@ -94,17 +95,6 @@ def build_parser():
                                   help="apply the store migrations of the versions after a version")
     migrate.add_argument("--since", required=True, help="version the store was used with")
     return parser
-
-
-def error_locale(root):
-    """Core locale for reporting errors: the configured one when readable."""
-    from svod.config import load_config
-    from svod.errors import LoadError
-    from svod.locale import bootstrap_locale, load_core_locale
-    try:
-        return load_core_locale(load_config(root, local=False).locale)
-    except LoadError:
-        return bootstrap_locale()
 
 
 def print_errors(header, errors):

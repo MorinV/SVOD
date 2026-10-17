@@ -5,6 +5,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP_SUFFIX=".bak-svod"
 CONFIG_FILE="svod.yaml"
 VENDORED_SKILLS=".svod/skills"
+PACKAGED_SKILLS="svod/templates/local/skills"
 EXIT_USAGE=2
 
 # Prints the base command of the hooks: svod from PATH, else the module of this repository;
@@ -34,7 +35,7 @@ skills_source() {
     if [ -n "$store" ] && [ -d "$store/$VENDORED_SKILLS" ]; then
         (cd "$store/$VENDORED_SKILLS" && pwd)
     else
-        printf '%s' "$REPO/skills"
+        printf '%s' "$REPO/$PACKAGED_SKILLS"
     fi
 }
 

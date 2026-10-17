@@ -68,10 +68,9 @@ PYPROJECT_VERSION_RE = re.compile(r'^version = "([^"]+)"$', re.MULTILINE)
 
 
 def source_files(target):
-    """Copy the engine, skills and changelog of this repository into target."""
+    """Copy the engine (its packaged skills included) and the changelog of this repository."""
     skip = shutil.ignore_patterns("__pycache__", "*.pyc")
     shutil.copytree(REPO_DIR / "svod", target / "svod", ignore=skip)
-    shutil.copytree(REPO_DIR / "skills", target / "skills", ignore=skip)
     shutil.copy(REPO_DIR / "CHANGELOG.md", target / "CHANGELOG.md")
 
 
@@ -460,6 +459,15 @@ class LauncherTest(SourceTestCase):
                 self.assertEqual(out.returncode, EXIT_OK, out.stderr)
                 self.assertEqual(out.stdout.strip(), f"svod {version}")
 
+    def test_modified_copy_is_not_run(self):
+        """A copy that differs from its MANIFEST does not run: the installed engine does, and says so."""
+        self.install(NEW_TAG)
+        append_line(vendor_dir(self.sb.store) / "lib" / "svod" / "cli.py")
+        out = cli(self.sb, "--version")
+        self.assertEqual(out.returncode, EXIT_OK, out.stderr)
+        self.assertEqual(out.stdout.strip(), f"svod {svod.__version__}")
+        self.assertIn("vendored copy modified", out.stderr)
+
     def test_hook_hands_over_with_stdin(self):
         """A hook finds the store in the event and the copy reads the same event."""
         self.install(NEW_TAG)
@@ -568,7 +576,7 @@ class SetupSkillsTest(SourceTestCase):
         """With a copy the skill links point into .svod/skills, without one into the repository."""
         cases = (
             ("copy", True, vendor_dir(self.sb.store) / "skills" / SKILL),
-            ("repository", False, REPO_DIR / "skills" / SKILL),
+            ("repository", False, REPO_DIR / "svod" / "templates" / "local" / "skills" / SKILL),
         )
         for name, installed, target in cases:
             with self.subTest(case=name):

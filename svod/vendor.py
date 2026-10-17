@@ -11,6 +11,7 @@ import yaml
 from .paths import LIB_DIR, PACKAGE_DIR, VENDOR_DIR, package_dir, vendor_dir
 
 SKILLS_DIR = "skills"
+SKILLS_SOURCE = Path(PACKAGE_DIR) / "templates" / "local" / SKILLS_DIR
 VERSION_FILE = "VERSION"
 MANIFEST_FILE = "MANIFEST"
 IGNORE_FILE = ".gitignore"
@@ -153,8 +154,9 @@ def build(root, tree, stamp):
     try:
         skip = shutil.ignore_patterns(IGNORED_DIR, *[f"*{s}" for s in IGNORED_SUFFIXES])
         shutil.copytree(Path(tree) / PACKAGE_DIR, staging / LIB_DIR / PACKAGE_DIR, ignore=skip)
-        skills = Path(tree) / SKILLS_DIR
-        if skills.is_dir():
+        skills = next((d for d in (Path(tree) / SKILLS_SOURCE, Path(tree) / SKILLS_DIR)
+                       if d.is_dir()), None)
+        if skills is not None:
             shutil.copytree(skills, staging / SKILLS_DIR, ignore=skip)
         write_stamp(staging, stamp)
         (staging / IGNORE_FILE).write_text(IGNORE_TEXT, encoding=ENCODING)

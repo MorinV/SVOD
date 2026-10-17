@@ -19,6 +19,8 @@ A **pipeline** (`profile/pipelines/<kind>.yaml`) is an ordered list of steps for
 
 Approval is a human act. The person writes "approve PROJ-1" in the chat; the prompt hook leaves a short-lived mark; the agent records it with `svod approve PROJ-1`, which stores the date, the approver and a hash of the plan. Editing the plan afterwards invalidates the approval.
 
+The hooks run as the same user as the agent. They stop a careless agent: an edit or a shell command into frozen code, a hand-written approval field or mark, a write while the store does not load. They do not stop a determined one, which can write any file the user can, and a profile gate is Python the hooks run: open a store you trust. Svod is process guidance with guard rails, not a security boundary.
+
 The engine knows nothing about your team. Everything specific — pipelines, extra gates, texts, which skill does which step — lives in a **profile** next to `svod.yaml`.
 
 ## Quickstart: compact local work
@@ -48,9 +50,9 @@ Requires Python 3.10+ and git.
 ```bash
 pip install git+https://github.com/MorinV/SVOD       # or: pip install -e . from a clone
 
-git init demo-store && cd demo-store
-cp -R <svod>/examples/task/. .                        # svod.yaml and an example profile
-git add -A && git commit -m "svod example"
+svod new demo-store --template task                   # svod.yaml and the example profile
+cd demo-store && git init && git add -A && git commit -m "svod example"
+svod init --login your-login
 svod validate
 ```
 
@@ -100,7 +102,7 @@ The hooks are `svod hook <event>`:
 
 ## Your own process
 
-Copy `examples/task`, then change the pipeline: add a step, a gate, a text. The skill [`svod-pipeline`](skills/svod-pipeline/SKILL.md) walks an agent through it, and `svod validate` checks every declaration. Gates that do not exist yet are small Python classes in `profile/gates/`.
+Start from `svod new <dir> --template task` or `--template local` ([the templates](svod/templates)), then change the pipeline: add a step, a gate, a text. The skill [`svod-pipeline`](svod/templates/local/skills/svod-pipeline/SKILL.md) walks an agent through it, and `svod validate` checks every declaration. Gates that do not exist yet are small Python classes in `profile/gates/`.
 
 | Command | Does |
 |---|---|

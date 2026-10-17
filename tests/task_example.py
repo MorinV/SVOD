@@ -1,4 +1,4 @@
-"""A store made from examples/task with a service repository and a task work directory."""
+"""A store made from the task template with a service repository and a task work directory."""
 import datetime as dt
 import shutil
 
@@ -6,7 +6,7 @@ from support import CONFIG_FILE, ENCODING, REMOTE, REPO_DIR, TempStore
 
 from svod.approval import write_mark
 
-EXAMPLE = REPO_DIR / "examples" / "task"
+EXAMPLE = REPO_DIR / "svod" / "templates" / "task"
 KEY = "PROJ-1"
 OTHER_KEY = "PROJ-2"
 CHANGE_NAME = "add-greeting"

@@ -153,7 +153,7 @@ def broken_text(root, reason):
     """One line about the engine that did not load, in the locale of the store when readable."""
     reason = " ".join(str(reason).split())
     try:
-        from .cli import error_locale
+        from .locale import error_locale
         from .keys import HOOK_ENGINE_BROKEN
         return error_locale(root).text(HOOK_ENGINE_BROKEN, reason=reason)
     except Exception:
@@ -718,7 +718,7 @@ def ignored_paths(main, paths):
 
 def main_text(store, main):
     """Refusal of an edit in the read-only main checkout."""
-    from .cli import error_locale
+    from .locale import error_locale
     from .keys import HOOK_DENY_MAIN
     return error_locale(store).text(HOOK_DENY_MAIN, main=main)
 
@@ -760,7 +760,7 @@ class Guard:
     def mark_text(self):
         """Refusal of a write of the approval mark, in the locale of the store when readable."""
         from .approval import MARK_FILE
-        from .cli import error_locale
+        from .locale import error_locale
         from .keys import HOOK_DENY_MARK
         return error_locale(self.root).text(HOOK_DENY_MARK, file=MARK_FILE)
 
@@ -874,7 +874,8 @@ def tool_reason(guard, event, tool, data):
         return guard.bash_reason(event, str(data.get(COMMAND_FIELD) or ""))
     if tool == PATCH_TOOL:
         for path, section in patch_targets(event, str(data.get(COMMAND_FIELD) or "")):
-            reason = guard.edit_reason(path, lambda fields: any(f in section for f in fields))
+            reason = guard.edit_reason(path, lambda fields, section=section: any(f in section
+                                                                                for f in fields))
             if reason:
                 return reason
         return None
@@ -901,7 +902,7 @@ def broken_reason(guard, event, tool, data):
 
     Writes inside the store stay allowed, so the store can be repaired; they get the context line.
     """
-    from .cli import error_locale
+    from .locale import error_locale
     from .keys import HOOK_DENY_BROKEN
     paths = tool_paths(event, tool, data)
     if all(inside(guard.root, path) for path in paths):

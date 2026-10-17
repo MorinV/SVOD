@@ -542,7 +542,7 @@ A gate that raises does not break `status` or a hook: its outcome is UNKNOWN wit
 
 `Result(status, facts={}, display=None, reason=None)`: `status` is `Status.PASS`, `Status.FAIL` or `Status.UNKNOWN`; `facts` fill texts; `display` replaces the standard mark line; `reason` is shown for UNKNOWN. Helpers: `verdict(ok, **facts)` and `unknown(reason, **facts)`.
 
-**Workspace gate.** The gate named by `workspace_gate` in `svod.yaml` must be instantiable without params and implement `worktrees(ctx, keys)`: `(pairs, errors)` where every pair is `(directory, repository name)` of a work directory of the keys and `errors` lists git failures. The `pre-tool` hook only uses the directory. `examples/task/profile/gates/git_work.py` has one.
+**Workspace gate.** The gate named by `workspace_gate` in `svod.yaml` must be instantiable without params and implement `worktrees(ctx, keys)`: `(pairs, errors)` where every pair is `(directory, repository name)` of a work directory of the keys and `errors` lists git failures. The `pre-tool` hook only uses the directory. `svod/templates/task/profile/gates/git_work.py` has one.
 
 `KeyGate(Gate)` additionally implements `match(query)` (the key named by a query, or `None`) and `find(text)` (set of keys in a text); it is used as `subject.key_gate`. Its default `evaluate` passes when the subject has keys, with fact `keys`.
 
@@ -635,6 +635,8 @@ Optional `profile_config.agent_context` booleans `session_summary`, `prompt_posi
 3. **Frozen code.** With `workspace_gate`: the nearest directory above the path holding `.git` is a work directory when a key gate finds a key in its name and `worktrees(ctx, {key})` of the workspace gate returns it. Each existing, not archived subject of that key (in the store and its other checkouts) is checked: the first gate of a `blocks_code` step that does not pass refuses the edit, with `hook.deny_plan` carrying its step text. A key without a subject is not refused.
 4. **Shell commands.** `Bash` is checked against the same rules through the paths it names: every token of the command that exists or looks like a file (a suffix or a directory part) read as a path from its `cwd`; the `cwd` itself counts for the code freeze. A command made only of programs known not to write files (`cat`, `ls`, `grep`, `git status`/`log`/`diff`, `svod`, …) without a redirection is let through; an interpreter, an in-place edit, `git checkout`/`reset`/`stash`/… or an unknown program counts as a write. The approval mark file is refused to every write, by name (`hook.deny_mark`).
 
+The hooks run as the same user as the agent and see only the tool calls the agent makes through them: they stop a careless agent, not one that sets out to write a file the user can write. Profile gates are Python the hooks run on every event: open only stores you trust.
+
 Edits by `Bash` are not checked by rules 2 and 3.
 
 ## Vendored copy
@@ -644,12 +646,12 @@ A store may keep its own copy of the engine, so the whole team runs one version 
 | path under the store root | content |
 |---|---|
 | `.svod/lib/svod/` | the engine package, locale files included |
-| `.svod/skills/<name>/` | the skills of the release (`skills/` of the Svod repository) |
+| `.svod/skills/<name>/` | the skills of the release (`svod/templates/local/skills/` of the Svod repository) |
 | `.svod/VERSION` | YAML: `version` (the engine version), `source` (git URL or local path it was fetched from), `ref` (the tag or branch taken) |
 | `.svod/MANIFEST` | one line per file under `lib/` and `skills/`: its sha256, two spaces, its POSIX path relative to `.svod/`; sorted by path |
 | `.svod/.gitignore` | keeps byte-code (`__pycache__/`) out of the repository |
 
-Byte-code files (`__pycache__/`, `*.pyc`) are neither listed nor checked. The integration scripts are not copied.
+Byte-code files (`__pycache__/`, `*.pyc`) are neither listed nor checked. The integration scripts are not copied. The installed `svod` does not run a copy that differs from its MANIFEST: it runs itself and says so on stderr. The MANIFEST is written by the engine that made the copy, so it catches hand edits, not a copy made to deceive: pin and review the release you install.
 
 **Launcher.** Every `svod` command first looks for the store it works on: `--root`, else upwards from the working directory; for `hook`, the [store of the session](#hooks), from the event read once on stdin. When that store has `.svod/lib/svod` and the running engine is not that package, the command is run again as `python -m svod.cli <the same arguments>` with `.svod/lib` first on `PYTHONPATH` and the event passed on stdin; the exit code is that of the copy. `SVOD_LAUNCHED` (set to the `.svod/lib` handed over to) keeps it from handing over twice. `install` and `update` are never handed over: the engine at hand runs them, so a broken copy can still be replaced. Without a copy the installed engine runs, as before. Hooks and setup scripts keep calling plain `svod`.
 
