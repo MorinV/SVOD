@@ -1,0 +1,82 @@
+pipeline: project
+subject:
+  provider: work
+  params: { roots: [work/projects], head_type: card }
+active:
+  item: work.active.item
+  headings:
+    mine_idle: project.active.mine_idle
+    theirs: project.active.theirs
+    theirs_collapsed: project.active.theirs_collapsed
+    worktree: project.active.worktree
+done: { gate: field, params: { name: status, equals: done }, text: project.done, pending: project.step.close }
+steps:
+  - id: vision
+    title: project.title.vision
+    role: project
+    text: project.step.vision
+    gates:
+      - { gate: artifact, params: { path: card.md }, label: work.mark.card, text: project.step.card }
+      - { gate: artifact, params: { path: vision.md }, label: project.mark.vision }
+  - id: questions
+    title: work.title.questions
+    role: questions
+    text: work.step.questions
+    gates:
+      - { gate: artifact, params: { path: questions.md }, label: work.mark.questions }
+      - { gate: questions_answered, params: { file: questions.md }, label: work.mark.answered }
+  - id: researches
+    title: project.title.researches
+    role: project
+    text: project.step.researches
+    gates:
+      - { gate: children_done, params: { pipelines: [research] }, label: work.mark.children_done }
+  - id: architecture
+    title: project.title.architecture
+    role: project
+    required: true
+    text: project.step.architecture
+    gates:
+      - { gate: doc_type, params: { type: adr }, label: project.mark.adr }
+  - id: approve
+    title: work.title.approve
+    role: project
+    required: true
+    text: project.step.approve
+    gates:
+      - gate: approval
+        purpose: contract
+        label: project.mark.approved
+        params:
+          marker: design_approved
+          file: approval.yaml
+          bind: [vision.md, questions.md, "adr/*.md"]
+  - id: breakdown
+    title: work.title.breakdown
+    role: project
+    required: true
+    text: project.step.breakdown
+    gates:
+      - { gate: artifact, params: { path: breakdown.md }, label: work.mark.breakdown }
+      - { gate: has_children, params: { pipelines: [feature, task] }, label: work.mark.children }
+  - id: children
+    title: work.title.children
+    role: project
+    text: project.step.children
+    gates:
+      - { gate: children_done, params: { pipelines: [feature, task] }, label: work.mark.children_done }
+  - id: deliver
+    title: work.title.deliver
+    role: project
+    required: true
+    text: project.step.deliver
+    gates:
+      - gate: approval
+        purpose: result
+        label: work.mark.result
+        params:
+          marker: result_approved
+          file: approval.yaml
+          bind: [breakdown.md]
+violations:
+  breakdown.approve: project.violation.breakdown_approve

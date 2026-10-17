@@ -1,0 +1,6 @@
+.svod-local.yaml
+checks.log
+# Made by integrations/setup-claude.sh --project store: absolute paths of one machine.
+.claude/
+# Written by profile/actions/start-task.sh: the worktrees of one machine, absolute under svod do.
+work.yaml

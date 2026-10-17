@@ -56,6 +56,8 @@ svod active                               # projects, features, tasks, research
 
 The store is a dispatcher: records live in `work/projects`, `work/features`, `work/tasks` (a hotfix is a task with `kind: hotfix`, without contract and approval) and `work/research`; the code stays in the services. A task goes card → questions → contract → approval → worktrees (`bash profile/actions/start-task.sh work/tasks/<name>`) → checks (`profile/actions/checks.sh`) → delivery → `status: done`. Each step names its skill: `svod-task`, `svod-feature`, `svod-project`, `svod-research`, `svod-questions`. Details: the `README.md` of the new store.
 
+**Svod develops itself with Svod.** [`store/`](store) is a standard-template store whose one service is this repository: the work on the engine is recorded there as features, tasks and research, with their questions, contracts, approvals and evidence log. How to work through it, what is committed and what the first run found: [docs/dogfooding.md](docs/dogfooding.md).
+
 ## OpenSpec/Git example
 
 Requires Python 3.10+ and git.

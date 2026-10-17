@@ -1,0 +1,20 @@
+locale: en
+profile: profile
+default_branch: origin/main
+workspaces: ../..   # where the worktrees of the repository go, next to it
+active_order: [project, feature, task, research]
+bindings: profile/bindings.yaml
+local_config: .svod-local.yaml
+approval:
+  phrases: [Approved, Одобряю]
+  window_minutes: 10
+# Service repositories, name -> checkout relative to the store; profile/actions/*.sh read them.
+# This store lives inside the repository it is about: the one service is the repository itself.
+services:
+  svod: ..
+autonomy: {task: supervised, hotfix: autonomous, feature: supervised, project: guided, research: supervised}
+# Commands with an effect outside this machine (push, merge, deploy, publish) are held by the
+# pre-tool hook until a person allows them in the chat; extend or exempt them here:
+# external_effects: {deny: [], allow: [], phrases: [go ahead, давай, выполняй]}
+evidence: {commit: true}
+knowledge: {dir: knowledge, limit_lines: 20}

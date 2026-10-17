@@ -1,0 +1,12 @@
+skill_path: "skills/{skill}/SKILL.md"
+roles:
+  task:
+    - { skill: svod-task }
+  feature:
+    - { skill: svod-feature }
+  project:
+    - { skill: svod-project }
+  research:
+    - { skill: svod-research }
+  questions:
+    - { skill: svod-questions }
