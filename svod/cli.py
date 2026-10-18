@@ -201,15 +201,18 @@ def add_record_parser(commands: argparse._SubParsersAction) -> None:
 
 
 def add_retro_parser(commands: argparse._SubParsersAction) -> None:
-    """The retro command: list the proposals, or decide one of them."""
+    """Review proposals, or preview/apply their deterministic subset."""
     retro = commands.add_parser(CMD_RETRO,
                                 help="propose profile changes from the evidence log")
     retro.add_argument("query", nargs="?", help="tracker key or subject name, as for status")
+    retro.add_argument("apply_query", nargs="?", help="query for retro apply")
     retro.add_argument("--all", action="store_true", help="every open work of the store")
     decision = retro.add_mutually_exclusive_group()
-    decision.add_argument("--accept", type=int, metavar="n",
-                          help="accept proposal n of the list; prints the change to apply")
+    decision.add_argument("--accept", type=int, nargs="?", const=0, metavar="n",
+                          help="review proposal n; with retro apply, omit n to apply the preview")
     decision.add_argument("--reject", type=int, metavar="n", help="reject proposal n of the list")
+    retro.add_argument("--plan-token",
+                       help="exact token printed by a read-only retro apply preview")
     retro.add_argument("--note", help="note kept with the decision")
     retro.add_argument("--explain", action="store_true",
                        help="print what each rule saw and the threshold it compared with")
@@ -406,7 +409,17 @@ def retro(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace) -> 
 
     locale = ctx.locale
     number = args.accept if args.accept is not None else args.reject
-    if bool(args.query) == bool(args.all) or (args.note and number is None) \
+    applying = args.query == "apply" and args.apply_query is not None
+    if applying:
+        args.query = args.apply_query
+        number = None
+    elif args.apply_query is not None or args.accept == 0:
+        print(locale.text(keys.RETRO_USAGE), file=sys.stderr)
+        return EXIT_USAGE
+    if bool(args.query) == bool(args.all) \
+            or (args.note and number is None and not (applying and args.accept == 0)) \
+            or (applying and (args.explain or args.reject is not None
+                             or args.accept not in (None, 0))) \
             or (args.explain and number is not None):
         print(locale.text(keys.RETRO_USAGE), file=sys.stderr)
         return EXIT_USAGE
@@ -414,6 +427,17 @@ def retro(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace) -> 
         else resolved(ctx, pipelines, args.query)
     if works is None:
         return EXIT_USAGE
+    if args.plan_token and not (applying and args.accept == 0):
+        print("--plan-token requires retro apply --accept", file=sys.stderr)
+        return EXIT_USAGE
+    if applying:
+        from svod.retro import patches
+
+        try:
+            inputs = patches.input_token(ctx.root)
+        except OSError as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_USAGE
     try:
         rules = engine.load_rules(ctx.config.profile)
         taken = decisions.read_decisions(ctx.root)
@@ -423,10 +447,59 @@ def retro(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace) -> 
     outcome = engine.run_rules(ctx, works, rules)
     for failure in outcome.failures:
         print(locale.text(keys.RETRO_RULE_FAILED, reason=failure), file=sys.stderr)
+    if applying and outcome.failures:
+        return EXIT_USAGE
     if args.explain:
         print("\n".join(engine.explain(locale, outcome, decisions.decided(taken))))
         return EXIT_OK
     shown = engine.pending(outcome.proposals, decisions.decided(taken))
+    if applying:
+        from svod.retro import patches
+
+        try:
+            plan = patches.plan(ctx.root, shown)
+            token = patches.plan_token(plan, inputs, [(p.name, s.id) for p, s in works])
+            if args.accept == 0:
+                if not args.plan_token:
+                    raise ValueError("--accept requires --plan-token from a read-only preview")
+                if args.plan_token != token:
+                    raise ValueError("stale preview token; preview again")
+            if patches.input_token(ctx.root) != inputs:
+                raise ValueError("stale input during planning; preview again")
+            for proposal in plan.unsupported:
+                print(locale.text(keys.RETRO_NON_APPLICABLE, rule=proposal.rule))
+                print("\n".join(engine.render(locale, [proposal])))
+            for edit in plan.edits:
+                print(edit.diff(), end="")
+            if not plan.applicable:
+                print(locale.text(keys.RETRO_APPLY_NONE))
+            print(f"Plan token: {token}")
+            if args.accept == 0:
+                if patches.input_token(ctx.root) != inputs:
+                    raise ValueError("stale input before application; preview again")
+                patches.safe_path(ctx.root, ".gitignore")
+                decision_path = patches.decision_output(ctx.root)
+                original_decisions = decision_path.read_bytes() if decision_path.exists() else None
+
+                def finish() -> None:
+                    try:
+                        for proposal in plan.applicable:
+                            decisions.record_decision(ctx.root, proposal, decisions.ACCEPTED,
+                                                      args.note)
+                    except OSError:
+                        if original_decisions is None:
+                            decision_path.unlink(missing_ok=True)
+                        else:
+                            decision_path.write_bytes(original_decisions)
+                        raise
+
+                patches.apply(plan, finish)
+                if plan.applicable:
+                    print(locale.text(keys.RETRO_APPLIED, count=len(plan.applicable)))
+        except (ValueError, OSError) as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_USAGE
+        return EXIT_OK
     if number is None:
         print("\n".join(engine.render(locale, shown) or [locale.text(keys.RETRO_NONE)]))
         return EXIT_OK
@@ -763,6 +836,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == CMD_HOOK:
         stream = io.StringIO(launched.stdin) if launched.stdin is not None else None
         return run_hook(args.event, args.root, stream)
+    if args.command == CMD_RETRO and args.query == "apply" and args.apply_query is not None:
+        previous = sys.dont_write_bytecode
+        sys.dont_write_bytecode = True
+        try:
+            return run(args)
+        finally:
+            sys.dont_write_bytecode = previous
     return run(args)
 
 

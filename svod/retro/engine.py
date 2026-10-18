@@ -212,7 +212,7 @@ def run_rules(ctx: Context, works: list[Work], rules: dict[str, type[Rule]]) -> 
     graph = build_graph(ctx)
     reader = Reader(ctx.root)
     outcome = Outcome()
-    seen: set[tuple[str, str, str]] = set()
+    seen: dict[tuple[str, str, str], dict | None] = {}
     for pipeline, subject in works:
         log = Log(reader, pipeline, subject.id)
         for name, cls in rules.items():
@@ -229,8 +229,11 @@ def run_rules(ctx: Context, works: list[Work], rules: dict[str, type[Rule]]) -> 
             for proposal in proposals:
                 if proposal.subject is None:
                     proposal.subject = default
-                if identity(proposal) not in seen:
-                    seen.add(identity(proposal))
+                key = identity(proposal)
+                if key in seen and seen[key] != proposal.change:
+                    outcome.failures.append(f"{key}: conflicting proposal identity")
+                elif key not in seen:
+                    seen[key] = proposal.change
                     outcome.proposals.append(proposal)
     return outcome
 

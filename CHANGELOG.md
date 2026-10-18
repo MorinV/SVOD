@@ -6,6 +6,10 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Added
+
+- `svod retro apply <query>` previews concrete, read-only unified diffs; `--accept --plan-token <token>` applies only the exact printed preview's deterministic optional-step, missing `.gitignore` line and exact existing literal line-limit edits. Textual advice stays non-applicable. Plans preserve comments, reject unsafe paths, stale inputs and conflicts, and roll back ordinary batch failures before recording acceptance. Existing review-only acceptance and empirical thresholds are unchanged.
+
 ## [0.6.0] - 2026-10-17
 
 ### Added

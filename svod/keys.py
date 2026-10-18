@@ -246,6 +246,9 @@ RETRO_USAGE = "retro.usage"
 RETRO_NO_NUMBER = "retro.no_number"
 RETRO_RECORDED = "retro.recorded"
 RETRO_HINT = "retro.hint"
+RETRO_APPLY_NONE = "retro.apply_none"
+RETRO_APPLIED = "retro.applied"
+RETRO_NON_APPLICABLE = "retro.non_applicable"
 RETRO_RULE_FAILED = "retro.rule_failed"
 RETRO_EXPLAIN = "retro.explain"
 RETRO_EXPLAIN_SILENT = "retro.explain_silent"
@@ -567,6 +570,9 @@ CORE_KEYS = (
     RETRO_NO_NUMBER,
     RETRO_RECORDED,
     RETRO_HINT,
+    RETRO_APPLY_NONE,
+    RETRO_APPLIED,
+    RETRO_NON_APPLICABLE,
     RETRO_RULE_FAILED,
     RETRO_EXPLAIN,
     RETRO_EXPLAIN_SILENT,
