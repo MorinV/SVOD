@@ -4,6 +4,8 @@ import json
 import os
 import string
 import unittest
+
+from support import isolated_env
 from types import SimpleNamespace
 from unittest import mock
 
@@ -174,7 +176,7 @@ class TaskPointsTest(unittest.TestCase):
         """A proposed change in the task example, git isolated, no project directory."""
         self.sb = te.make_task_store()
         self.addCleanup(self.sb.cleanup)
-        patcher = mock.patch.dict(os.environ, self.sb.env)
+        patcher = mock.patch.dict(os.environ, isolated_env(**self.sb.env), clear=True)
         patcher.start()
         self.addCleanup(patcher.stop)
         os.environ.pop(hooks.PROJECT_ENV, None)

@@ -4,6 +4,8 @@ error:
 new:
   template_retired: "Шаблон {template} снят: создать стор командой svod new <directory> --template {replacement}"
 validate:
+  unused_locale: "Предупреждение [unused-profile-locale]: {locale_key}"
+  no_skill: "Предупреждение [no-skill]: {pipeline}.{step}: нет доступной привязки навыка"
   ok: "Конфигурация в порядке: пайплайнов {count}"
   failed: "Ошибок в конфигурации: {count}"
 status:

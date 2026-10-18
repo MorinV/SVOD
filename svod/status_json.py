@@ -75,7 +75,7 @@ def children_json(children):
              "done": is_done(pos)} for pos in (children or [])[:128]]
 
 
-def position_json(item):
+def position_json(item, *, children=False):
     """JSON of the captured position of one status item."""
     pos = item.position
     result = subject_json(item.pipeline, item.subject)
@@ -111,7 +111,7 @@ def position_json(item):
         "role": token(pos.current.step.role) if pos.current else None,
         "skills": [{"directory": safe_path(label), "skill": token(skill)}
                    for label, skill in (item.skills or [])[:128]], "refs": [],
-        "children": children_json(item.children),
+        "children": children_json(item.children) if children else None,
     })
     return result
 
@@ -173,25 +173,40 @@ def report_json(report):
             "exit_code": 0 if report.ok else 1 if report.refused else 2}
 
 
-def to_json(collection):
+def compact(value):
+    """Drop empty optional mapping values, preserving false, zero and discriminants.
+
+    Operate only on the allowlisted projection, never on captured native objects.
+    """
+    if isinstance(value, dict):
+        result = {key: compact(child) for key, child in value.items()}
+        return {key: child for key, child in result.items()
+                if child is not None and child != "" and child != [] and child != {}}
+    if isinstance(value, list):
+        return [compact(child) for child in value]
+    return value
+
+
+def to_json(collection, *, children=False):
     """Pure repeatable projection of the already captured answer."""
     found = collection.resolution
     kind = "ambiguous" if found.ambiguous else "matched" if found.matches else "not_found"
-    return {"version": 1, "query": collection.query[:512],
+    return compact({"version": 1, "query": collection.query[:512],
             "resolution": {"kind": kind,
                            "ambiguous": found.ambiguous,
                            "candidates": [subject_json(p, s) for p, s in found.matches[:128]]},
             "report": report_json(collection.report),
-            "positions": [position_json(item) for item in collection.items[:128]],
+            "positions": [position_json(item, children=children)
+                          for item in collection.items[:128]],
             "next_action": [next_action_json(item) for item in collection.items[:128]
-                            if not item.missing_suppressed]}
+                            if not item.missing_suppressed]})
 
 
 def error_json(code, query=None, exit_code=2):
     """Safe command failure without exceptions/configuration/report text."""
     if code not in {"invalid_root", "invalid_load", "invalid_arguments"}:
         code = "invalid_load"
-    return {"version": 1, "query": query[:512] if isinstance(query, str) else None,
+    return compact({"version": 1, "query": query[:512] if isinstance(query, str) else None,
             "resolution": {"kind": "not_evaluated", "ambiguous": False, "candidates": []},
             "report": {"ok": False, "refused": exit_code == 1, "exit_code": exit_code},
-            "positions": [], "next_action": [], "error": {"reason_code": code}}
+            "positions": [], "next_action": [], "error": {"reason_code": code}})

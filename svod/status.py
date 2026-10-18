@@ -62,7 +62,8 @@ def child_positions(ctx: Context, pipelines: list[Pipeline], pipeline: Pipeline,
     return [position(ctx, child_pipeline, child) for child_pipeline, child in found]
 
 
-def collect_status(ctx: Context, pipelines: list[Pipeline], query: str) -> Collection:
+def collect_status(ctx: Context, pipelines: list[Pipeline], query: str,
+                   *, children: bool = True) -> Collection:
     """Resolve and evaluate once, preserving the native missing/output precedence."""
     from .render import INDENT, Report, render_position, step_skills, subject_facts_of, text_key
 
@@ -96,7 +97,8 @@ def collect_status(ctx: Context, pipelines: list[Pipeline], query: str) -> Colle
         evidence_log.note_position(ctx, pos)
         item.skills = step_skills(own, pos)
         item.instruction_variant = text_key(locale, pos.text, pos.facts) if pos.text else None
-        item.children = child_positions(own, pipelines, pipeline, subject)
+        if children:
+            item.children = child_positions(own, pipelines, pipeline, subject)
         out += render_position(locale, pos, item.skills,
                                ctx.config.autonomy.get(pipeline.name), item.children)
     for item in items:

@@ -6,10 +6,12 @@ import shutil
 import subprocess
 import sys
 import unittest
+
+from support import isolated_env
 from unittest import mock
 
 import task_example as te
-from support import CLI_MODULE, CONFIG_FILE, ENCODING, EXIT_OK
+from support import CLI_MODULE, CONFIG_FILE, ENCODING, EXIT_OK, child_env
 
 from svod import git, hooks
 from svod.approval import (HUMAN_FILE, HUMAN_GO, HUMAN_SHA, MARK_AT, MARK_KEYS, clear_mark,
@@ -97,7 +99,7 @@ class HookTestCase(unittest.TestCase):
     def setUpClass(cls):
         """Build the store once; git isolated and the project directory unset."""
         cls.sb = te.make_task_store()
-        cls.patcher = mock.patch.dict(os.environ, cls.sb.env)
+        cls.patcher = mock.patch.dict(os.environ, isolated_env(**cls.sb.env), clear=True)
         cls.patcher.start()
         os.environ.pop(hooks.PROJECT_ENV, None)
         te.propose(cls.sb)
@@ -663,7 +665,7 @@ class BrokenStoreTest(unittest.TestCase):
     def setUp(self):
         """Copy of the example whose profile directory is missing."""
         self.sb = te.make_task_store()
-        patcher = mock.patch.dict(os.environ, self.sb.env)
+        patcher = mock.patch.dict(os.environ, isolated_env(**self.sb.env), clear=True)
         patcher.start()
         os.environ.pop(hooks.PROJECT_ENV, None)
         self.addCleanup(patcher.stop)
@@ -962,7 +964,7 @@ class HookCliTest(HookTestCase):
             ("garbage", hooks.EVENT_PROMPT, "not json", ""),
             ("unrelated tool", hooks.EVENT_PRE_TOOL, json.dumps({"tool_name": "Read"}), ""),
         )
-        env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+        env = child_env(PYTHONDONTWRITEBYTECODE="1")
         for name, event_name, stdin, expected in cases:
             with self.subTest(case=name):
                 out = subprocess.run(

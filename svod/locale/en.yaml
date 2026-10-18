@@ -4,6 +4,8 @@ error:
 new:
   template_retired: "Template {template} is retired: create the store with svod new <directory> --template {replacement}"
 validate:
+  unused_locale: "Warning [unused-profile-locale]: {locale_key}"
+  no_skill: "Warning [no-skill]: {pipeline}.{step}: no resolvable skill binding"
   ok: "Configuration is valid: {count} pipelines"
   failed: "Configuration errors: {count}"
 status:

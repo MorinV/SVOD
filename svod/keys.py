@@ -5,6 +5,8 @@ ERROR_LOAD = "error.load"
 NEW_TEMPLATE_RETIRED = "new.template_retired"
 VALIDATE_OK = "validate.ok"
 VALIDATE_FAILED = "validate.failed"
+VALIDATE_UNUSED_LOCALE = "validate.unused_locale"
+VALIDATE_NO_SKILL = "validate.no_skill"
 STATUS_HEADER = "status.header"
 STATUS_CHECKOUT = "status.checkout"
 STATUS_AUTONOMY = "status.autonomy"
@@ -330,6 +332,8 @@ CORE_KEYS = (
     NEW_TEMPLATE_RETIRED,
     VALIDATE_OK,
     VALIDATE_FAILED,
+    VALIDATE_UNUSED_LOCALE,
+    VALIDATE_NO_SKILL,
     STATUS_HEADER,
     STATUS_CHECKOUT,
     STATUS_AUTONOMY,

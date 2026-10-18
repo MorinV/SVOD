@@ -124,6 +124,8 @@ def build_parser() -> StatusParser:
     status = commands.add_parser(CMD_STATUS, help="position of a task or container")
     status.add_argument("query", help="tracker key or container name")
     status.add_argument("--format", choices=("text", "json"), default="text")
+    status.add_argument("--children", action="store_true",
+                        help="include child positions in JSON (text always includes them)")
     status.add_argument("--fresh", action="store_true",
                         help="run the command gates of every step, not only of the current one")
     nxt = commands.add_parser(CMD_NEXT, help="the next action of a task or container, one line")
@@ -814,6 +816,9 @@ def run(args: argparse.Namespace) -> int:
             print_errors(runtime.locale.text(keys.VALIDATE_FAILED, count=len(copy_errors)),
                          copy_errors)
             return EXIT_FINDINGS
+        from svod.loader import validation_warnings
+        for warning in validation_warnings(runtime):
+            print(warning, file=sys.stderr)
         print(runtime.locale.text(keys.VALIDATE_OK, count=len(runtime.pipelines)))
         return EXIT_OK
     if args.command == CMD_STATUS:
@@ -822,14 +827,16 @@ def run(args: argparse.Namespace) -> int:
             if getattr(args, "format", "text") == "json":
                 from svod.status import collect_status
                 from svod.status_json import to_json
-                data = to_json(collect_status(ctx, runtime.pipelines, args.query))
+                data = to_json(collect_status(ctx, runtime.pipelines, args.query,
+                                              children=args.children), children=args.children)
                 print(json.dumps(data, ensure_ascii=False, allow_nan=False))
                 return data["report"]["exit_code"]
             return emit(status_report(ctx, runtime.pipelines, args.query))
         if getattr(args, "format", "text") == "json":
             from svod.status import collect_status
             from svod.status_json import to_json
-            data = to_json(collect_status(ctx, runtime.pipelines, args.query))
+            data = to_json(collect_status(ctx, runtime.pipelines, args.query,
+                                              children=args.children), children=args.children)
             print(json.dumps(data, ensure_ascii=False, allow_nan=False))
             return data["report"]["exit_code"]
         return emit(status_report(ctx, runtime.pipelines, args.query))

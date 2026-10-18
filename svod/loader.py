@@ -1,6 +1,7 @@
 """Loads a store: config, registries, pipelines and locale."""
 from __future__ import annotations
 
+import ast
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -216,3 +217,54 @@ def load_runtime(root: Path) -> Runtime:
         raise LoadError(errors)
     return Runtime(config=config, locale=locale, gates=gates, pipelines=pipelines,
                    bindings=bindings, workspace_gate=workspaces)
+
+
+def validation_warnings(runtime: Runtime) -> list[str]:
+    """Conservative static diagnostics; never evaluate gates, probes or actions.
+
+    Profile Python is extensible: nonliteral locale lookup (or unreadable source) makes
+    usage unknown, so omit unused-key claims entirely. Literal strings are an intentional
+    overapproximation, including constants passed indirectly to locale methods.
+    """
+    from .locale import LOCALE_DIR, LOCALE_SUFFIX, read_locale_file
+
+    used = set(CORE_KEYS)
+    for pipeline in runtime.pipelines:
+        used.update(pipeline.locale_keys())
+    unknown = False
+    for source in runtime.config.profile.rglob("*.py"):
+        try:
+            tree = ast.parse(source.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, SyntaxError):
+            unknown = True
+            continue
+        used.update(node.value for node in ast.walk(tree)
+                    if isinstance(node, ast.Constant) and isinstance(node.value, str))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in {"text", "text_template", "has", "missing"}
+                    and (not node.args or not isinstance(node.args[0], ast.Constant))):
+                unknown = True
+    warnings = []
+    if not unknown:
+        path = runtime.config.profile / LOCALE_DIR / f"{runtime.config.locale}{LOCALE_SUFFIX}"
+        for key in sorted(read_locale_file(path)):
+            # Core gate descriptions and document attributes include computed suffixes.
+            if (key in used or key.startswith(("gate.", "doc.attr."))
+                    or any(key.startswith(base + "_") for base in used)):
+                continue
+            warnings.append(runtime.locale.text("validate.unused_locale", locale_key=key))
+    for pipeline in runtime.pipelines:
+        for step in declared_steps(pipeline):
+            rules = runtime.bindings.roles.get(step.role, []) if runtime.bindings else []
+            # Conditional rules may resolve at runtime; don't run their probe here. A null
+            # unconditional first match makes subsequent rules unreachable.
+            possible = False
+            for rule in rules:
+                possible = possible or rule.skill is not None
+                if not rule.when:
+                    break
+            if not possible:
+                warnings.append(runtime.locale.text("validate.no_skill", pipeline=pipeline.name,
+                                                    step=step.id))
+    return warnings

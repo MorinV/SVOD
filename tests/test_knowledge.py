@@ -2,6 +2,8 @@
 import json
 import os
 import unittest
+
+from support import isolated_env
 from unittest import mock
 
 from support import (ENCODING, EXIT_FINDINGS, EXIT_OK, StoreTestCase, TempStore,
@@ -193,7 +195,7 @@ class KnowledgeHookTest(unittest.TestCase):
         """Store with two tagged open notes of the note pipeline and two knowledge notes."""
         self.sb = TempStore()
         self.addCleanup(self.sb.cleanup)
-        patcher = mock.patch.dict(os.environ, self.sb.env)
+        patcher = mock.patch.dict(os.environ, isolated_env(**self.sb.env), clear=True)
         patcher.start()
         self.addCleanup(patcher.stop)
         os.environ.pop(hooks.PROJECT_ENV, None)

@@ -11,7 +11,7 @@ from unittest import mock
 
 import yaml
 from support import (CLI_ENV, ENCODING, EXIT_OK, EXIT_USAGE, ME, core_lead, core_text, git_env,
-                     run_cli)
+                     isolated_env, run_cli)
 
 from svod import cli, keys
 from svod.actions import action_env
@@ -61,9 +61,9 @@ class WizardStore:
         for repo in (self.store, self.service):
             repo.mkdir(exist_ok=True)
             subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True,
-                           env={**os.environ, **self.env})
+                           env=isolated_env(**self.env))
             subprocess.run(["git", "-C", str(repo), "config", "user.email", ME[0]], check=True,
-                           env={**os.environ, **self.env})
+                           env=isolated_env(**self.env))
         self.original = self.config_text()
 
     def config_text(self):
@@ -81,7 +81,7 @@ class WizardStore:
     def typed(self, answers, *args):
         """Run svod init --wizard with the answers typed at a terminal; (code, out, err)."""
         out, err = io.StringIO(), io.StringIO()
-        with mock.patch.dict(os.environ, self.env), \
+        with mock.patch.dict(os.environ, isolated_env(**self.env), clear=True), \
                 mock.patch.object(sys, "stdin", TtyInput("".join(f"{a}\n" for a in answers))), \
                 mock.patch.object(sys, "stdout", out), mock.patch.object(sys, "stderr", err):
             code = cli.main(["--root", str(self.store), "init", "--wizard", *args])

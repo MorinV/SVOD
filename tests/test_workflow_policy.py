@@ -1,6 +1,8 @@
 """Generic workflow declarations, semantic selection and applicability."""
 import importlib
 import unittest
+
+from support import isolated_env
 from pathlib import Path
 
 import yaml
@@ -281,7 +283,7 @@ class NativeContractSelectionTest(unittest.TestCase):
 
         self.store = TempStore()
         self.addCleanup(self.store.cleanup)
-        patcher = mock.patch.dict('os.environ', self.store.env)
+        patcher = mock.patch.dict('os.environ', isolated_env(**self.store.env), clear=True)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.path = self.store.store / 'openspec/changes/service'

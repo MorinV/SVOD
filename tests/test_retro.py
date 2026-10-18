@@ -1,6 +1,5 @@
 """Retrospective: each core rule over a synthetic evidence log, decisions and profile rules."""
 import datetime as dt
-import os
 import subprocess
 import unittest
 from pathlib import Path
@@ -9,7 +8,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from support import (CLI_ENV, ENCODING, EXIT_OK, EXIT_USAGE, ME, core_text, dedent, git_env,
-                     run_cli)
+                     isolated_env, run_cli)
 
 from svod import evidence_log as ev
 from svod.retro import decisions, rules
@@ -103,7 +102,7 @@ class RetroStore:
         self.base = Path(temp)
         self.home = self.base / "home"
         self.home.mkdir()
-        self.env = {**os.environ, **git_env(self.home), **CLI_ENV,
+        self.env = {**isolated_env(), **git_env(self.home), **CLI_ENV,
                     "GIT_AUTHOR_NAME": ME[1], "GIT_AUTHOR_EMAIL": ME[0],
                     "GIT_COMMITTER_NAME": ME[1], "GIT_COMMITTER_EMAIL": ME[0]}
         self.store = scaffold(self.base / "store", "standard")

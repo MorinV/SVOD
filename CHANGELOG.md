@@ -35,6 +35,11 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 - `svod knowledge supersede <old> --by <new>` preserves note bodies and retires replaced knowledge with cycle/path checks and an index refresh.
 - `svod knowledge publish <research>` requests an exact findings snapshot and requires the next fresh human go-ahead before provenance-tagged publication and research close; collisions are refused and matching publication retries are idempotent.
 - Opt-in `knowledge.on_edit` context uses only explicit instance-relative `knowledge.file_tags` glob-to-tag lists, bounded to current notes and never replacing a hook denial.
+### Changed
+
+- Status JSON v1 omits empty optional values recursively, retaining false, zero and required discriminants. Consumers must tolerate absent optional fields, including empty collections in errors and `next_action`. Child details require `--children`; text output and correctness gates are unchanged.
+- `validate` emits non-fatal unused-profile-locale and no-skill warnings without evaluating gates or actions; dynamic locale usage is treated conservatively.
+- Test helpers and sibling subprocess fixtures discard inherited `SVOD_*` pollution while retaining explicit fixture overrides; production environment policy is unchanged.
 
 ## [0.6.0] - 2026-10-17
 

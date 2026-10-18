@@ -35,7 +35,8 @@ import unittest
 from pathlib import Path
 
 import yaml
-from support import CLI_MODULE, CLI_TIMEOUT_SEC, ENCODING, EXIT_OK, EXIT_USAGE, REPO_DIR, TempStore
+from support import (CLI_MODULE, CLI_TIMEOUT_SEC, ENCODING, EXIT_OK, EXIT_USAGE, REPO_DIR,
+                     TempStore, child_env)
 
 INTEGRATIONS = REPO_DIR / "integrations"
 CLAUDE_SETUP = INTEGRATIONS / "setup-claude.sh"
@@ -123,7 +124,7 @@ class IntegrationTestCase(unittest.TestCase):
 
     def env(self, **extra):
         """Environment of a script or hook run: isolated git and HOME, this engine first."""
-        env = dict(os.environ, **self.sb.env, PYTHONPATH=str(REPO_DIR),
+        env = child_env(**self.sb.env, PYTHONPATH=str(REPO_DIR),
                    PYTHONDONTWRITEBYTECODE="1", PYTHONUTF8="1")
         for name in DROPPED_ENV:
             env.pop(name, None)

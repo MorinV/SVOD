@@ -255,12 +255,12 @@ class StatusChildrenTest(TreeTestCase):
 
     def test_json_children(self):
         """The JSON position carries id, pipeline, current step and done of every child."""
-        out = self.sb.cli("status", f"{FEATURES}/login", "--format", "json")
+        out = self.sb.cli("status", f"{FEATURES}/login", "--format", "json", "--children")
         self.assertEqual(out.returncode, EXIT_OK, out.stderr)
         data = json.loads(out.stdout)
         self.assertEqual(data["positions"][0]["children"], [
-            {"id": f"{TASKS}/form", "pipeline": "task", "current": None, "done": True},
+            {"id": f"{TASKS}/form", "pipeline": "task", "done": True},
             {"id": f"{TASKS}/token", "pipeline": "task", "current": "check", "done": False},
         ])
         lone = json.loads(self.sb.cli("status", f"{TASKS}/lone", "--format", "json").stdout)
-        self.assertEqual(lone["positions"][0]["children"], [])
+        self.assertNotIn("children", lone["positions"][0])

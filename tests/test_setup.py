@@ -12,7 +12,7 @@ from unittest import mock
 
 import yaml
 from support import (CLI_ENV, ENCODING, EXIT_OK, EXIT_USAGE, MAIN_BRANCH, ME, REPO_DIR,
-                     core_text, git_env, run_cli)
+                     core_text, git_env, isolated_env, run_cli)
 
 import svod
 from svod import cli, keys, setup as svod_setup
@@ -92,7 +92,7 @@ def source_repo(base):
     shutil.copytree(REPO_DIR / "svod", source / "svod", ignore=SKIP)
     shutil.copytree(REPO_DIR / INTEGRATIONS_DIR, source / INTEGRATIONS_DIR, ignore=SKIP)
     shutil.copy(REPO_DIR / "CHANGELOG.md", source / "CHANGELOG.md")
-    env = {**os.environ, **git_env(Path(base)), **COMMIT_ENV}
+    env = isolated_env(**git_env(Path(base)), **COMMIT_ENV)
     for argv in (("init", "-q", "-b", MAIN_BRANCH), ("add", "-A"),
                  ("commit", "-q", "-m", "release"), ("tag", TAG)):
         subprocess.run(["git", "-C", str(source), *argv], check=True, env=env,

@@ -710,6 +710,8 @@ Core keys (all required in every core locale file):
 | `error.not_root`, `error.load` | — |
 | `new.template_retired` | `{template}`, `{replacement}` |
 | `validate.ok`, `validate.failed` | `{count}` |
+| `validate.unused_locale` | `{locale_key}` |
+| `validate.no_skill` | `{pipeline}`, `{step}` |
 | `status.header` | `{id}`, `{keys}`, `{pipeline}` |
 | `status.checkout` | `{dir}` |
 | `status.autonomy` | `{level}` |
@@ -1133,6 +1135,30 @@ if their internal filesystem or remote effects must be enforced against maliciou
 | `migrate` | `--since <version>` | applies the [migrations](#migrations) of the versions after `<version>` up to the running engine and prints what they changed; `update` runs it in the new copy | 0 done, 1 a migration failed, 2 not a version |
 
 `init`, `install`, `update` and `migrate` read `svod.yaml` at most for the locale (`init --wizard` reads and edits it, and asks for the pipelines only when the store loads), `knowledge` reads only `svod.yaml`, `doctor` reports a store that does not load as one failed check, so they work while the store does not load. Every other command except `validate` and `hook` exits with 2 and `error.load` when the store does not load, and with 2 and `error.not_root` when no root is found. PyYAML is a dependency of the package: without it the engine does not import, so neither the CLI nor `hook` answers.
+
+### Compact status JSON and validation diagnostics
+
+`status --format json` keeps version 1 and its `report` and `resolution` discriminants,
+including `false` and numeric zero. Optional mapping fields whose projected values are
+null, empty strings, empty lists or empty maps are omitted recursively, including in
+`next_action` and safe command errors. Consumers must use optional lookups and treat an
+absent collection as empty; an absent value does not mean a check passed. Evaluation and
+reason codes still distinguish uncaptured, unevaluated and unknown results. Privacy
+allowlists and size bounds are unchanged; compaction does not add telemetry.
+
+Child position details require `status --format json --children`. Without `--children`,
+the engine skips collection for display only; child completion gates still evaluate
+whatever is needed for the parent result. Text status continues to list children.
+
+`validate` prints non-fatal `[unused-profile-locale]` and `[no-skill]` warnings on stderr
+after successful configuration validation; exit remains 0. Unused-key analysis covers
+the selected profile locale, declarations, instruction variants and literal Python keys.
+Dynamic or unreadable profile Python makes usage unknown and suppresses unused-key
+claims; computed gate descriptions and document attributes are conservatively retained.
+A step without a role, bindings, or a reachable non-null skill rule gets `no-skill`.
+Conditional bindings remain potentially resolvable: diagnostics do not run their probes,
+gates or actions. Invalid profiles and broken configured bindings remain errors, not
+warnings.
 
 ### Records
 
