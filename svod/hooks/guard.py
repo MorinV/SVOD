@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..approval import HUMAN_FILE, MARK_FILE, field_names
 from ..approval_package import PACKAGE_FILE
+from ..knowledge import PUBLISH_MARK
 from ..cache import RunCache
 from ..checkouts import subject_context
 from ..config import load_config
@@ -279,7 +280,7 @@ class Guard:
             protected = common_dir_file(self.root, GRANT_FILE, self.cache.git)
             if protected is not None and inside(path, protected.resolve()):
                 return "Write grants and approval metadata ancestors are protected."
-        if path.name in (MARK_FILE, HUMAN_FILE, PACKAGE_FILE):
+        if path.name in (MARK_FILE, HUMAN_FILE, PACKAGE_FILE, PUBLISH_MARK):
             return self.mark_text(path.name)
         if questions_file(path):
             return self.questions_text()
@@ -337,7 +338,7 @@ class Guard:
                         return trusted_reason(self.ctx, p, s, name)
         if any(name in command for name in (GRANT_FILE, REQUEST_FILE)):
             return "Write grants are protected; use svod allow with a fresh human reply."
-        for name in (MARK_FILE, HUMAN_FILE, PACKAGE_FILE):
+        for name in (MARK_FILE, HUMAN_FILE, PACKAGE_FILE, PUBLISH_MARK):
             if name in command:
                 return self.mark_text(name)
         if QUESTIONS_FILE in command and any(questions_file(path)

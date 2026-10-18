@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import datetime as dt
 import errno
+import json
 import os
 import re
 import shutil
+from fnmatch import fnmatchcase
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,6 +64,121 @@ MATCH_LINE = "- {title} ({path}): {lead}"
 MATCH_LINE_BARE = "- {title} ({path})"
 LINE_SEPARATOR = "\n"
 TABLE_SEPARATOR = "|---|---|---|---|---|"
+PUBLISH_MARK = "svod-knowledge-publish.json"
+
+
+def publication_reply(ctx: Context) -> None:
+    """Bind the next human event; any subsequent event invalidates that request."""
+    from .approval import fresh_human_mark, mark_time
+    from .git import common_dir_file
+    path = common_dir_file(ctx.root, PUBLISH_MARK, ctx.cache.git)
+    if path is None or not path.is_file():
+        return
+    request = json.loads(path.read_text(encoding=ENCODING))
+    mark = fresh_human_mark(ctx.root, ctx.config.approval_window, run=ctx.cache.git)
+    if mark and "at" in request:
+        left = mark_time(mark)
+        if left is not None and left > dt.datetime.fromisoformat(request["at"]):
+            if "reply" not in request:
+                request["reply"] = mark
+            elif mark != request["reply"]:
+                request["invalidated"] = True
+            path.write_text(json.dumps(request), encoding=ENCODING)
+
+
+def publish(runtime: Runtime, ctx: Context, query: str) -> tuple[bool, str]:
+    """Display an exact snapshot, then publish/close only after its next human go-ahead."""
+    from .approval import HUMAN_GO, HUMAN_SHA, is_fresh, now, read_human_mark
+    from .git import common_dir_file
+    from .identity import approver
+    from .questions import prompt_sha
+
+    found = resolve(ctx, runtime.pipelines, query)
+    matches = {(p.name, s.id): s for p, s in found.matches if s.exists}
+    if found.ambiguous or len(matches) != 1:
+        raise ValueError("Name exactly one research record")
+    (pipeline, source), subject = next(iter(matches.items()))
+    if pipeline != "research" or subject.path is None:
+        raise ValueError("Publication requires a research record")
+    card = safe_path(ctx.root, str(subject.path / "card.md"))
+    fields = dict(read_frontmatter(card) or {})
+    if fields.get("outcome") != "knowledge":
+        raise ValueError("Research outcome must be knowledge")
+    findings = safe_path(ctx.root, str(subject.path / "findings.md"))
+    body = findings.read_bytes().decode(ENCODING)
+    if not body.strip():
+        raise ValueError("Research findings must not be empty")
+    directory = runtime.config.knowledge_dir
+    title = first_heading(split_document(card.read_text(encoding=ENCODING))[1]) or card.parent.name
+    target = safe_path(ctx.root, f"{directory}/{slug(card.parent.name)}.md", directory)
+    index = safe_path(ctx.root, f"{directory}/{INDEX_FILE}", directory)
+    snapshot = {"source": source, "body": body, "title": title,
+                "tags": list(tag_list(fields.get("tags"))),
+                "target": target.relative_to(ctx.root).as_posix()}
+    digest = prompt_sha(json.dumps(snapshot, sort_keys=True, ensure_ascii=False))
+    mark_path = common_dir_file(ctx.root, PUBLISH_MARK)
+    if mark_path is None:
+        raise ValueError("Publication consent requires a git store")
+    request = json.loads(mark_path.read_text(encoding=ENCODING)) if mark_path.is_file() else {}
+    transactions = request.get("transactions", {})
+    transaction = transactions.get(digest, {})
+    existing = read_frontmatter(target) if target.is_file() else None
+    if target.exists():
+        if not (existing and existing.get("publication_sha") == digest
+                and existing.get("source") == source
+                and existing.get("title") == title and existing.get("tags") == snapshot["tags"]
+                and existing.get("status") in (STATUS_CURRENT, STATUS_SUPERSEDED)
+                and split_document(target.read_bytes().decode(ENCODING))[1] == body):
+            raise ValueError("Knowledge collision: existing note does not match this publication")
+        # Agent-editable note fields are not proof of a native publication.
+        if not (transaction.get("source") == source
+                and transaction.get("target") == snapshot["target"]
+                and transaction.get("prompt_sha") == existing.get("prompt_sha")
+                and transaction.get("published_by") == existing.get("published_by")
+                and transaction.get("prompt_sha") and transaction.get("published_by")):
+            raise ValueError("Knowledge collision: missing native publication transaction")
+        if (transaction.get("phase") == "completed" and fields.get("status") == "done"
+                and fields.get("knowledge") == snapshot["target"]):
+            return True, f"Published {snapshot['target']}; closed {source}"
+    if (not target.exists() or transaction.get("phase") == "completed"
+            or request.get("invalidated")
+            or transaction.get("reply") != read_human_mark(ctx.root)
+            or not is_fresh(transaction.get("reply"), ctx.config.approval_window)):
+        reply = request.get("reply")
+        if not (request.get("sha") == digest and not request.get("invalidated")
+                and isinstance(reply, dict) and reply == read_human_mark(ctx.root)
+                and reply.get(HUMAN_GO) is True
+                and is_fresh(reply, ctx.config.approval_window)):
+            mark_path.write_text(json.dumps({"sha": digest, "at": now().isoformat(),
+                                             "transactions": transactions}), encoding=ENCODING)
+            return False, (f"Publish {source} to {snapshot['target']} and close research?\n"
+                           f"Snapshot {digest}\n{body}\nReply with a configured go-ahead, "
+                           "then repeat this command.")
+        who = approver(ctx)
+        if who is None:
+            raise ValueError("Publication requires a known approver")
+        note_fields = {"title": title, "tags": snapshot["tags"], "source": source,
+                       "date": today(), "status": STATUS_CURRENT, "published_by": who,
+                       "prompt_sha": reply[HUMAN_SHA], "publication_sha": digest}
+        transaction = {"source": source, "target": snapshot["target"],
+                       "prompt_sha": existing["prompt_sha"] if existing else reply[HUMAN_SHA],
+                       "published_by": existing["published_by"] if existing else who,
+                       "reply": reply, "phase": "publishing"}
+        transactions[digest] = transaction
+        request["transactions"] = transactions
+        mark_path.write_text(json.dumps(request), encoding=ENCODING)
+        if not target.exists():
+            write_new(target, f"{OPENING}{dump_yaml(note_fields)}{CLOSING.lstrip()}{body}")
+    # Index failure must not close the source. Both paths were validated before any write.
+    assert index.name == INDEX_FILE
+    write_index(ctx.root, directory)
+    fields.update(knowledge=snapshot["target"], status="done")
+    _, card_body = split_document(card.read_text(encoding=ENCODING))
+    card.write_text(f"{OPENING}{dump_yaml(fields)}{CLOSING.lstrip()}{card_body}", encoding=ENCODING)
+    transaction["phase"] = "completed"
+    transactions[digest] = transaction
+    mark_path.write_text(json.dumps({"transactions": transactions}), encoding=ENCODING)
+    return True, f"Published {snapshot['target']}; closed {source}"
 
 
 @dataclass(frozen=True)
@@ -105,6 +222,10 @@ def text_field(value: Any) -> str:
 
 def split_document(text: str) -> tuple[str | None, str]:
     """(frontmatter text or None, body) of a markdown document."""
+    if text.startswith("---\r\n"):
+        end = text.find("\r\n---\r\n", 3)
+        if end != -1:
+            return text[5:end], text[end + 7:]
     if not text.startswith(OPENING):
         return None, text
     end = text.find(CLOSING, len(OPENING) - 1)
@@ -161,8 +282,14 @@ def read_entry(root: Path, path: Path) -> Entry | None:
 def entries(root: str | Path, directory: str = DEFAULT_KNOWLEDGE_DIR) -> list[Entry]:
     """Every note under the knowledge directory, INDEX.md and README.md skipped; newest first."""
     root = Path(root)
-    found = [entry for path in documents(knowledge_dir(root, directory))
-             if path.name not in SKIPPED_FILES and (entry := read_entry(root, path)) is not None]
+    found = []
+    for path in documents(knowledge_dir(root, directory)):
+        try:
+            safe_path(root, str(path), directory)
+        except ValueError:
+            continue
+        if path.name not in SKIPPED_FILES and (entry := read_entry(root, path)) is not None:
+            found.append(entry)
     found.sort(key=lambda e: (e.title.casefold(), e.rel))
     found.sort(key=lambda e: e.date, reverse=True)
     return found
@@ -307,6 +434,58 @@ def match_line(entry: Entry) -> str:
     return MATCH_LINE_BARE.format(title=entry.title, path=entry.rel)
 
 
+def supersede(root: Path, old: str, new: str,
+              directory: str = DEFAULT_KNOWLEDGE_DIR) -> None:
+    """Retire a note without changing either body or the replacement."""
+    path = safe_note(root, old, directory)
+    replacement = safe_note(root, new, directory)
+    safe_path(root, f"{directory}/{INDEX_FILE}", directory)
+    seen = {path}
+    cursor = replacement
+    while True:
+        if cursor in seen:
+            raise ValueError("Knowledge supersession cycle or self-link")
+        seen.add(cursor)
+        link = (read_frontmatter(cursor) or {}).get("superseded_by")
+        if not link:
+            break
+        cursor = safe_note(root, str(link), directory)
+    fields = dict(read_frontmatter(path) or {})
+    rel = replacement.relative_to(root.resolve()).as_posix()
+    if fields.get("superseded_by") not in (None, rel):
+        raise ValueError("Note already has a different replacement")
+    fields.update(status=STATUS_SUPERSEDED, superseded_by=rel)
+    _, body = split_document(path.read_bytes().decode(ENCODING))
+    path.write_text(f"{OPENING}{dump_yaml(fields)}{CLOSING.lstrip()}{body}", encoding=ENCODING)
+    write_index(root, directory)
+
+
+def safe_path(root: Path, raw: str, directory: str = ".") -> Path:
+    """Resolve an instance-local path, refusing escapes and symlink components."""
+    root = root.resolve()
+    base = root / directory
+    path = root / raw
+    for candidate in (base, path):
+        if not candidate.is_relative_to(root):
+            raise ValueError(f"Path outside instance: {candidate}")
+        relative = candidate.relative_to(root)
+        if ".." in relative.parts or any((root / Path(*relative.parts[:i])).is_symlink()
+                                         for i in range(1, len(relative.parts) + 1)):
+            raise ValueError(f"Unsafe knowledge path: {candidate}")
+    if not path.resolve().is_relative_to(base.resolve()):
+        raise ValueError(f"Path outside configured directory: {path}")
+    return path.resolve()
+
+
+def safe_note(root: Path, raw: str, directory: str) -> Path:
+    """A real markdown note in the configured knowledge directory."""
+    path = safe_path(root, raw, directory)
+    if (path.name in SKIPPED_FILES or path.suffix != DOC_SUFFIX
+            or read_entry(root, path) is None):
+        raise ValueError(f"Not a knowledge note: {raw}")
+    return path
+
+
 def matching(root: str | Path, tags: Iterable[str] | str,
              limit_lines: int = DEFAULT_KNOWLEDGE_LIMIT,
              directory: str = DEFAULT_KNOWLEDGE_DIR) -> list[str]:
@@ -320,6 +499,35 @@ def matching(root: str | Path, tags: Iterable[str] | str,
     found = [match_line(e) for e in entries(root, directory)
              if e.current and wanted & set(e.tags)]
     return found[:limit_lines]
+
+
+def edit_context(runtime: Runtime, ctx: Context, event: dict[str, Any],
+                 tool: str, data: dict[str, Any]) -> list[str]:
+    """Match only explicit instance-relative edit globs; never infer tags from content."""
+    from .hooks.protocol import EDIT_TOOLS, PATCH_TOOL, command_of, event_cwd
+    if not runtime.config.knowledge_on_edit or not enabled(runtime):
+        return []
+    raw = []
+    if tool in EDIT_TOOLS:
+        raw = [data.get("file_path") or data.get("notebook_path")]
+    elif tool == PATCH_TOOL:
+        raw = re.findall(r"^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$",
+                         command_of(data), re.MULTILINE)
+    tags = []
+    for value in raw:
+        if not isinstance(value, str):
+            continue
+        path = Path(value).expanduser()
+        path = path if path.is_absolute() else event_cwd(event) / path
+        try:
+            path = safe_path(ctx.root, str(path))
+        except ValueError:
+            continue
+        rel = path.relative_to(ctx.root).as_posix()
+        tags += [tag for pattern, values in runtime.config.knowledge_file_tags.items()
+                 if fnmatchcase(rel, pattern) for tag in values]
+    lines = matching(ctx.root, tags, runtime.config.knowledge_limit, runtime.config.knowledge_dir)
+    return [runtime.locale.text(HOOK_KNOWLEDGE_HEAD), *lines] if lines else []
 
 
 def enabled(runtime: Runtime) -> bool:

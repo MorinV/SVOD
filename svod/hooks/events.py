@@ -4,7 +4,7 @@ import sys
 
 from ..active import hook_payload, summarize
 from ..config import SESSION_FULL, SESSION_INDEX, index_limit, session_start_mode
-from ..knowledge import knowledge_context
+from ..knowledge import edit_context, knowledge_context
 from ..evidence_log import note_denial
 from ..index import session_index
 from ..notice import update_notice, with_notice
@@ -78,6 +78,10 @@ def pre_tool(event, fallback):
             return deny_output(reason)
         if tool != BASH_TOOL:
             return context_output(EVENT_PRE_TOOL, broken_text(guard.root, guard.broken))
+    if guard.runtime and guard.ctx:
+        lines = edit_context(guard.runtime, guard.ctx, event, tool, data)
+        if lines:
+            return context_output(EVENT_PRE_TOOL, "\n".join(lines))
     return None
 
 

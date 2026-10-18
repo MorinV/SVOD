@@ -15,7 +15,7 @@ from ..config import DEFAULT_EXTERNAL_PHRASES, DEFAULT_WINDOW_MINUTES
 from ..gates import ApprovalGate
 from ..keys import (HOOK_APPROVAL_JOINERS, HOOK_APPROVAL_MARKED, HOOK_APPROVAL_MARKED_UNNAMED,
                     HOOK_POSITION_HEAD, HOOK_POSITION_TAIL)
-from ..knowledge import knowledge_context
+from ..knowledge import knowledge_context, publication_reply
 from ..position import position
 from ..render import render_position, step_skills
 from ..resolve import resolve
@@ -282,6 +282,7 @@ def prompt_hook(event: Event, fallback: str | Path | None,
     locale = runtime.locale
     ctx = context_of(runtime)
     mark_human(ctx.root, answers, runtime.config, at, ctx.cache.git)
+    publication_reply(ctx)
     blocks: list[str] = []
     approvals = [keys for answer in answers
                  if (keys := approval_keys(runtime, answer)) is not None]

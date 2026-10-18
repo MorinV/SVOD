@@ -265,6 +265,11 @@ def add_knowledge_parser(commands: argparse._SubParsersAction) -> None:
     knowledge = commands.add_parser(CMD_KNOWLEDGE, help="notes of the store in knowledge/")
     actions = knowledge.add_subparsers(dest="action", required=True)
     actions.add_parser(KNOWLEDGE_INDEX, help="rewrite the table in knowledge/INDEX.md")
+    supersede = actions.add_parser("supersede", help="replace a knowledge note")
+    supersede.add_argument("old")
+    supersede.add_argument("--by", required=True)
+    publish = actions.add_parser("publish", help="request agreed publication and research close")
+    publish.add_argument("query")
     add = actions.add_parser(KNOWLEDGE_ADD, help="copy a markdown file into knowledge/")
     add.add_argument("file", help="markdown file to copy")
     add.add_argument("--tags", required=True, help="tags separated by commas")
@@ -683,6 +688,23 @@ def knowledge(root: Path, args: argparse.Namespace) -> int:
         print_errors(locale.text(keys.ERROR_LOAD), exc.errors)
         return EXIT_USAGE
     directory = config.knowledge_dir
+    if args.action == "publish":
+        from svod.loader import load_runtime
+        from svod.hooks.store import context_of
+        try:
+            runtime = load_runtime(root)
+            ok, message = kb.publish(runtime, context_of(runtime), args.query)
+        except (OSError, ValueError, LoadError) as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_FINDINGS
+        print(message)
+        return EXIT_OK if ok else EXIT_FINDINGS
+    if args.action == "supersede":
+        try:
+            kb.supersede(root, args.old, args.by, directory)
+        except (OSError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_FINDINGS
     if args.action == KNOWLEDGE_LIST:
         wanted = set(kb.tag_list(args.tags or ""))
         found = [e for e in kb.entries(root, directory) if not wanted or wanted & set(e.tags)]

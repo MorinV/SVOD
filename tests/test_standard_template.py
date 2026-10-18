@@ -44,7 +44,7 @@ CHECKS_STEP = "bash profile/actions/checks.sh work/tasks/<name>"
 CLOSE_STEP = "after the merge set status: done in card.md"
 DONE_TEXT = "done: status is done in card.md"
 CAUSE_STEP = "a hotfix names its cause in card.md"
-KNOWLEDGE_STEP = "write the answer to knowledge/<topic>.md"
+KNOWLEDGE_STEP = "run svod knowledge publish <research>"
 ARCHIVED = "status: archived"
 OPEN = "status: open"
 ACTIVE_ITEM = f"  - {EXAMPLE} - name the services"
@@ -296,7 +296,7 @@ class StandardTemplateTest(unittest.TestCase):
                 sb.write(f"{RESEARCH}/{name}", "# x\n")
             self.assertIn(KNOWLEDGE_STEP, sb.cli("status", RESEARCH).stdout)
             sb.edit(f"{RESEARCH}/card.md", "outcome:", "knowledge: knowledge/cache.md\noutcome:")
-            self.assertIn("status: done in card.md of the research",
+            self.assertIn("for outcome knowledge use svod knowledge publish <research>",
                           sb.cli("status", RESEARCH).stdout)
 
     def test_questions_step_by_reason(self):

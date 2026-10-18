@@ -140,8 +140,8 @@ research:
     findings: "write findings.md: sources, experiments and the answer, each claim with its source"
     outcome: "set outcome in card.md: hotfix, feature or knowledge"
     leads_to: "make the hotfix or feature the research leads to and name it in card.md: leads_to: work/<kind>/<name>"
-    knowledge: "write the answer to knowledge/<topic>.md and name it in card.md: knowledge: knowledge/<topic>.md"
-    close: "set status: done in card.md of the research"
+    knowledge: "run svod knowledge publish <research>: show findings, obtain the next human go-ahead, then repeat to publish and close"
+    close: "for outcome knowledge use svod knowledge publish <research>; otherwise set status: done only after human agreement"
   done: "done: status is done in card.md of the research"
   active:
     mine_idle: "Research:"

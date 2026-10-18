@@ -45,7 +45,7 @@ DEFAULT_INDEX_LINES = 40
 FIELD_KNOWLEDGE = "knowledge"
 KNOWLEDGE_DIR = "dir"
 KNOWLEDGE_LIMIT = "limit_lines"
-KNOWLEDGE_FIELDS = frozenset({KNOWLEDGE_DIR, KNOWLEDGE_LIMIT})
+KNOWLEDGE_FIELDS = frozenset({KNOWLEDGE_DIR, KNOWLEDGE_LIMIT, "on_edit", "file_tags"})
 DEFAULT_KNOWLEDGE_DIR = "knowledge"
 DEFAULT_KNOWLEDGE_LIMIT = 20
 DEFAULT_WINDOW_MINUTES = 10
@@ -115,6 +115,8 @@ class Config:
     services: dict[str, Path] = field(default_factory=dict)
     knowledge_dir: str = DEFAULT_KNOWLEDGE_DIR
     knowledge_limit: int = DEFAULT_KNOWLEDGE_LIMIT
+    knowledge_on_edit: bool = False
+    knowledge_file_tags: dict[str, list[str]] = field(default_factory=dict)
     evidence_enabled: bool = True
     evidence_commit: bool = True
     autonomy: dict[str, str] = field(default_factory=dict)
@@ -239,6 +241,19 @@ def knowledge_errors(path: Path, data: Any) -> list[str]:
     limit = data.get(KNOWLEDGE_LIMIT, DEFAULT_KNOWLEDGE_LIMIT)
     if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
         errors.append(f"{where}.{KNOWLEDGE_LIMIT} must be a positive integer")
+    if "on_edit" in data and not isinstance(data["on_edit"], bool):
+        errors.append(f"{where}.on_edit must be a boolean")
+    patterns = data.get("file_tags", {})
+    if not isinstance(patterns, dict):
+        errors.append(f"{where}.file_tags must be a mapping of relative globs to tag lists")
+    else:
+        for pattern, tags in patterns.items():
+            if (not isinstance(pattern, str) or not pattern.strip()
+                    or Path(pattern).is_absolute() or ".." in Path(pattern).parts):
+                errors.append(f"{where}.file_tags: invalid instance-relative glob: {pattern}")
+            error = strings_error(f"{where}.file_tags.{pattern}", tags)
+            if error:
+                errors.append(error)
     return errors
 
 
@@ -412,6 +427,8 @@ def load_config(root: str | Path, local: bool = True) -> Config:
                   for name, value in (data.get(FIELD_SERVICES) or {}).items()},
         knowledge_dir=knowledge.get(KNOWLEDGE_DIR, DEFAULT_KNOWLEDGE_DIR),
         knowledge_limit=knowledge.get(KNOWLEDGE_LIMIT, DEFAULT_KNOWLEDGE_LIMIT),
+        knowledge_on_edit=knowledge.get("on_edit", False),
+        knowledge_file_tags=knowledge.get("file_tags", {}),
         evidence_enabled=(data.get(FIELD_EVIDENCE) or {}).get(EVIDENCE_ENABLED, True),
         evidence_commit=(data.get(FIELD_EVIDENCE) or {}).get(EVIDENCE_COMMIT, True),
         cache_ignore=tuple(data.get(FIELD_CACHE_IGNORE) or ()),
