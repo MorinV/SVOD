@@ -140,8 +140,8 @@ research:
     findings: "написать findings.md: источники, эксперименты и ответ, у каждого утверждения его источник"
     outcome: "заполнить outcome в card.md: hotfix, feature или knowledge"
     leads_to: "завести хотфикс или фичу, к которой ведёт исследование, и назвать её в card.md: leads_to: work/<вид>/<имя>"
-    knowledge: "записать ответ в knowledge/<тема>.md и назвать его в card.md: knowledge: knowledge/<тема>.md"
-    close: "поставить status: done в card.md исследования"
+    knowledge: "выполнить svod knowledge publish <исследование>: показать findings, получить следующее явное согласие человека, повторить для публикации и закрытия"
+    close: "для outcome knowledge выполнить svod knowledge publish <исследование>; иначе поставить status: done только после согласия человека"
   done: "готово: status: done в card.md исследования"
   active:
     mine_idle: "Исследования:"

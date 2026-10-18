@@ -6,6 +6,12 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Added
+
+- `svod knowledge supersede <old> --by <new>` preserves note bodies and retires replaced knowledge with cycle/path checks and an index refresh.
+- `svod knowledge publish <research>` requests an exact findings snapshot and requires the next fresh human go-ahead before provenance-tagged publication and research close; collisions are refused and matching publication retries are idempotent.
+- Opt-in `knowledge.on_edit` context uses only explicit instance-relative `knowledge.file_tags` glob-to-tag lists, bounded to current notes and never replacing a hook denial.
+
 ## [0.6.0] - 2026-10-17
 
 ### Added
