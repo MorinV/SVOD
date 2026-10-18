@@ -6,6 +6,8 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-18
+
 ### Added
 
 - Exact-set contract approval packages: `svod approve <query> [<query> ...] --step approve --prepare` displays bound inputs and versions before a fresh human reply; the same selection without `--prepare` records every selected contract once with individual evidence. Package replacement, input drift, expiry and subsets refuse; caught filesystem failures use bounded rollback (not crash atomicity).
@@ -34,13 +36,19 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 - `svod knowledge supersede <old> --by <new>` preserves note bodies and retires replaced knowledge with cycle/path checks and an index refresh.
 - `svod knowledge publish <research>` requests an exact findings snapshot and requires the next fresh human go-ahead before provenance-tagged publication and research close; collisions are refused and matching publication retries are idempotent.
 - Opt-in `knowledge.on_edit` context uses only explicit instance-relative `knowledge.file_tags` glob-to-tag lists, bounded to current notes and never replacing a hook denial.
-### Changed
 
 ### Changed
 
 - Status JSON v1 omits empty optional values recursively, retaining false, zero and required discriminants. Consumers must tolerate absent optional fields, including empty collections in errors and `next_action`. Child details require `--children`; text output and correctness gates are unchanged.
 - `validate` emits non-fatal unused-profile-locale and no-skill warnings without evaluating gates or actions; dynamic locale usage is treated conservatively.
 - Test helpers and sibling subprocess fixtures discard inherited `SVOD_*` pollution while retaining explicit fixture overrides; production environment policy is unchanged.
+
+### Migration
+
+- Update JSON consumers to treat missing optional fields as empty or unavailable rather than requiring explicit empty values. Status JSON remains version 1; false, zero and required discriminants are retained. Pass `--children` when child details are needed.
+- Trusted action dispatch is opt-in: configure `profile_config.trusted_actions` with exact supported action argv before relying on the native start-task/checks route. Present the changed configuration and action dependencies and obtain fresh contract approval; old approvals do not authorize a new trust snapshot, and later trust changes require reapproval. Trusted code is not filesystem or subprocess isolated.
+- Review the standard-template profile merge from `svod update --template standard`, including the research publication step and skeleton. `svod knowledge publish <research>` now prepares an exact findings snapshot; obtain the next fresh human go-ahead before publishing and closing the research. Do not turn historical findings or approvals into publication consent.
+- For exact-set contract packages, run `svod approve <query> [<query> ...] --step approve --prepare` before requesting a fresh human reply, then apply that same complete selection. Replacement previews, changed inputs or trusted actions, expiry and membership changes require a new preview and reply. Packages cover contracts only, not results or external effects; existing individual approval records remain history.
 
 ## [0.6.0] - 2026-10-17
 

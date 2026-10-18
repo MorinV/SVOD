@@ -28,11 +28,11 @@ The engine knows nothing about your team. Everything specific — pipelines, ext
 Requires Python 3.10+ and Git. An instance of Svod is a store next to your project repositories:
 
 ```bash
-pip install git+https://github.com/MorinV/SVOD@v0.6.0
+pip install git+https://github.com/MorinV/SVOD@v0.7.0
 svod setup ~/Projects/svod
 ```
 
-`svod setup` makes the standard-template store, a git repository with a first commit, the copy of the engine in `.svod/` (taken from where pip installed `svod`, here `v0.6.0`; `--from`, `--to` choose another) and the Claude Code hooks. At a terminal it asks your login and email, the services, the autonomy of each pipeline, their check commands and where to register the hooks; every answer can be a flag (`--login me --service app=../app --hooks project`).
+`svod setup` makes the standard-template store, a git repository with a first commit, the copy of the engine in `.svod/` (taken from where pip installed `svod`, here `v0.7.0`; `--from`, `--to` choose another) and the Claude Code hooks. At a terminal it asks your login and email, the services, the autonomy of each pipeline, their check commands and where to register the hooks; every answer can be a flag (`--login me --service app=../app --hooks project`).
 
 Put the project repositories next to it and name them as services:
 
@@ -144,7 +144,7 @@ svod update           # later: replace the copy, migrate the store, show the cha
 
 ## Status
 
-Early. Version 0.6 makes an instance easy to set up and keep: `svod setup` in one command, `svod update` that merges the profile from the template, releases from CI, a session index instead of a full summary, `svod next`, `svod record new`, `svod report`, a cheap `svod status`; the local template is gone. Version 0.5 made the store a dispatcher over several service repositories: the standard template with project, feature, task and research pipelines, questions before work, actions as scripts, a command gate, autonomy levels, an evidence log with a retrospective, and a knowledge base. Svod develops itself through its own store. Every new key of `svod.yaml` is optional for an existing store; expect the format to change before 1.0. Compatibility and migration notes: [CHANGELOG.md](CHANGELOG.md).
+Early. Version 0.7 adds exact-set contract approval packages, scoped external write grants, opt-in trusted actions, bounded retrospective application and knowledge publication/supersession. Status JSON omits empty optional fields; pass `--children` for child details. Version 0.6 made an instance easy to set up and keep: `svod setup` in one command, `svod update` that merges the profile from the template, releases from CI, a session index instead of a full summary, `svod next`, `svod record new`, `svod report`, a cheap `svod status`; the local template is gone. Version 0.5 made the store a dispatcher over several service repositories: the standard template with project, feature, task and research pipelines, questions before work, actions as scripts, a command gate, autonomy levels, an evidence log with a retrospective, and a knowledge base. Svod develops itself through its own store. Every new key of `svod.yaml` is optional for an existing store; expect the format to change before 1.0. Compatibility and migration notes: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
