@@ -92,7 +92,7 @@ class CommandGateTest(StoreTestCase):
         self.assertEqual((ok.facts["code"], ok.facts["detail"], ok.facts["cached"]),
                          (0, "fine", False))
         script = ("import sys\nfor i in range(30): print(f'line {i}')\n"
-                  "print('oops', file=sys.stderr)\nsys.exit(3)")
+                  "sys.stdout.flush()\nprint('oops', file=sys.stderr)\nsys.exit(3)")
         bad = self.evaluate({"argv": [PY, "-c", script], "cache": False})
         self.assertEqual((bad.status, bad.facts["code"]), (FAIL, 3))
         lines = bad.facts["detail"].splitlines()

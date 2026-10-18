@@ -1,7 +1,6 @@
 """Native wave-2 seams on isolated standard stores; no installed engine changes."""
 import json
 import shutil
-import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -154,15 +153,17 @@ class PackageTrustIntegrationTest(unittest.TestCase):
         repo = Path(__file__).resolve().parents[1]
         old = self.sb.base / "old-template"
         old.mkdir()
-        paths = subprocess.check_output([
-            "git", "ls-tree", "-r", "--name-only", "b4194ca", "--",
-            "svod/templates/standard"], cwd=repo, text=True).splitlines()
-        for name in paths:
-            rel = Path(name).relative_to("svod/templates/standard")
-            target = old / rel
+        # Exact standard-template bytes frozen from the pre-wave-2 revision;
+        # independent of checkout depth and of future changes to the live template.
+        baseline = json.loads((repo / "tests/fixtures/standard-b4194ca.json").read_text())
+        self.assertEqual(baseline["revision"], "b4194ca556f713aea78dad8114206bf4d164f4a1")
+        for name, content in baseline["files"].items():
+            target = old / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(subprocess.check_output(["git", "show", f"b4194ca:{name}"],
-                                                       cwd=repo))
+            target.write_bytes(content.encode("utf-8"))
+        self.assertIn("write the answer to knowledge/<topic>.md",
+                      (old / "profile/locale/en.yaml").read_text())
+        self.assertNotIn("action-dispatch", (old / "profile/actions/_env.sh").read_text())
         store = self.sb.base / "old-store"
         shutil.copytree(old, store)
         config = store / "svod.yaml"
@@ -178,6 +179,8 @@ class PackageTrustIntegrationTest(unittest.TestCase):
         self.assertIn("Retained operator customization", config.read_text())
         self.assertEqual(mine.read_text(), "Keep my profile\n")
         self.assertIn("publish", (store / "profile/pipelines/research.yaml").read_text())
+        self.assertIn("svod knowledge publish", (store / "profile/locale/en.yaml").read_text())
+        self.assertIn("action-dispatch", (store / "profile/actions/_env.sh").read_text())
         self.assertFalse((store / ".svod").exists())
 
     def test_trust_change_after_preview_invalidates_whole_package(self):

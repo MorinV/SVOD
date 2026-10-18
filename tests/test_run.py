@@ -39,7 +39,8 @@ class RunArgvTest(unittest.TestCase):
         code, text = self.run_code(python(
             "import os, sys; print(os.getcwd()); print(os.environ['EXTRA']); "
             f"print(os.environ['{run.NO_BYTECODE_ENV}']); print(sys.argv[1]); "
-            "sys.stderr.write('err\\n'); raise SystemExit(3)") + ["$HOME"], env={"EXTRA": "x"})
+            "sys.stdout.flush(); sys.stderr.write('err\\n'); raise SystemExit(3)") + ["$HOME"],
+            env={"EXTRA": "x"})
         self.assertEqual(code, 3)
         self.assertEqual(text.split(), [str(self.base), "x", "1", "$HOME", "err"])
 
