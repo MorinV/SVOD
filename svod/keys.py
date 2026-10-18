@@ -58,6 +58,7 @@ INIT_NEED_LOGIN = "init.need_login"
 INIT_PROMPT_LOGIN = "init.prompt_login"
 INIT_PROMPT_EMAIL = "init.prompt_email"
 APPROVE_DONE = "approve.done"
+APPROVE_PACKAGE_ERROR = "approve.package_error"
 APPROVE_NO_MARK = "approve.no_mark"
 APPROVE_FOREIGN_KEY = "approve.foreign_key"
 APPROVE_NO_GATE = "approve.no_gate"
@@ -379,6 +380,7 @@ CORE_KEYS = (
     INIT_PROMPT_LOGIN,
     INIT_PROMPT_EMAIL,
     APPROVE_DONE,
+    APPROVE_PACKAGE_ERROR,
     APPROVE_NO_MARK,
     APPROVE_FOREIGN_KEY,
     APPROVE_NO_GATE,

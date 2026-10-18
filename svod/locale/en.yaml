@@ -64,6 +64,7 @@ init:
   prompt_login: "Login: "
   prompt_email: "Email [{default}]: "
 approve:
+  package_error: 'Contract package refused: {reason}'
   done: "Approval recorded in {file}: {marker} {date}, by {by}, version {sha}. Nothing is committed."
   no_mark: "No fresh approval by a person in the chat: show the plan and wait for the answer"
   foreign_key: "The approval in the chat names {mark_keys}, not {keys}: ask to approve this one"

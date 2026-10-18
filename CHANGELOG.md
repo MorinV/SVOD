@@ -6,6 +6,14 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Added
+
+- Exact-set contract approval packages: `svod approve <query> [<query> ...] --step approve --prepare` displays bound inputs and versions before a fresh human reply; the same selection without `--prepare` records every selected contract once with individual evidence. Package replacement, input drift, expiry and subsets refuse; caught filesystem failures use bounded rollback (not crash atomicity).
+
+### Fixed
+
+- Native prompt-to-approval identity matching accepts canonical keyless record paths, alongside tracker keys, and consumes only selected named identities. Existing unnamed single-record consent remains single-use; contract packages do not authorize results or external effects.
+
 ## [0.6.0] - 2026-10-17
 
 ### Added

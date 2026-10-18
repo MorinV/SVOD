@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..approval import HUMAN_FILE, MARK_FILE, field_names
+from ..approval_package import PACKAGE_FILE
 from ..cache import RunCache
 from ..checkouts import subject_context
 from ..config import load_config
@@ -223,7 +224,7 @@ class Guard:
 
     def edit_reason(self, path: Path, touches: Touches) -> str | None:
         """Refusal of an edit of the path; touches(fields) tells whether it changes them."""
-        if path.name in (MARK_FILE, HUMAN_FILE):
+        if path.name in (MARK_FILE, HUMAN_FILE, PACKAGE_FILE):
             return self.mark_text(path.name)
         if questions_file(path):
             return self.questions_text()
@@ -239,7 +240,7 @@ class Guard:
             return self.approval_text(item.fields, Path(*item.parts).as_posix())
         if bash_reads_only(command):
             return None
-        for name in (MARK_FILE, HUMAN_FILE):
+        for name in (MARK_FILE, HUMAN_FILE, PACKAGE_FILE):
             if name in command:
                 return self.mark_text(name)
         if QUESTIONS_FILE in command and any(questions_file(path)

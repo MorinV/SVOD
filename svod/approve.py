@@ -189,13 +189,16 @@ def approve(ctx: Context, pipelines: list[Pipeline], query: str, at: dt.datetime
             return refusal(ctx, keys.APPROVE_NOT_READY, query=query, step=step,
                            pending=KEYS_SEPARATOR.join(pending))
     mark = read_mark(ctx.root)
+    if mark and mark.get("package"):
+        return refusal(ctx, keys.APPROVE_PACKAGE_ERROR, reason="apply the exact prepared package")
     marked = is_fresh(mark, ctx.config.approval_window, at)
     if not marked and not (confirm and at_terminal()):
         return refusal(ctx, keys.APPROVE_NO_MARK)
     named = mark_keys(mark) if marked else set()
-    if named and not names_any(named, subject.keys):
+    identities = {*subject.keys, subject.id}
+    if named and not names_any(named, identities):
         return refusal(ctx, keys.APPROVE_FOREIGN_KEY, mark_keys=KEYS_SEPARATOR.join(sorted(named)),
-                       keys=KEYS_SEPARATOR.join(sorted(subject.keys)))
+                       keys=KEYS_SEPARATOR.join(sorted(subject.keys)) or subject.id)
     bind = ref.params.get(PARAM_BIND)
     # Candidates are existing subjects, which have a path; a fresh mark is a mapping.
     base = cast(Path, subject.path)
@@ -220,7 +223,7 @@ def approve(ctx: Context, pipelines: list[Pipeline], query: str, at: dt.datetime
     path = base / ref.params[PARAM_FILE]
     write_fields(path, marker, date, who, sha)
     if marked:
-        consume_mark(ctx.root, subject.keys, mark)
+        consume_mark(ctx.root, identities, mark)
     root = subject_context(ctx, subject).root
     return Report(ok=True, out=[locale.text(
         keys.APPROVE_DONE, file=path.relative_to(root).as_posix(), marker=marker, date=date,

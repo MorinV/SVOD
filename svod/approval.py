@@ -185,7 +185,7 @@ def now() -> dt.datetime:
 
 
 def write_mark(root: Path, keys: Iterable[str], at: dt.datetime | None = None,
-               run: Run | None = None) -> Path | None:
+               run: Run | None = None, package: str | None = None) -> Path | None:
     """Leave the approval mark with its time and the keys named; return its path or None.
 
     run replaces run_git.
@@ -194,6 +194,8 @@ def write_mark(root: Path, keys: Iterable[str], at: dt.datetime | None = None,
     if path is None:
         return None
     data = {MARK_AT: (at or now()).isoformat(), MARK_KEYS: sorted(keys)}
+    if package is not None:
+        data["package"] = package
     path.write_text(json.dumps(data), encoding=ENCODING)
     return path
 
@@ -236,6 +238,7 @@ def consume_mark(root: Path, keys: Iterable[str], mark: dict[str, Any] | None = 
     if path is not None:
         # Keys remain only from a current mark, so current is a mapping here.
         data = {**current, MARK_KEYS: sorted(remaining)}  # type: ignore[dict-item]
+        data.pop("package", None)
         path.write_text(json.dumps(data), encoding=ENCODING)
 
 
@@ -324,7 +327,13 @@ def scalar(value: Any) -> str:
 def set_fields(path: str | Path, values: dict[str, Any]) -> None:
     """Replace or append top-level fields line by line, keeping every other line of the file."""
     path = Path(path)
-    lines = path.read_text(encoding=ENCODING).splitlines(keepends=True) if path.is_file() else []
+    text = path.read_text(encoding=ENCODING) if path.is_file() else ""
+    path.write_text(fields_text(text, values), encoding=ENCODING)
+
+
+def fields_text(text: str, values: dict[str, Any]) -> str:
+    """Precompute line-preserving approval bytes without changing any file."""
+    lines = text.splitlines(keepends=True)
     for name, value in values.items():
         line = f"{name}: {scalar(value)}{NEWLINE}"
         pattern = re.compile(FIELD_LINE_RE.format(field=re.escape(name)))
@@ -335,4 +344,4 @@ def set_fields(path: str | Path, values: dict[str, Any]) -> None:
             lines.append(line)
         else:
             lines[index] = line
-    path.write_text("".join(lines), encoding=ENCODING)
+    return "".join(lines)

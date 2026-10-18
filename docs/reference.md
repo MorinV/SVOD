@@ -99,6 +99,35 @@ Every pattern is searched (`re.search`) in each simple command of the line: its 
 
 An approval is two acts: a person writes a phrase in the chat, then the agent records it with `approve`. The engine owns the mark file and its format; the store decides the phrases and the window.
 
+**Exact contract packages.** Run `svod approve <query> [<query> ...] --step approve --prepare`
+before asking the person. The preview lists every resolved record, stage, gate marker and exact
+bound input path with its SHA-256. It writes only one pending package in
+`svod-approval-package.json` in local git metadata, not any `approval.yaml`. All queries must
+resolve uniquely to distinct, ready records with one applicable `purpose: contract` gate at
+the explicit `approve` stage. Parents never expand to children. Canonical store-relative record
+paths are identities, including for keyless records; tracker keys remain supported.
+
+After a **new** human approval, run the same selection without `--prepare` (order and query
+aliases do not matter). Bare approval binds only the package prepared before that event;
+named approval must include an identity of every selected record. The native prompt notice
+prints one complete apply command. The snapshot binds declarations, identities and exact raw
+input bytes as well as the normalized per-record approval digest. Replacement preparation,
+changed inputs or membership, missing prerequisites, expiry and already-consumed consent
+refuse the whole operation. A package mark cannot be used for a subset or a result stage.
+Other explicitly named identities remain separately usable; no unselected record, result
+acceptance or external effect is authorized by package consent. `--confirm` remains a
+single-record terminal route, not an alternative source of package consent.
+
+The writer precomputes all approval bytes, rechecks the package before consuming consent,
+keeps individual approval fields and emits native per-record approval events after success.
+On a caught filesystem failure it restores only files attempted by this operation (including
+pre-existing contents), retains unconsumed consent and reports incomplete rollback explicitly.
+This is bounded rollback, **not cross-file crash atomicity**. Use sequential CLI approval
+operations; concurrent direct filesystem edits are not a transaction protocol. The pending
+package is protected from direct agent writes by the same native pre-tool rules as marks.
+Trusted integrations redelivering a human event must preserve its original timestamp; they
+must never resubmit historical text as a new event. No engine or bridge installation is implied.
+
 | key | req | type / default | meaning |
 |---|---|---|---|
 | `phrases` | no | list of strings / `[]` | phrases that approve; the `prompt` [hook](#hooks) matches them against a whole prompt |
@@ -740,6 +769,7 @@ Core keys (all required in every core locale file):
 | `init.need_login`, `init.prompt_login` | — |
 | `init.prompt_email` | `{default}` |
 | `approve.done` | `{file}`, `{marker}`, `{date}`, `{by}`, `{sha}` |
+| `approve.package_error` | `{reason}` |
 | `approve.no_mark`, `approve.no_approver` | — |
 | `approve.foreign_key` | `{mark_keys}`, `{keys}` |
 | `approve.no_gate` | `{query}` |
@@ -982,7 +1012,7 @@ gate:
 | `record new <pipeline> <name>` | `--services a,b`, `--parent <id>`, `--kind <kind>`, `--tags a,b`, `--key <key>` | creates the [record](#records) `<root>/<name>/` from the skeletons `<profile>/records/<pipeline>/`; prints `record.created` with the path and the files | 0 created, 1 the record exists, 2 unknown pipeline, a bad name, no record directory or no skeletons |
 | `active` | `--all`, `--hook` | summary of open work, including subjects changed in other checkouts of the store repository; `--all` expands `theirs`; `--hook` prints SessionStart hook JSON (`hookSpecificOutput.additionalContext`, with the [update notice](#update-notice) first and `active.hook_tail` appended); prints nothing when there is neither | 0 |
 | `render <pipeline>` | `--write` | prints the documentation block, or writes it between the markers | 0, 1 no markers, 2 unknown pipeline |
-| `approve <query>` | `--step <id>`, `--confirm` | records the ready selected applicable approval with date, approver and digest, consuming this subject's mark keys; refuses changed-after-answer inputs; with `--confirm` and no fresh mark asks the person at a terminal, see [Approval by a person](#approval-by-a-person); nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
+| `approve <query> [<query> ...]` | `--step <id>`, `--prepare`, `--confirm` | records a single approval or previews/applies an exact contract package using fresh post-preview consent; `--prepare` requires explicit `--step approve`; `--confirm` is single-record only; see [Approval by a person](#approval-by-a-person); nothing is committed | 0 recorded/prepared, 1 refused, 2 single-record not found or ambiguous |
 | `ask <query>` | `<question>`, `--context`, `--none` | adds a question at the end of the subject's questions file, or writes `none` with `--none`; see [Questions before work](#questions-before-work); nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
 | `answer <query>` | `--q <n>`, `<text>` | writes the person's answer under question `n` of the subject's questions file with the approver, the date and the prompt digest of a fresh human mark; see [Questions before work](#questions-before-work); nothing is committed | 0 recorded, 1 refused, 2 not found or ambiguous |
 | `new <directory>` | `--template standard\|task` | creates an absent directory from installed templates without a pre-existing store; default standard, never merges or overwrites; `--template local`, retired in 0.6, is a load error (`error.load`, `new.template_retired`) naming `standard` | 0 created, 1 refused, 2 retired or unknown template |
