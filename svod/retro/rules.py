@@ -94,7 +94,8 @@ class Proposal:
 
     `code` tells proposals of one rule apart (a step id, a hook rule); `subject` is what a
     decision is about: the work, or the pipeline for a rule over a pipeline; the engine fills it
-    when the rule leaves it None. `change` is a hint, never applied: `file` relative to the
+    when the rule leaves it None. `change` is a hint; retro apply supports only deterministic
+    literal edits: `file` relative to the
     store root, `kind` (`note` or `line`), `text` (a locale key or the text itself) and an
     optional `anchor` naming the place in the file.
     """
