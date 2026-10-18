@@ -26,6 +26,9 @@ def key_pairs(ctx, pipelines, query):
         key = key_gate.match(query) if key_gate else None
         if key:
             found.extend((pipeline, s) for s in pipeline.subject.impl.match_key(key, ctx))
+        else:
+            found.extend((pipeline, s) for s in pipeline.subject.impl.enumerate(ctx)
+                         if query.casefold() in {value.casefold() for value in s.keys})
     return found
 
 

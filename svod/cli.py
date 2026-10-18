@@ -135,7 +135,8 @@ def build_parser() -> StatusParser:
                         help="replace the block between its markers in every store document")
     approve = commands.add_parser(CMD_APPROVE,
                                   help="record an approval a person left in the chat")
-    approve.add_argument("query", help="tracker key or subject name")
+    approve.add_argument("query", nargs="+", help="tracker keys or record paths")
+    approve.add_argument("--prepare", action="store_true", help="preview an exact contract package")
     approve.add_argument("--step", help="approval step id; first pending approval by default")
     approve.add_argument("--confirm", action="store_true",
                          help="without a fresh mark, ask the person at the terminal to confirm")
@@ -721,7 +722,13 @@ def run(args: argparse.Namespace) -> int:
         return report(ctx, runtime.pipelines, args)
     if args.command == CMD_APPROVE:
         from svod.approve import approve
-        return emit(approve(ctx, runtime.pipelines, args.query, step=args.step,
+        from svod.approval import read_mark
+        from svod.approval_package import package_approve
+        mark = read_mark(ctx.root)
+        if args.prepare or len(args.query) > 1 or mark and mark.get("package"):
+            return emit(package_approve(ctx, runtime.pipelines, args.query,
+                                        args.step, args.prepare))
+        return emit(approve(ctx, runtime.pipelines, args.query[0], step=args.step,
                             confirm=args.confirm))
     if args.command == CMD_ASK:
         from svod.questions import ask

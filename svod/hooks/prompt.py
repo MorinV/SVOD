@@ -20,7 +20,7 @@ from ..position import position
 from ..render import render_position, step_skills
 from ..resolve import resolve
 from .protocol import EVENT_PROMPT, FIELD_PROMPT, Event, context_output
-from .store import (agent_context_setting, broken_text, config_of, context_of, cut_key, load,
+from .store import (agent_context_setting, broken_text, config_of, context_of, load,
                     query_keys, store_root)
 
 if TYPE_CHECKING:
@@ -41,6 +41,7 @@ MAX_QUERIES = 3
 MIN_NAME = 8
 NORMAL_FORM: Final = "NFC"
 NAME_RE = r"(?<![\w-]){name}(?![\w-])"
+IDENTITY_RE = r"(?<![\w/-]){name}(?![\w/-])"
 PHRASE_RE = r"\s*{phrase}(?!\w)"
 GO_RE = r"(?<!\w){phrase}(?!\w)"
 # Nothing but punctuation and spaces: no further word.
@@ -90,10 +91,26 @@ def approval_keys(runtime: Runtime, prompt: str) -> list[str] | None:
         if not found:
             continue
         rest = APPROVAL_END_RE.sub("", text[found.end():])
-        keys = query_keys(runtime.pipelines, rest)
         left = rest
-        for key in keys:
-            left = cut_key(left, key)
+        ctx = context_of(runtime)
+        identities = {value for pipeline in runtime.pipelines
+                      for subject in pipeline.subject.impl.enumerate(ctx)
+                      if subject.exists and not subject.archived
+                      for value in [subject.id, *subject.keys]}
+        keys = []
+        for identity in sorted(identities, key=lambda value: (-len(value), value)):
+            match = re.search(IDENTITY_RE.format(name=re.escape(identity)), left, re.IGNORECASE)
+            if match:
+                keys.append(identity)
+                left = re.sub(IDENTITY_RE.format(name=re.escape(identity)), " ", left,
+                              flags=re.IGNORECASE)
+        # Canonical paths must be enumerated identities, never arbitrary path-like queries.
+        for key in query_keys(runtime.pipelines, left):
+            pattern = IDENTITY_RE.format(name=re.escape(key))
+            if ID_SEPARATOR not in key and not any(char.isspace() for char in key) \
+                    and re.search(pattern, left, re.IGNORECASE):
+                keys.append(key)
+                left = re.sub(pattern, " ", left, flags=re.IGNORECASE)
         if all(folded(token) in joiners for token in TAIL_SEPARATOR_RE.split(left) if token):
             return keys
     return None
@@ -270,10 +287,25 @@ def prompt_hook(event: Event, fallback: str | Path | None,
                  if (keys := approval_keys(runtime, answer)) is not None]
     keys = list(dict.fromkeys(key for group in approvals for key in group)) if approvals else None
     fresh = at is None or is_fresh({MARK_AT: at.isoformat()}, runtime.config.approval_window)
+    from ..approval_package import fingerprint, prompt_package, read_package
+    package = (prompt_package(ctx.root, keys, at, ctx.cache.git)
+               if keys is not None and fresh else None)
     marked = (keys is not None and fresh
-              and write_mark(ctx.root, keys, at=at, run=ctx.cache.git) is not None)
+              and write_mark(ctx.root, keys, at=at, run=ctx.cache.git, package=package) is not None)
     if marked and agent_context_setting(runtime, SETTING_NOTICE):
-        blocks.append(marked_text(locale, keys, runtime.config.approval_window))
+        try:
+            pending = read_package(ctx.root, ctx.cache.git) if package else None
+        except (OSError, ValueError):
+            pending = None
+        if pending and package == fingerprint(pending):
+            import shlex
+            records = [item["record"] for item in pending["items"]]
+            command = "svod approve " + shlex.join(records) + " --step approve"
+            blocks.append(locale.text(HOOK_APPROVAL_MARKED,
+                          minutes=runtime.config.approval_window,
+                          keys=FIELDS_SEPARATOR.join(records), commands=command))
+        else:
+            blocks.append(marked_text(locale, keys, runtime.config.approval_window))
     if agent_context_setting(runtime, SETTING_POSITIONS):
         found = positions(ctx, runtime.pipelines,
                           queries(ctx, runtime.pipelines, LINE_SEPARATOR.join(answers)),
