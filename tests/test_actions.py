@@ -1,15 +1,20 @@
 """Actions: svod do runs a profile script for one subject with its environment."""
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from unittest.mock import patch
+
 from support import (EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, TEST_PROFILE, StoreTestCase, core_text,
                      doc)
 
-from svod import actions, evidence_log, keys
+from svod import actions, evidence_log, keys, run
 from svod.context import Context
 from svod.loader import load_runtime
 from svod.locale import FALLBACK_LOCALE, load_locale
@@ -167,6 +172,75 @@ class DoTest(StoreTestCase):
                 with self.subTest(value=value):
                     bad = self.sb.cli("do", "slow", NOTE, "--timeout", value)
                     self.assertEqual(bad.returncode, EXIT_USAGE)
+
+    @unittest.skipUnless(sys.platform == "darwin", "Darwin zombie-group semantics")
+    def test_timeout_waits_for_zombie_descendant_group_to_disappear(self):
+        """Reaping the action leader need not immediately remove its zombie-only group."""
+        ready = self.sb.root / "ready"
+        release = self.sb.root / "release"
+        reaped = self.sb.root / "reaped"
+        helper = self.sb.root / "helper.py"
+        helper.write_text(
+            "import os, sys, time\nfrom pathlib import Path\n"
+            "group = int(sys.argv[1])\nos.setpgid(0, 0)\npid = os.fork()\n"
+            "if pid == 0:\n    os.setpgid(0, group)\n    os._exit(0)\n"
+            # Keep the dead descendant waitable outside the target process group.
+            "import subprocess\n"
+            "while not subprocess.check_output(['ps', '-o', 'stat=', '-p', str(pid)], "
+            "text=True).strip().startswith('Z'):\n    time.sleep(.01)\n"
+            f"Path({str(ready)!r}).touch()\n"
+            f"while not Path({str(release)!r}).exists():\n    time.sleep(.01)\n"
+            f"os.waitpid(pid, 0)\nPath({str(reaped)!r}).touch()\n")
+        native = os.killpg
+        denials = []
+
+        def probe(pid, sig):
+            try:
+                return native(pid, sig)
+            except PermissionError:
+                denials.append(sig)
+                if len(denials) == 2:
+                    release.touch()
+                    deadline = time.monotonic() + 5
+                    while not reaped.exists() and time.monotonic() < deadline:
+                        time.sleep(.01)
+                    self.assertTrue(reaped.exists(), "helper did not reap the descendant")
+                raise
+
+        with tempfile.TemporaryDirectory() as profile:
+            shutil.copytree(TEST_PROFILE, profile, dirs_exist_ok=True)
+            Path(profile, actions.ACTIONS_DIR, "slow.sh").write_text(
+                f"{sys.executable} {helper} $$ &\nwait\n")
+            self.sb.write("svod.yaml", (self.sb.store / "svod.yaml").read_text().replace(
+                str(TEST_PROFILE), profile))
+            try:
+                # Acknowledge topology readiness before allowing the real action wait to time out.
+                wait = subprocess.Popen.wait
+
+                def ready_wait(process, timeout=None):
+                    if timeout == .3:
+                        deadline = time.monotonic() + 5
+                        while not ready.exists() and time.monotonic() < deadline:
+                            time.sleep(.01)
+                        self.assertTrue(ready.exists(), "descendant did not become a zombie")
+                    return wait(process, timeout=timeout)
+
+                with patch.object(run.os, "killpg", side_effect=probe), \
+                        patch.object(subprocess.Popen, "wait", ready_wait):
+                    result = self.sb.cli("do", "slow", NOTE, "--timeout", "0.3")
+                self.assertEqual(result.returncode, actions.EXIT_TIMEOUT, result.stderr)
+                self.assertIn(core_text(keys.DO_TIMEOUT, name="slow", seconds="0.3"),
+                              result.stderr)
+                self.assertGreaterEqual(len(denials), 2)
+                self.assertEqual(set(denials), {0})
+                events = evidence_log.read(self.sb.store, "note", NOTE)
+                self.assertEqual(events[-1]["facts"]["code"], actions.EXIT_TIMEOUT)
+            finally:
+                release.touch()
+                deadline = time.monotonic() + 5
+                while not reaped.exists() and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertTrue(reaped.exists(), "helper cleanup did not finish")
 
     def test_list(self):
         """--list prints every action with the first comment line as its description."""

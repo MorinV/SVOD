@@ -35,7 +35,7 @@ def signal_group(process: subprocess.Popen, sig: int) -> bool:
         # Darwin killpg(0) reports EPERM for a zombie-only group. Reap our
         # owned leader if it exited between poll and the probe, then ask the
         # kernel again. Never equate permission denial with group absence:
-        # only ESRCH on that second probe proves it has gone.
+        # only a subsequent ESRCH proves it has gone.
         if sys.platform != "darwin" or sig != 0:
             raise
         try:
@@ -43,10 +43,20 @@ def signal_group(process: subprocess.Popen, sig: int) -> bool:
         except subprocess.TimeoutExpired as exc:
             raise PermissionError(
                 "process group probe denied while owned child remains alive") from exc
-        try:
-            os.killpg(process.pid, 0)
-        except ProcessLookupError:
-            return False
+        # Zombie descendants can outlive the owned leader's reap while their
+        # parent (often init) finishes reaping them. Allow that transition a
+        # bounded grace period; persistent denial still propagates.
+        until = time.monotonic() + STOP_GRACE_SEC
+        while True:
+            try:
+                os.killpg(process.pid, 0)
+                break
+            except ProcessLookupError:
+                return False
+            except PermissionError:
+                if time.monotonic() >= until:
+                    raise
+                time.sleep(STOP_POLL_SEC)
     return True
 
 
