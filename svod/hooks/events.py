@@ -64,7 +64,10 @@ def pre_tool(event, fallback):
         if bash_reads_only(command_of(data)):
             return None
     guard = Guard(root)
-    reason = tool_reason(guard, event, tool, data)
+    try:
+        reason = tool_reason(guard, event, tool, data)
+    except (OSError, ValueError, RuntimeError):
+        return deny_output("Cannot resolve write destination; supply literal valid paths.")
     if reason:
         note_denial(guard, event, tool, data, reason)
         return deny_output(reason)

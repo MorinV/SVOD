@@ -8,6 +8,8 @@ Each run is an action_run event of the evidence log.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import json
 import os
 import re
 import shlex
@@ -66,6 +68,91 @@ OWN_FIELDS = frozenset({FIELD_KIND, FIELD_SERVICES})
 TRUE_TEXT = "true"
 FALSE_TEXT = "false"
 MISSING_SCRIPT = "{source}: steps[{index}]: action script not found: {script}"
+
+TRUST_WARNING = ("Trusted profile action: not filesystem-isolated; internal filesystem and "
+                 "subprocess effects are not sandbox-enforced. This is not remote-effect consent.")
+
+
+def trust_paths(ctx: Context, pipeline: Pipeline) -> list[Path]:
+    """Snapshot every regular action dependency; reject links and special files."""
+    directory = actions_dir(ctx)
+    paths = [ctx.root / "svod.yaml", pipeline.source]
+    if ctx.config.local_path and ctx.config.local_path.is_file():
+        paths.append(ctx.config.local_path)
+    if directory.exists():
+        paths.extend([directory, *sorted(directory.rglob("*"))])
+    for path in paths:
+        if (any(part.is_symlink() for part in (path, *path.parents))
+                or not (path.is_file() or path.is_dir())):
+            raise OSError(f"Unsafe trusted action dependency: {path}")
+    return paths
+
+
+def trust_digest(ctx: Context, pipeline: Pipeline) -> str:
+    """Exact trust configuration and all profile action files reviewed with approval."""
+    sha = hashlib.sha256()
+    for path in trust_paths(ctx, pipeline):
+        content = path.read_bytes() if path.is_file() else None
+        sha.update(json.dumps([str(path.resolve()),
+                               content.hex() if content is not None else None]).encode())
+    sha.update(json.dumps(ctx.config.profile_config, sort_keys=True).encode())
+    return sha.hexdigest()
+
+
+def trust_changed_after(ctx: Context, pipeline: Pipeline, timestamp: float) -> bool:
+    """A reply preceding any trust input cannot approve that input."""
+    return any(path.stat().st_mtime > timestamp for path in trust_paths(ctx, pipeline))
+
+
+def trusted_argv(ctx: Context, pipeline: Pipeline, subject: Subject,
+                 name: str) -> list[str] | None:
+    """Only an explicitly configured argv for this action script and exact record."""
+    declarations = (getattr(ctx.config, "profile_config", None) or {}).get("trusted_actions", {})
+    value = declarations.get(name) if isinstance(declarations, Mapping) else None
+    script = script_path(ctx, name)
+    if (script is None or not isinstance(value, list) or len(value) != 3
+            or not all(isinstance(v, str) for v in value)
+            or value[0] != "bash" or value[2] != "{id}"
+            or (ctx.root / value[1]).resolve() != script.resolve()):
+        return None
+    return [value[0], str(script.resolve()), subject.id]
+
+
+def trust_required(ctx: Context, subject: Subject) -> bool:
+    """Keep previously approved trust active even after declarations are removed."""
+    from .approval import read_fields
+    return bool(ctx.config.profile_config.get("trusted_actions") or (
+        subject.path is not None
+        and read_fields(subject.path / "approval.yaml", "trusted_actions")[2]))
+
+
+def trust_snapshot_reason(ctx: Context, pipeline: Pipeline, subject: Subject) -> str | None:
+    """Validate executable configuration without evaluating gates recursively."""
+    from .approval import read_fields
+    try:
+        matches = (subject.path is not None
+                   and read_fields(subject.path / "approval.yaml", "trusted_actions")[2]
+                   == trust_digest(ctx, pipeline))
+    except (OSError, ValueError, RuntimeError):
+        matches = False
+    if not matches:
+        return "Trusted action configuration changed or lacks approval; obtain fresh task approval."
+    return None
+
+
+def trusted_reason(ctx: Context, pipeline: Pipeline, subject: Subject, name: str) -> str | None:
+    """Require a reviewed trust snapshot as well as the existing code-freeze policy."""
+    from .hooks.guard import main_reason
+    from .position import freeze
+    if trusted_argv(ctx, pipeline, subject, name) is None or subject.path is None:
+        return ("Action is not an exact configured trusted action; "
+                "use profile_config.trusted_actions.")
+    reason = main_reason(subject.path) or trust_snapshot_reason(ctx, pipeline, subject)
+    if reason:
+        return reason
+    if freeze(ctx, pipeline, subject) is not None:
+        return "Trusted action configuration changed or lacks approval; obtain fresh task approval."
+    return None
 
 
 @dataclass(frozen=True)
@@ -279,8 +366,14 @@ def run_action(ctx: Context, action: str, pipeline: Pipeline, subject: Subject,
     if script is None:
         raise FileNotFoundError(actions_dir(ctx) / f"{action}{ACTION_SUFFIX}")
     env = {**action_env(ctx, pipeline, subject), ENV_ACTION: action}
+    argv = trusted_argv(ctx, pipeline, subject, action)
+    if argv is not None:
+        env = {k: v for k, v in env.items() if not k.startswith(ENV_CHECKS_PREFIX)}
+        for name, command in check_commands(ctx.config.profile_config).items():
+            env[env_name(ENV_CHECKS_PREFIX, name)] = command
     clock = time.monotonic()
-    process = subprocess.Popen([SHELL, str(script), *extra], cwd=ctx.root, shell=False,
+    process = subprocess.Popen([*argv[:2], *extra] if argv else [SHELL, str(script), *extra],
+                               cwd=ctx.root, shell=False,
                                env=env, start_new_session=os.name == POSIX)
 
     def journal(code: int | None) -> None:

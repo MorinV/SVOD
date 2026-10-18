@@ -117,6 +117,10 @@ def build_parser() -> StatusParser:
     do.add_argument("--timeout", type=positive_seconds, default=None, metavar="SECONDS",
                     help="stop the script after this many seconds (default 600)")
     commands.add_parser(CMD_VALIDATE, help="check declarations, locale keys and registries")
+    dispatch = commands.add_parser("action-dispatch", help=argparse.SUPPRESS)
+    dispatch.add_argument("name")
+    dispatch.add_argument("query")
+    dispatch.add_argument("--check", action="store_true")
     status = commands.add_parser(CMD_STATUS, help="position of a task or container")
     status.add_argument("query", help="tracker key or container name")
     status.add_argument("--format", choices=("text", "json"), default="text")
@@ -140,6 +144,10 @@ def build_parser() -> StatusParser:
     approve.add_argument("--step", help="approval step id; first pending approval by default")
     approve.add_argument("--confirm", action="store_true",
                          help="without a fresh mark, ask the person at the terminal to confirm")
+    allow = commands.add_parser("allow", help="grant named write roots to one record")
+    allow.add_argument("query", help="unambiguous existing record")
+    allow.add_argument("--for", dest="duration", required=True, choices=("30m",))
+    allow.add_argument("--path", dest="paths", action="append", required=True)
     ask = commands.add_parser(CMD_ASK, help="add a question before work to the questions file")
     ask.add_argument("query", help="tracker key or subject name")
     ask.add_argument("question", nargs="*", help="the question, one line")
@@ -346,6 +354,12 @@ def do_action(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace)
     from svod.document import relative_or_absolute
     from svod.resolve import resolve
 
+    if args.command == "action-dispatch":
+        args.list, args.extra, args.force, args.timeout = False, [], False, None
+        if args.check:
+            if args.name != "checks":
+                return EXIT_USAGE
+            args.extra = ["--check"]
     locale = ctx.locale
     if args.list:
         actions = list_actions(ctx)
@@ -367,6 +381,9 @@ def do_action(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace)
     found = resolve(ctx, pipelines, args.query)
     matches = [(p, s) for p, s in found.matches if s.exists]
     if not matches:
+        if (args.command == "action-dispatch"
+                and not ctx.config.profile_config.get("trusted_actions")):
+            return 3  # Legacy start-task may create a record that does not exist yet.
         print(locale.text(keys.STATUS_NOT_FOUND, query=args.query), file=sys.stderr)
         return EXIT_USAGE
     if len(matches) > 1:
@@ -374,6 +391,22 @@ def do_action(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace)
                      [locale.text(keys.STATUS_CANDIDATE, id=s.id) for _, s in matches])
         return EXIT_USAGE
     pipeline, subject = matches[0]
+    from svod.actions import trust_required
+    requires_trust = trust_required(ctx, subject)
+    if args.command == "action-dispatch" and not requires_trust:
+        return 3  # Only genuinely legacy records may continue the legacy script route.
+    if requires_trust:
+        from svod.actions import TRUST_WARNING, trusted_reason
+        if ((args.extra and args.command != "action-dispatch")
+                or args.force or args.timeout is not None):
+            print("Trusted dispatch accepts only the configured action and record.",
+                  file=sys.stderr)
+            return EXIT_USAGE
+        reason = trusted_reason(ctx, pipeline, subject, args.name)
+        if reason:
+            print(reason, file=sys.stderr)
+            return EXIT_USAGE
+        print(TRUST_WARNING, file=sys.stderr)
     ahead = step_ahead(ctx, pipeline, subject, args.name)
     if ahead is not None:
         print(locale.text(keys.DO_NOT_CURRENT, name=args.name, step=ahead.step, id=subject.id,
@@ -714,12 +747,15 @@ def run(args: argparse.Namespace) -> int:
             kind=args.kind, tags=split_list(args.tags), key=args.key)))
     if args.command == CMD_RENDER:
         return render(ctx, runtime.pipelines, args)
-    if args.command == CMD_DO:
+    if args.command in (CMD_DO, "action-dispatch"):
         return do_action(ctx, runtime.pipelines, args)
     if args.command == CMD_RETRO:
         return retro(ctx, runtime.pipelines, args)
     if args.command == CMD_REPORT:
         return report(ctx, runtime.pipelines, args)
+    if args.command == "allow":
+        from svod.grants import allow
+        return emit(allow(ctx, runtime.pipelines, args.query, args.duration, args.paths))
     if args.command == CMD_APPROVE:
         from svod.approve import approve
         from svod.approval import read_mark

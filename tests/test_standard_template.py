@@ -332,6 +332,7 @@ class StandardFreezeTest(unittest.TestCase):
         self.sb = StandardStore(temp.name)
         self.sb.edit(f"{EXAMPLE}/card.md", "services: []", f"services: [{SERVICE}]")
         self.sb.edit(f"{EXAMPLE}/card.md", ARCHIVED, OPEN)
+        self.sb.edit("svod.yaml", "# services:", "services:\n  app: ../app\n# services:")
         self.tree = self.sb.base / FROZEN_TREE
         self.sb.git(self.sb.service, "worktree", "add", "-q", "-b", BRANCH, str(self.tree))
         self.sb.write("work.yaml", f"{SERVICE}: ../{FROZEN_TREE}\n", base=self.sb.store / EXAMPLE)
@@ -390,12 +391,16 @@ class StandardFreezeTest(unittest.TestCase):
         self.assertIsNotNone(refused)
         output = refused["hookSpecificOutput"]
         self.assertEqual(output["permissionDecision"], DENY)
-        self.assertIn(EXAMPLE, output["permissionDecisionReason"])
-        self.assertIsNone(self.pre_tool(self.sb.service / CHECK_FILE))
+        self.assertIn("EXAMPLE-1", output["permissionDecisionReason"])
+        self.assertIsNotNone(self.pre_tool(self.sb.service / CHECK_FILE))
         self.assertEqual(self.sb.cli("init", "--login", "tester").returncode, EXIT_OK)
         approved = self.sb.approve(EXAMPLE, "approve")
         self.assertEqual(approved.returncode, EXIT_OK, approved.stderr)
-        self.assertIsNone(self.pre_tool(target))
+        # Select the record rather than borrowing another record's worktree.
+        event = {"cwd": str(self.tree), "tool_name": "Write",
+                 "tool_input": {"file_path": str(target), "content": "hello"}}
+        from svod.hooks.events import pre_tool
+        self.assertIsNone(pre_tool(event, self.sb.store))
 
 
 class StandardTemplateFilesTest(unittest.TestCase):

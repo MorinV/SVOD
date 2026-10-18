@@ -219,9 +219,22 @@ def approve(ctx: Context, pipelines: list[Pipeline], query: str, at: dt.datetime
     if not marked and not confirmed(ctx, subject, step, ref, files, sha):
         return refusal(ctx, keys.APPROVE_NOT_CONFIRMED, subject=subject_label(subject))
     marker = ref.params[PARAM_MARKER]
+    pipeline = next(p for p, item in resolution.matches if item is subject)
+    trust_sha = None
+    if ctx.config.profile_config.get("trusted_actions") and ref.purpose == "contract":
+        from .actions import trust_changed_after, trust_digest
+        try:
+            stamp = mark_time(cast("dict[str, Any]", mark)) if marked else None
+            if marked and (stamp is None or trust_changed_after(ctx, pipeline, stamp.timestamp())):
+                return refusal(ctx, keys.APPROVE_CHANGED_AFTER_MARK, query=query, step=step)
+            trust_sha = trust_digest(ctx, pipeline)
+        except (OSError, ValueError, RuntimeError):
+            return refusal(ctx, keys.APPROVE_CHANGED_AFTER_MARK, query=query, step=step)
     date = (at or now()).date().isoformat()
     path = base / ref.params[PARAM_FILE]
     write_fields(path, marker, date, who, sha)
+    if trust_sha is not None:
+        write_fields(path, "trusted_actions", date, who, trust_sha)
     if marked:
         consume_mark(ctx.root, identities, mark)
     root = subject_context(ctx, subject).root

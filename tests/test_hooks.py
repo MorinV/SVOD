@@ -27,6 +27,8 @@ DENIED_FIELDS = "plan_approved, plan_approved_by, plan_approved_sha"
 DENIED_MAIN = "is read-only"
 DENIED_MARK = "approval mark"
 DENIED_BROKEN = "writes outside the store are refused"
+DENIED_SCOPE = "svod allow"
+DENIED_UNRESOLVED = "Cannot resolve shell write destinations"
 MARK_PATH = ".git/svod-approval.json"
 ENGINE_BROKEN = "failed to load"
 POSITION = f"{te.CHANGE_NAME} ({te.KEY})"
@@ -34,7 +36,7 @@ MARKED = "is recorded and stays fresh"
 WAIT = "wait for the approval"
 UNNAMED_COMMAND = "svod approve <key>"
 COMMON_DIR = ("rev-parse", "--git-common-dir")
-MAX_EDIT_CALLS = 2
+MAX_EDIT_CALLS = 6  # Includes validated service worktree identity and repository relation.
 NESTED = "nested"
 NOTES = "notes.md"
 LOCAL_CONFIG = ".svod.local.yaml"
@@ -100,8 +102,12 @@ class HookTestCase(unittest.TestCase):
         os.environ.pop(hooks.PROJECT_ENV, None)
         te.propose(cls.sb)
         te.specify(cls.sb)
+        cls.sb.write(te.META, te.META_TEXT + "services: [service]\n")
+        te.set_config(cls.sb, services="{service: ../service}")
         cls.sb.commit(message=f"{te.KEY}: plan")
         cls.worktree = te.make_worktree(cls.sb)
+        cls.sb.write(f"{te.CHANGE}/work.yaml", f"service: {cls.worktree}\n")
+        cls.sb.commit(message="declare write scope")
         cls.sb.write(te.CODE_FILE, te.CODE_TEXT, base=cls.worktree)
         cls.sb.write(te.CODE_FILE, te.CODE_TEXT, base=te.service(cls.sb))
         cls.meta = cls.sb.store / te.META
@@ -166,7 +172,7 @@ class PreToolTest(HookTestCase):
              patch(f"*** Add File: {wt}/x.go\n+package main"), DENIED_PLAN),
             ("patch move into work dir before approval", False, store,
              patch(f"*** Update File: {sb.parent}/{te.SERVICE}/{te.CODE_FILE}\n"
-                   f"*** Move to: {wt}/moved.go"), DENIED_PLAN),
+                   f"*** Move to: {wt}/moved.go"), DENIED_SCOPE),
             ("bash in work dir before approval", False, wt, bash("echo x > main.go"),
              DENIED_PLAN),
             ("bash in-place edit in work dir before approval", False, wt,
@@ -183,7 +189,7 @@ class PreToolTest(HookTestCase):
              bash("cat main.go | grep main && git status && git log -1"), NO_OUTPUT),
             ("bash in work dir after approval", True, wt, bash("echo x > main.go"), NO_OUTPUT),
             ("bash writes elsewhere before approval", False, store,
-             bash(f"echo x > {sb.root}/{ELSEWHERE}.txt"), NO_OUTPUT),
+             bash(f"echo x > {sb.root}/{ELSEWHERE}.txt"), DENIED_SCOPE),
             ("write of the approval mark", False, store, write(store / MARK_PATH, "{}"),
              DENIED_MARK),
             ("bash writes the approval mark", False, store,
@@ -193,7 +199,7 @@ class PreToolTest(HookTestCase):
             ("patch in work dir after approval", True, wt,
              patch(f"*** Update File: {te.CODE_FILE}\n@@\n-a\n+b"), NO_OUTPUT),
             ("edit in a main checkout of a service", False, wt,
-             edit(sb.parent / te.SERVICE / te.CODE_FILE), NO_OUTPUT),
+             edit(sb.parent / te.SERVICE / te.CODE_FILE), DENIED_SCOPE),
             ("edit sets an approval field", False, store,
              edit(meta, "schema: spec-driven", "plan_approved: 2026-01-01"), DENIED_FIELDS),
             ("edit of another metadata field", False, store,
@@ -228,7 +234,7 @@ from pathlib import Path
 p = Path('{te.CHANGE_NAME}')
 raw = (p / '.openspec.yaml').read_bytes()
 (p / 'review/independent.md').write_bytes(raw + b'plan_approved_sha')
-PY"""), NO_OUTPUT),
+PY"""), DENIED_UNRESOLVED),
             ("edit in the store, read-only off", False, store, edit(store / NOTES), NO_OUTPUT),
         )
         for name, approved, cwd, tool_input, expected in cases:
@@ -359,6 +365,7 @@ PY"""),
         sb, store = self.sb, self.sb.store
         side = sb.parent / SIDE_CHECKOUT
         sb.git(store, "worktree", "add", "-q", "-b", SIDE_BRANCH, str(side))
+        self.addCleanup(sb.git, store, "worktree", "remove", "--force", str(side))
         config = (store / CONFIG_FILE).read_text(encoding=ENCODING)
         self.addCleanup((store / CONFIG_FILE).write_text, config, encoding=ENCODING)
         te.set_config(sb, main_checkout_read_only="true")
@@ -369,8 +376,8 @@ PY"""),
             ("tracked file", store / NOTES, DENIED_MAIN),
             ("plan of a change", self.meta, DENIED_MAIN),
             ("ignored local config", store / LOCAL_CONFIG, NO_OUTPUT),
-            ("worktree of the store", side / NOTES, NO_OUTPUT),
-            ("service checkout", sb.parent / te.SERVICE / te.CODE_FILE, NO_OUTPUT),
+            ("worktree of the store", side / NOTES, DENIED_SCOPE),
+            ("service checkout", sb.parent / te.SERVICE / te.CODE_FILE, DENIED_SCOPE),
             ("nested repository", nested / NOTES, NO_OUTPUT),
             ("git directory", store / hooks.DOT_GIT / "description", NO_OUTPUT),
         )
@@ -386,7 +393,7 @@ PY"""),
             ("bash tee into a tracked file", f"cat /tmp/x | tee {NOTES}", DENIED_MAIN),
             ("bash reads a tracked file", f"cat {NOTES} && git diff", NO_OUTPUT),
             ("bash writes the ignored local config", f"echo x > {LOCAL_CONFIG}", NO_OUTPUT),
-            ("bash writes in the worktree of the store", f"echo x > {side}/{NOTES}", NO_OUTPUT),
+            ("bash writes in the worktree of the store", f"echo x > {side}/{NOTES}", DENIED_SCOPE),
         )
         for name, command, expected in commands:
             with self.subTest(case=name):
@@ -547,7 +554,7 @@ class HookCostTest(HookTestCase):
                     self.assertIsNone(found)
                     self.assertEqual([], calls)
 
-    def test_edits_cost_at_most_two_git_calls(self):
+    def test_edits_have_bounded_validated_worktree_git_calls(self):
         """An allowed edit of a work directory and a refused edit of a read-only main checkout."""
         te.approve(self.sb)
         found, calls = self.calls(hooks.EVENT_PRE_TOOL,
@@ -805,7 +812,7 @@ class MarkAndQuestionsGuardTest(PreToolTest):
             ("bash appends to questions", bash(f"echo x >> {QUESTIONS}"), DENIED_QUESTIONS),
             ("bash reads questions", bash(f"cat {QUESTIONS}"), NO_OUTPUT),
             ("questions outside a store", write(self.sb.root / ELSEWHERE / "questions.md", "x"),
-             NO_OUTPUT),
+             DENIED_SCOPE),
             ("questions at the store root", write(store / "questions.md", "x"), NO_OUTPUT),
             ("svod ask adds a question", bash(f"svod ask {te.CHANGE} 'Which?'"), NO_OUTPUT),
         )
