@@ -1,6 +1,8 @@
 """The task example: it validates, its key gate reads keys, its position moves step by step."""
 import os
 import unittest
+
+from support import isolated_env
 from unittest import mock
 
 import task_example as te
@@ -25,7 +27,7 @@ class ExampleTaskTest(unittest.TestCase):
     def setUp(self):
         """Fresh store with git isolated for in-process calls."""
         self.sb = te.make_task_store()
-        patcher = mock.patch.dict(os.environ, self.sb.env)
+        patcher = mock.patch.dict(os.environ, isolated_env(**self.sb.env), clear=True)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(self.sb.cleanup)

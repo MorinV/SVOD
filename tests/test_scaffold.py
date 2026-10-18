@@ -5,6 +5,7 @@ import subprocess
 import sys
 import unittest
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from support import (CLI_MODULE, CLI_TIMEOUT_SEC, ENCODING, EXIT_OK, EXIT_USAGE, core_text,
                      git_env)
@@ -68,7 +69,8 @@ class RetiredTemplateTest(unittest.TestCase):
     """svod new --template local is a load error naming the standard template."""
 
     def test_scaffold_refuses_with_the_replacement(self):
-        with TemporaryDirectory() as temp:
+        with TemporaryDirectory() as temp, \
+                mock.patch.dict(os.environ, isolated_env(temp), clear=True):
             target = Path(temp) / 'store'
             with self.assertRaises(LoadError) as caught:
                 scaffold(target, RETIRED_NAME)

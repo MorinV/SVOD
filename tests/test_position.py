@@ -155,7 +155,7 @@ class PositionTest(SharedStoreTestCase):
         self.assertEqual(historical["done_outcome"]["gate"], "archived")
         self.assertEqual(historical["done_outcome"]["status"], "pass")
         for name in ("entries", "steps", "marks", "current_entries"):
-            self.assertEqual(historical[name], [], name)
+            self.assertNotIn(name, historical)
         self.assertIn(NEXT.format("project closed"), self.status("done"))
 
     def test_rule3_position_and_text(self):

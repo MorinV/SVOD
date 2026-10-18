@@ -38,12 +38,18 @@ PYTHONPATH_ENV = "PYTHONPATH"
 CLI_ENV = {"PYTHONDONTWRITEBYTECODE": "1", "PYTHONUTF8": "1"}
 
 
+def isolated_env(base=None, **extra):
+    """Drop inherited SVOD_* only; explicit fixture values always win."""
+    inherited = os.environ if base is None else base
+    return {**{k: v for k, v in inherited.items() if not k.startswith("SVOD_")}, **extra}
+
+
 def child_env(base=None, **extra):
     """Environment of a child process importing svod from this checkout first.
 
     The checkout may be a worktree while svod is installed in editable mode from elsewhere.
     """
-    env = dict(os.environ if base is None else base, **extra)
+    env = isolated_env(base, **extra)
     inherited = env.get(PYTHONPATH_ENV)
     env[PYTHONPATH_ENV] = os.pathsep.join(filter(None, (str(REPO_DIR), inherited)))
     return env
@@ -94,7 +100,7 @@ def run_cli(args, cwd, env, drop=(), stdin=None):
     """
     out, err = io.StringIO(), io.StringIO()
     previous = os.getcwd()
-    with mock.patch.dict(os.environ, env), \
+    with mock.patch.dict(os.environ, isolated_env(**env), clear=True), \
             mock.patch.object(sys, "stdout", out), mock.patch.object(sys, "stderr", err), \
             mock.patch.object(sys, "stdin", io.StringIO(stdin or "")), \
             mock.patch.object(subprocess, "run", piped_run(subprocess.run)):
@@ -225,7 +231,7 @@ class StoreTestCase(unittest.TestCase):
     def setUp(self):
         """Fresh store and isolated git environment per test."""
         self.sb = TempStore(**self.store_kwargs)
-        patcher = mock.patch.dict(os.environ, self.sb.env)
+        patcher = mock.patch.dict(os.environ, isolated_env(**self.sb.env), clear=True)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(self.sb.cleanup)
@@ -256,7 +262,7 @@ class SharedStoreTestCase(unittest.TestCase):
     def setUpClass(cls):
         """Build the store once with git isolated for in-process calls."""
         cls.sb = TempStore()
-        cls.patcher = mock.patch.dict(os.environ, cls.sb.env)
+        cls.patcher = mock.patch.dict(os.environ, isolated_env(**cls.sb.env), clear=True)
         cls.patcher.start()
         cls.build(cls.sb)
 

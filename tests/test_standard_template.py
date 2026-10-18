@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from support import (CLI_ENV, ENCODING, EXIT_OK, ME, REPO_DIR, git_env, run_cli)
+from support import (CLI_ENV, ENCODING, EXIT_OK, ME, REPO_DIR, git_env, isolated_env, run_cli)
 
 from svod.approval import write_mark
 from svod.context import Context
@@ -79,7 +79,7 @@ class StandardStore:
         self.base = Path(temp)
         self.home = self.base / "home"
         self.home.mkdir()
-        self.env = {**os.environ, **git_env(self.home), **CLI_ENV,
+        self.env = {**isolated_env(), **git_env(self.home), **CLI_ENV,
                     "GIT_AUTHOR_NAME": ME[1], "GIT_AUTHOR_EMAIL": ME[0],
                     "GIT_COMMITTER_NAME": ME[1], "GIT_COMMITTER_EMAIL": ME[0]}
         self.store = scaffold(self.base / "store", "standard")

@@ -86,7 +86,7 @@ class StatusJsonContractTest(StoreTestCase):
                        if s["id"] == "approve")["outcomes"][0]
         self.assertEqual(outcome["status"], "unknown")
         self.assertEqual(outcome["reason_code"], "unknown_detail")
-        self.assertNotIn("secret", outcome["facts"])
+        self.assertNotIn("facts", outcome)
         self.assertEqual(counter.calls, 1)
 
     def test_explicit_text_and_json_cli_preserve_default_text_and_exit(self):
@@ -138,7 +138,7 @@ class StatusJsonContractTest(StoreTestCase):
         data = serializer.to_json(collection)
         self.assertEqual(counter.calls, 1)
         self.assertEqual(data["positions"][0]["current"], "approve")
-        self.assertEqual(data["positions"][0]["unknown"], [])
+        self.assertNotIn("unknown", data["positions"][0])
         self.assertEqual(data["positions"][0]["steps"][-1]["outcomes"][0]["status"], "unknown")
 
     def test_missing_suppression_ambiguous_and_done_shortcut_no_second_engine(self):
@@ -164,7 +164,7 @@ class StatusJsonContractTest(StoreTestCase):
         with patch.object(collector, "resolve",
                           return_value=dataclasses.replace(resolution, ambiguous=True)):
             ambiguous = serializer.to_json(collector.collect_status(self.ctx, [pipeline], "tk-4"))
-        self.assertEqual(ambiguous["positions"], [])
+        self.assertNotIn("positions", ambiguous)
         self.assertEqual(ambiguous["report"]["exit_code"], 2)
         self.assertEqual(missing_gate.calls, 1)
         done_counter = CountingGate(verdict(True))
@@ -178,7 +178,7 @@ class StatusJsonContractTest(StoreTestCase):
         final = collector.collect_status(self.ctx, [terminal], "tk-4")
         projected = serializer.to_json(final)["positions"][0]
         self.assertTrue(projected["done"])
-        self.assertEqual(projected["current_entries"], [])
+        self.assertNotIn("current_entries", projected)
         self.assertEqual(projected["current_entry_evaluation"], "not_evaluated")
         self.assertEqual((done_counter.calls, current_counter.calls), (1, 0))
 
@@ -222,7 +222,7 @@ class StatusJsonContractTest(StoreTestCase):
         data = serializer.to_json(collector.collect_status(self.ctx, [pipeline], "tk-4"))
         outcome = next(s for s in data["positions"][0]["steps"]
                        if s["id"] == "approve")["outcomes"][0]
-        self.assertEqual(outcome["facts"], {})
+        self.assertNotIn("facts", outcome)
         self.assertNotIn("PRIVATE", json.dumps(data))
 
     def test_native_instruction_variant_and_refused_exit_one(self):
@@ -288,14 +288,13 @@ class NextActionTest(unittest.TestCase):
         self.assertEqual(data.get("next_action"), [{
             "pipeline": "synthetic",
             "subject": {"id": "feature/sample/tasks/task", "exists": True, "keys": ["SAMPLE-1"]},
-            "checkout": None, "state": "live", "stage": "outline", "role": "planner",
+            "state": "live", "stage": "outline", "role": "planner",
             "instruction": {"base_key": "step.outline", "variant_key": "step.outline_missing",
                             "from_entry": False},
             "inputs": [{"gate": "artifact", "purpose": "contract", "kind": "path",
                         "ref": "contract.md"}],
-            "blocker": {"gate": "artifact", "status": "fail", "reason_code": "missing",
-                        "facts": {}, "severity": None},
-            "version": {"value": None, "reason_code": "not_captured"},
+            "blocker": {"gate": "artifact", "status": "fail", "reason_code": "missing"},
+            "version": {"reason_code": "not_captured"},
         }])
         self.assertEqual(counter.calls, 2)
 
@@ -326,7 +325,7 @@ class NextActionTest(unittest.TestCase):
         item.position.current = None
         item.position.text_from_entry = True
         action = to_json(collection)["next_action"][0]
-        self.assertIsNone(action["stage"])
+        self.assertNotIn("stage", action)
         self.assertEqual(action["blocker"]["severity"], "block")
         self.assertEqual(action["inputs"], [{"gate": "artifact", "purpose": "contract",
                                            "kind": "path", "ref": "planning/registration.yaml"}])
@@ -334,21 +333,22 @@ class NextActionTest(unittest.TestCase):
     def test_children_are_projected_from_captured_positions(self):
         collection, counter = self.capture()
         item = collection.items[0]
-        self.assertEqual(to_json(collection)["positions"][0]["children"], [])
+        self.assertNotIn("children", to_json(collection)["positions"][0])
         child = Subject("work/tasks/child", None)
         captured = position(None, item.pipeline, child)
         unsafe = position(None, item.pipeline, Subject("../escape", None))
         calls = counter.calls
         item.children = [captured, unsafe]
-        self.assertEqual(to_json(collection)["positions"][0]["children"], [
+        self.assertNotIn("children", to_json(collection)["positions"][0])
+        self.assertEqual(to_json(collection, children=True)["positions"][0]["children"], [
             {"id": "work/tasks/child", "pipeline": "synthetic", "current": "outline",
              "done": False},
-            {"id": None, "pipeline": "synthetic", "current": "outline", "done": False}])
+            {"pipeline": "synthetic", "current": "outline", "done": False}])
         self.assertEqual(counter.calls, calls)
 
     def test_safe_command_error_has_no_next_action(self):
         from svod.status_json import error_json
-        self.assertEqual(error_json("invalid_load").get("next_action"), [])
+        self.assertNotIn("next_action", error_json("invalid_load"))
 
     def test_unknown_stale_blockers_remain_captured_and_projection_is_pure(self):
         for result in (unknown("PRIVATE raw error", secret="PRIVATE"),
@@ -370,7 +370,7 @@ class NextActionTest(unittest.TestCase):
                 self.assertEqual(action["blocker"]["status"], result.status.value)
                 self.assertEqual(action["blocker"]["reason_code"],
                                  "stale" if result.reason == "stale" else "unknown_detail")
-                self.assertEqual(action["version"], {"value": None, "reason_code": "not_captured"})
+                self.assertEqual(action["version"], {"reason_code": "not_captured"})
                 self.assertNotIn("PRIVATE", json.dumps(first))
                 self.assertFalse({"permission", "capability", "execute", "ledger", "goal"}
                                  & action.keys())
@@ -388,8 +388,8 @@ class NextActionTest(unittest.TestCase):
         action = to_json(collection)["next_action"][0]
         self.assertEqual(action["state"], "historical")
         for key in ("stage", "role", "instruction", "blocker"):
-            self.assertIsNone(action[key])
-        self.assertEqual(action["inputs"], [])
+            self.assertNotIn(key, action)
+        self.assertNotIn("inputs", action)
         self.assertEqual((item.position.entries, item.position.steps, item.position.marks),
                          ([], [], []))
         self.assertEqual(counter.calls, 2)
@@ -406,15 +406,15 @@ class NextActionTest(unittest.TestCase):
         pos.done = dataclasses.replace(outcome, result=verdict(True))
         action = to_json(collection)["next_action"][0]
         self.assertEqual(action["state"], "completed")
-        self.assertIsNone(action["blocker"])
-        self.assertIsNone(action["instruction"])
-        self.assertEqual(action["inputs"], [])
+        self.assertNotIn("blocker", action)
+        self.assertNotIn("instruction", action)
+        self.assertNotIn("inputs", action)
 
     def test_unresolved_ambiguous_and_missing_do_not_invent_action(self):
         collection, _ = self.capture()
         collection.items = []
         collection.resolution = Resolution(matches=[], ambiguous=True)
-        self.assertEqual(to_json(collection)["next_action"], [])
+        self.assertNotIn("next_action", to_json(collection))
         collection, _ = self.capture()
         item = collection.items[0]
         item.missing = item.position.current.first_open
@@ -422,10 +422,10 @@ class NextActionTest(unittest.TestCase):
         item.subject.exists = False
         action = to_json(collection)["next_action"][0]
         self.assertEqual(action["state"], "not_evaluated")
-        self.assertIsNone(action["stage"])
-        self.assertIsNone(action["instruction"])
+        self.assertNotIn("stage", action)
+        self.assertNotIn("instruction", action)
         self.assertEqual(action["blocker"]["status"], "fail")
-        self.assertEqual(action["inputs"], [])
+        self.assertNotIn("inputs", action)
 
 
 class CommandFactsTest(unittest.TestCase):

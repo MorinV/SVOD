@@ -6,6 +6,12 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Changed
+
+- Status JSON v1 omits empty optional values recursively, retaining false, zero and required discriminants. Consumers must tolerate absent optional fields, including empty collections in errors and `next_action`. Child details require `--children`; text output and correctness gates are unchanged.
+- `validate` emits non-fatal unused-profile-locale and no-skill warnings without evaluating gates or actions; dynamic locale usage is treated conservatively.
+- Test helpers and sibling subprocess fixtures discard inherited `SVOD_*` pollution while retaining explicit fixture overrides; production environment policy is unchanged.
+
 ## [0.6.0] - 2026-10-17
 
 ### Added
