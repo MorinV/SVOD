@@ -16,7 +16,9 @@ from ..checkouts import subject_context
 from ..config import load_config
 from ..errors import LoadError
 from ..gates import PARAM_FILE, PARAM_MARKER
-from ..git import GitResult, run_git, worktree_list
+from ..git import GitResult, common_dir_file, run_git, worktree_list
+from ..grants import GRANT_FILE, REQUEST_FILE, grant_paths
+from ..yamlio import read_yaml
 from ..keys import (HOOK_DENY_APPROVAL, HOOK_DENY_BROKEN, HOOK_DENY_HUMAN, HOOK_DENY_MAIN,
                     HOOK_DENY_MARK, HOOK_DENY_PLAN, HOOK_DENY_QUESTIONS, STATUS_UNKNOWN)
 from ..locale import error_locale
@@ -27,7 +29,7 @@ from ..resolve import by_key
 from ..workflow_policy import approval_refs
 from .protocol import (BASH_TOOL, CONTENT_FIELD, EDITS_FIELD, PATCH_TOOL, PATH_FIELDS,
                        TEXT_FIELDS, WRITE_TOOL, Event, absolute, command_of, event_cwd)
-from .shell import bash_paths, bash_reads_only, bash_writes_approval
+from .shell import bash_paths, bash_reads_only, bash_writes_approval, write_targets
 from .store import context_of, key_gates, load, one_line
 
 if TYPE_CHECKING:
@@ -195,12 +197,59 @@ class Guard:
         self.runtime, self.broken = load(root) if root is not None else (None, None)
         self.ctx = context_of(self.runtime, self.cache) if self.runtime else None
         self.guarded = guarded_files(self.runtime.pipelines) if self.runtime else []
+        self.selected: Subject | None = None
+        self.write_roots: list[Path] = []
+        self.declared: list[tuple[Pipeline, Subject, list[Path]]] = []
+
+    def select_scope(self, event: Event) -> None:
+        """Select only a unique record containing cwd, directly or via declared work.yaml."""
+        if self.runtime is None:
+            return
+        cwd = event_cwd(event).resolve()
+        matches = {}
+        for pipeline in self.runtime.pipelines:
+            for subject in pipeline.subject.impl.enumerate(self.ctx):
+                if not subject.exists or subject.archived or subject.path is None:
+                    continue
+                roots = []
+                work = subject.path / "work.yaml"
+                try:
+                    data = read_yaml(work) if work.is_file() else {}
+                    if not isinstance(data, dict) or any(not isinstance(v, str) or not v.strip()
+                                                         for v in data.values()):
+                        continue
+                    base = subject.checkout or self.root
+                    services = (subject.attrs.get("frontmatter") or {}).get(
+                        "services", self.runtime.config.services)
+                    for service, value in data.items():
+                        repository = self.runtime.config.services.get(service)
+                        if repository is None or service not in services:
+                            continue
+                        candidate = (base / value).resolve()
+                        trees, error = worktree_list(repository, self.cache.git)
+                        if error or not trees or candidate == trees[0].path:
+                            continue
+                        if candidate not in {tree.path for tree in trees[1:]}:
+                            continue
+                        top = self.cache.git(candidate, "rev-parse", "--show-toplevel")
+                        expected = common_dir_file(repository, ".", self.cache.git)
+                        actual = common_dir_file(candidate, ".", self.cache.git)
+                        if (top.ok and Path(top.out).resolve() == candidate
+                                and expected is not None and actual == expected):
+                            roots.append(candidate)
+                except (LoadError, OSError, ValueError, RuntimeError):
+                    continue
+                self.declared.append((pipeline, subject, roots))
+                if inside(subject.path.resolve(), cwd) or any(inside(p, cwd) for p in roots):
+                    matches[(pipeline.name, subject.id)] = (subject, roots)
+        if len(matches) == 1:
+            self.selected, self.write_roots = next(iter(matches.values()))
 
     def fields_of(self, path: Path) -> tuple[tuple[str, ...], str | None]:
         """(approval fields, metadata file name) when the path is a guarded metadata file."""
         for item in self.guarded:
             if path.parts[-len(item.parts):] == item.parts:
-                return item.fields, Path(*item.parts).as_posix()
+                return (*item.fields, *field_names("trusted_actions")), Path(*item.parts).as_posix()
         return (), None
 
     def approval_text(self, fields: Iterable[str], name: str | None) -> str:
@@ -223,6 +272,12 @@ class Guard:
 
     def edit_reason(self, path: Path, touches: Touches) -> str | None:
         """Refusal of an edit of the path; touches(fields) tells whether it changes them."""
+        if any(name in path.parts for name in (GRANT_FILE, REQUEST_FILE)):
+            return "Write grants are protected; use svod allow with a fresh human reply."
+        if self.root is not None and (path.is_dir() or path.name == ".git"):
+            protected = common_dir_file(self.root, GRANT_FILE, self.cache.git)
+            if protected is not None and inside(path, protected.resolve()):
+                return "Write grants and approval metadata ancestors are protected."
         if path.name in (MARK_FILE, HUMAN_FILE):
             return self.mark_text(path.name)
         if questions_file(path):
@@ -230,15 +285,57 @@ class Guard:
         fields, name = self.fields_of(path)
         if fields and touches(fields):
             return self.approval_text(fields, name)
-        return main_reason(path, self.cache.git) or self.plan_reason(path)
+        return (main_reason(path, self.cache.git) or self.plan_reason(path)
+                or self.scope_reason(path))
+
+    def scope_reason(self, path: Path) -> str | None:
+        """Keep writes in the instance until an explicit record scope can authorize them."""
+        if self.root is None or self.runtime is None or inside(self.root, path):
+            return None
+        if self.selected is not None and any(inside(p, path) for p in
+                [*self.write_roots, *grant_paths(self.root, self.selected.id, run=self.cache.git)]):
+            return None
+        return (f"Write outside the instance is refused: {path}. Select an existing record "
+                "and use svod allow <query> --for 30m --path <path> after a fresh human reply.")
 
     def bash_reason(self, event: Event, command: str) -> str | None:
         """Refusal of a shell command writing approval fields, the mark, frozen or main code."""
-        if bash_writes_approval(command, self.guarded):
+        if bash_writes_approval(command, [*self.guarded,
+                Guarded(("approval.yaml",), field_names("trusted_actions"))]):
             item = next(i for i in self.guarded if i.parts[-1] in command)
             return self.approval_text(item.fields, Path(*item.parts).as_posix())
         if bash_reads_only(command):
             return None
+        # A dedicated native dispatch, not a general bash/python exemption.
+        import shlex
+        from ..actions import trusted_argv, trusted_reason
+        from ..resolve import resolve
+        if self.ctx is not None and self.runtime is not None and (
+                event_cwd(event).resolve() == self.root):
+            words = shlex.split(command)
+            if (len(words) == 4 and words[:2] == ["svod", "do"]
+                    and not any(c in command for c in "$`;|&<>\n()")):
+                matches = [(p, s) for p, s in resolve(
+                    self.ctx, self.runtime.pipelines, words[3]).matches
+                    if s.exists and not s.archived]
+                if len(matches) == 1:
+                    p, s = matches[0]
+                    return trusted_reason(self.ctx, p, s, words[2])
+            if (len(words) == 3 and words[0] == "bash"
+                    and not any(c in command for c in "$`;|&<>\n()")):
+                matches = [(p, s) for p, s in resolve(
+                    self.ctx, self.runtime.pipelines, words[2]).matches
+                    if s.exists and not s.archived and s.id == words[2]]
+                if len(matches) == 1:
+                    p, s = matches[0]
+                    name = Path(words[1]).stem
+                    argv = trusted_argv(self.ctx, p, s, name)
+                    configured = (self.ctx.config.profile_config["trusted_actions"][name]
+                                  if argv else None)
+                    if configured and words[1] == configured[1]:
+                        return trusted_reason(self.ctx, p, s, name)
+        if any(name in command for name in (GRANT_FILE, REQUEST_FILE)):
+            return "Write grants are protected; use svod allow with a fresh human reply."
         for name in (MARK_FILE, HUMAN_FILE):
             if name in command:
                 return self.mark_text(name)
@@ -249,8 +346,15 @@ class Guard:
         reason = self.plan_reason(cwd)
         if reason:
             return reason
+        targets = write_targets(event, command)
+        if targets is None and self.root is not None:
+            return ("Cannot resolve shell write destinations. Use direct edit tools or literal "
+                    "supported shell writes; unknown program effects require human execution.")
         by_dir: dict[Path, list[Path]] = {}
-        for path in bash_paths(event, command):
+        for path in targets or []:
+            reason = self.edit_reason(path, lambda fields: True)
+            if reason:
+                return reason
             by_dir.setdefault(existing_dir(path), []).append(path)
         for directory, paths in by_dir.items():
             found = main_checkout(directory, self.cache.git)
@@ -281,6 +385,13 @@ class Guard:
         The freeze is checked before the directory is asked of the workspace gate: an edit in
         the work directory of an approved subject needs none of the git calls of the gate.
         """
+        for pipeline, subject, roots in self.declared:
+            if any(inside(root, path) for root in roots):
+                text = self.frozen(pipeline, subject)
+                if text:
+                    return self.runtime.locale.text(  # type: ignore[union-attr]
+                        HOOK_DENY_PLAN, keys=", ".join(sorted(subject.keys)) or subject.id,
+                        text=text)
         gate = self.runtime.workspace_gate if self.runtime else None
         directory = checkout_dir(path) if gate is not None else None
         if gate is None or directory is None:
@@ -329,9 +440,18 @@ def edit_touches(tool: str, data: dict[str, Any], path: Path) -> Touches:
         return lambda fields: approval_lines(content, fields) != approval_lines(read_text(path),
                                                                                 fields)
     edits = data.get(EDITS_FIELD) or [data]
-    texts = [str(edit.get(f) or "") for edit in edits if isinstance(edit, dict)
-             for f in TEXT_FIELDS]
-    return lambda fields: any(f in text for text in texts for f in fields)
+    before = read_text(path)
+    after = before
+    for edit in edits:
+        if not isinstance(edit, dict):
+            return lambda fields: True
+        old, new = (edit.get(f) for f in TEXT_FIELDS)
+        if not isinstance(old, str) or not old or not isinstance(new, str) or old not in after:
+            return lambda fields: True
+        after = after.replace(old, new)
+    return lambda fields: (approval_lines(before, fields) != approval_lines(after, fields)
+                           or any(f in str(edit.get(key) or "") for edit in edits
+                                  for key in TEXT_FIELDS for f in fields))
 
 
 def edit_path(event: Event, data: dict[str, Any]) -> Path | None:
@@ -342,17 +462,24 @@ def edit_path(event: Event, data: dict[str, Any]) -> Path | None:
 
 def tool_reason(guard: Guard, event: Event, tool: str, data: dict[str, Any]) -> str | None:
     """Refusal of the tool call, or None."""
+    guard.select_scope(event)
     if tool == BASH_TOOL:
         return guard.bash_reason(event, command_of(data))
     if tool == PATCH_TOOL:
-        for target, section in patch_targets(event, command_of(data)):
-            reason = guard.edit_reason(target, lambda fields, section=section: any(f in section
-                                                                                  for f in fields))
+        targets = patch_targets(event, command_of(data))
+        if not targets:
+            return "Cannot resolve patch write destinations; supply explicit file sections."
+        destructive = ("*** Delete File:" in command_of(data)
+                       or "*** Move to:" in command_of(data))
+        for target, section in targets:
+            reason = guard.edit_reason(target, lambda fields, section=section:
+                                       destructive or any(f in section for f in fields))
             if reason:
                 return reason
         return None
     path = edit_path(event, data)
-    return guard.edit_reason(path, edit_touches(tool, data, path)) if path is not None else None
+    return (guard.edit_reason(path, edit_touches(tool, data, path)) if path is not None
+            else "Cannot resolve write destination; supply an explicit file path.")
 
 
 def tool_paths(event: Event, tool: str, data: dict[str, Any]) -> list[Path]:

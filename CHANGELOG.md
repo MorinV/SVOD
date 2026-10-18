@@ -6,6 +6,27 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Added
+
+- Path-scoped pre-tool writes: instance and uniquely selected record worktrees by
+  default; explicit native fresh-human `svod allow <query> --for 30m --path <root>`
+  grants (repeatable paths), bound to the record and expiry in protected local git
+  metadata. Supported shell destinations are distinguished from read sources;
+  unresolved/unsupported effects are refused, not treated as a sandbox. Grants do
+  not lift remote consent, approval, questions, code freeze or main-checkout guards.
+- Explicit `profile_config.trusted_actions` dispatch for configured start-task/checks
+  commands and their checks, bound to a fresh task approval and a protected trust
+  snapshot. No filename-only or blanket interpreter exemption. Diagnostics document
+  the intentional lack of filesystem/subprocess isolation inside trusted code.
+
+### Fixed
+
+- Close value-only approval edits, executable-gate trust changes through diagnostics,
+  trust-removal legacy fallback, shell `printf -v`/`CDPATH` navigation escapes, and
+  unhashed non-shell action helpers. Trust snapshots now cover recursive regular
+  action dependencies and reject symlinks/special files; trusted internals remain
+  explicitly outside filesystem isolation.
+
 ## [0.6.0] - 2026-10-17
 
 ### Added

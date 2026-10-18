@@ -970,6 +970,104 @@ gate:
 
 ## CLI
 
+`svod allow <query> --for 30m --path <root> [--path <root> ...]` grants explicitly
+named resolved write roots to one unambiguous existing open record. The `allow` command
+requires `--for 30m` and repeatable `--path` arguments. The first invocation prepares
+an exact request and refuses without granting: show its record and resolved roots to the
+person, obtain a fresh native go-ahead through the prompt hook, then repeat the command.
+The request snapshots record content; changing the record, roots or content requires
+another reply after preparing again. An earlier or nonconsenting reply cannot grant;
+the same reply cannot renew a grant. The protected local request file is
+`svod-write-grants-request.json`, alongside the grants.
+Grants live in `svod-write-grants.json` in the instance's local git common directory,
+never in tracked record metadata. There are at most 128 entries and 32 roots per grant;
+after the limit a person must clear the local state. Expired/invalid/foreign grants do
+not authorize writes. The CLI has no automatic renewal or global unnamed grant.
+
+The pre-tool write boundary defaults to the resolved instance root and the selected
+record's declared `work.yaml` roots (relative to the instance, as in the standard
+profile). Each must be an actual non-main Git worktree of the configured service
+repository, not an arbitrary directory, subdirectory or foreign checkout; standard
+records must also declare that service in their card. Select a record by running
+from its record directory or one of its declared
+worktrees. A shared/ambiguous worktree or an instance-root cwd selects no record; it
+cannot borrow another record's roots or grants. Symlinks resolve before comparison.
+Approval fields, human/approval marks, grants and their metadata ancestors, questions,
+read-only main checkouts and frozen code remain protected even with a grant. Remote
+command consent (push, merge, deploy, etc.) is separate and never supplied by a grant.
+
+Supported shell analysis: literal redirections (`>`, `>>`), `tee`, file `cp`/`mv`
+(move sources count as writes), `touch`, `mkdir`, `rm`/`rmdir`, and narrow `sed -iSUFFIX`
+substitutions with literal filenames. Copies check the actual leaf in an existing
+destination directory, not the read-only source. `cd <existing-dir> && ...` updates cwd
+only with an absolute or explicit `./`/`../` path (or `.`/`..`); bare relative `cd`
+operands are refused because the executing shell may inherit `CDPATH`. Environment-mutating
+`printf -v` forms are also refused, while ordinary literal `printf` output remains usable;
+literal `sh|bash|zsh|dash -c` recurses at most three levels. Recursive directory copies,
+directory removal, multiline commands, compound cwd changes with pipelines/semicolons,
+expansions/globs, shell grouping,
+heredocs, malformed/over-500-token input, unknown commands and interpreter/program
+side effects are conservatively refused. Use direct tools or ask a person to execute
+unsupported programs. This also refuses direct agent-side `python3 -m pytest`,
+unconfigured action scripts, `git add`/`git commit`, and `svod init`, even with a
+path grant. Explicitly trusted profile actions have the dedicated exception below;
+recognizing a script filename alone never supplies trust.
+This is a static hook guard, **not a sandbox**: arbitrary code,
+custom executables, shell functions, hardlinks and filesystem races require an OS-level
+sandbox if adversarial isolation is needed. Read-only native `svod` calls remain routed
+through their own command checks.
+
+### Explicitly trusted profile actions
+
+Opt in before obtaining the task's contract approval:
+
+```yaml
+profile_config:
+  trusted_actions:
+    start-task: [bash, profile/actions/start-task.sh, "{id}"]
+    checks: [bash, profile/actions/checks.sh, "{id}"]
+  checks:
+    app: [python3, -m, pytest, -q]
+```
+
+From the instance root, `svod do start-task work/tasks/example` and
+`svod do checks work/tasks/example` dispatch the exact configured action for one
+existing open record. The exact configured `bash profile/actions/start-task.sh
+work/tasks/example` and `bash profile/actions/checks.sh work/tasks/example` forms
+are also accepted. The standard script routes these through native
+`action-dispatch <action> <record>` (invoked as `svod action-dispatch`; internal helper;
+exit 3 permits legacy behavior only for a record without a prior trust snapshot and
+without current trust declarations; removing declarations cannot downgrade a trusted record).
+The helper accepts `--check` only for `checks`, to rerun the configured checks without
+rewriting the report; this gate-only mode still validates the trust snapshot and
+rebuilds the check environment. The pre-tool action exemption does not accept this
+extra argument. No shell siblings,
+redirections, substitutions, wrappers, extra arguments, `--force`, different script
+paths or blanket bash/python exemptions are accepted by the pre-tool boundary.
+The configured argv must be `[bash, <this action's exact script path>, "{id}"]`.
+Inherited `SVOD_CHECKS_*` cannot replace the configured checks on native dispatch.
+
+Native contract approval writes a separate protected `trusted_actions_sha` snapshot
+of the configuration, pipeline and every regular file recursively under profile `actions/`,
+including non-`.sh` sourced helpers. Paths and contents are bound; symlinks (including
+ancestor links) and special files are refused. Adding, removing or changing trust,
+checks or action dependencies invalidates dispatch until a fresh task approval; approval
+replies must postdate the trust inputs. Executable command gates validate this snapshot
+immediately before spawning, including from `status --fresh`; diagnostics are not a
+blanket executable exemption. Ordinary prior contract approval alone does
+not supply trust. Code freeze still applies; direct edits of trust approval fields
+are refused, including value-only Edit/MultiEdit replacements, like ordinary approval metadata.
+Unrelated metadata edits that preserve approval fields remain usable. This snapshot does
+not trace arbitrary imports or files read outside the action directory.
+
+**Trusted code is not filesystem-isolated.** Its internals may write outside the
+ordinary roots and grants, and arbitrary internal subprocess effects are not
+sandbox-enforced. The native dispatch prints this warning. This is an explicit
+loss of the path guarantee, not an OS sandbox or push/merge/deploy consent.
+Visible external commands still pass through native external-effect authorization.
+Review trusted action code and configured checks before approval; use an OS sandbox
+if their internal filesystem or remote effects must be enforced against malicious code.
+
 `svod [--root <dir>] <command>` (or `python3 -m svod.cli`). Without `--root` the root is the nearest directory upwards from the working directory that holds `svod.yaml`. Requires PyYAML. `--version` prints the version of the engine that runs; in a store with a [copy of the engine](#vendored-copy), that of the copy.
 
 | command | flags | does | exit codes |

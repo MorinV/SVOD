@@ -153,10 +153,175 @@ def bash_reads_only(command: str) -> bool:
     A redirection, an interpreter, an unknown program or an in-place edit counts as a write:
     the guard refuses what it cannot tell apart from an edit.
     """
-    tokens = shell_tokens(command)
-    if any(REDIRECT_CHAR in token for token in tokens):
-        return False
-    return all(segment_reads_only(segment) for segment in command_segments(tokens))
+    return write_targets({}, command) == []
+
+
+def write_targets(event: Event, command: str, depth: int = 0) -> list[Path] | None:
+    """Literal destinations, [] for reads, None for unsupported or unresolved effects.
+
+    Parse without fallback/truncation. Refuse expansions, grouping and conditional cwd
+    changes: shlex is not a shell AST. Nested literal -c is bounded independently.
+    """
+    if depth > 3 or any(c in command for c in ("$", "`", "\x00", "\n")):
+        return None
+    # Keep lexical operators distinct from identically spelled quoted words.
+    lexemes = re.findall(r'''(?:[^\s;&|()<>"'\\]+|\\.|"(?:[^"\\]|\\.)*"|'[^']*')+|[;&|()<>]+|\S''',
+                         command)
+    tokens: list[str] = []
+    operators = set()
+    try:
+        for raw in lexemes:
+            if all(c in ";&|()<>" for c in raw):
+                operators.add(len(tokens))
+                tokens.append(raw)
+            else:
+                decoded = shlex.split(raw, comments=False)
+                if len(decoded) != 1:
+                    return None
+                value = decoded[0]
+                tokens.append("\x00" + value if value and all(c in ";&|()<>" for c in value)
+                              else value)
+    except ValueError:
+        return None
+    if len(tokens) > MAX_TOKENS or any(tokens[i] in {"(", ")", "||", "&", "|&"}
+                                      for i in operators):
+        return None
+    cwd = absolute(event, ".")
+    targets: list[Path] = []
+    segments = command_segments(tokens)
+    for segment in segments:
+        words = []
+        i = 0
+        while i < len(segment):
+            token = segment[i]
+            if (token and all(c in ";&|()<>" for c in token)
+                    and token not in {">", ">>", "<"}):
+                return None
+            if token in {">", ">>", "<"}:
+                if i + 1 == len(segment):
+                    return None
+                value = segment[i + 1]
+                if any(c in value for c in "*?[]{}!~<>;&|\n"):
+                    return None
+                if token != "<":
+                    targets.append(absolute({"cwd": str(cwd)}, value))
+                i += 2
+                continue
+            # A numeric descriptor before a redirect is not a program argument.
+            if token.isdigit() and i + 1 < len(segment) and segment[i + 1] in {">", ">>", "<"}:
+                i += 1
+                continue
+            words.append(token)
+            i += 1
+        if not words:
+            continue
+        if any(ASSIGNMENT_RE.match(w) for w in words) or words[0] in COMMAND_PREFIXES:
+            return None
+        name, rest = Path(words[0]).name, words[1:]
+        if name == "cd":
+            if (len(rest) != 1 or any(c in rest[0] for c in "*?[]{}!~")
+                    or not (rest[0].startswith(("/", "./", "../"))
+                            or rest[0] in {".", ".."})):
+                # Bare relative operands consult CDPATH in the executing shell, which
+                # need not share the hook's environment. Require an explicit path.
+                return None
+            directory = absolute({"cwd": str(cwd)}, rest[0])
+            if not directory.is_dir():
+                return None
+            # The command may stop here, but never writes after a failed && cd.
+            if ";" in tokens or "\n" in tokens or "|" in tokens:
+                return None
+            cwd = directory
+            continue
+        if name in {"sh", "bash", "zsh", "dash"}:
+            if len(rest) != 2 or rest[0] != "-c":
+                return None
+            nested = write_targets({"cwd": str(cwd)}, rest[1], depth + 1)
+            if nested is None:
+                return None
+            targets.extend(nested)
+            continue
+        if name in {"cp", "mv", "tee", "touch", "mkdir", "rm", "rmdir", "sed"}:
+            if any(c in w for w in rest for c in "*?[]{}!~"):
+                return None
+            operands = [w for w in rest if not w.startswith("-")]
+            if name in {"cp", "mv"}:
+                if len(operands) < 2 or any(w.startswith("-") and w not in
+                                           {"--", "-f", "-n", "-v", "-p"}
+                                           for w in rest):
+                    return None
+                destination = absolute({"cwd": str(cwd)}, operands[-1])
+                targets.append(destination)
+                for source in operands[:-1]:
+                    if absolute({"cwd": str(cwd)}, source).is_dir():
+                        return None
+                    if name == "mv":
+                        targets.append(absolute({"cwd": str(cwd)}, source))
+                    if destination.is_dir():
+                        targets.append((destination / Path(source).name).resolve())
+            elif name == "sed":
+                # Support only sed [-i[SUFFIX]] EXPRESSION FILE..., without script files.
+                if not any(w == "-i" or w.startswith("-i") for w in rest):
+                    if any(w in {"-f", "--file"} or w.startswith("--") for w in rest):
+                        return None
+                    # sed's w/r/e commands have additional effects even without -i.
+                    # Only the single literal script form is modelled. Options can
+                    # move the script operand or supply multiple scripts.
+                    if (not rest or rest[0].startswith("-")
+                            or re.search(r"[wre]", rest[0])):
+                        return None
+                    continue
+                if not rest[0].startswith("-i") or len(rest) < 3:
+                    return None
+                expression, files = rest[1], rest[2:]
+                if any(c in expression for c in ";\n") or re.search(r"[wre]", expression):
+                    return None
+                suffix = rest[0][2:]
+                for raw in files:
+                    if raw.startswith("-"):
+                        return None
+                    targets.append(absolute({"cwd": str(cwd)}, raw))
+                    if suffix:
+                        targets.append(absolute({"cwd": str(cwd)}, raw + suffix))
+            else:
+                if not operands or any(w.startswith("-") and w not in
+                                       {"--", "-a", "-p", "-r", "-f", "-R", "-v"}
+                                       for w in rest):
+                    return None
+                if name in {"rm", "rmdir"} and any(
+                        absolute({"cwd": str(cwd)}, w).is_dir() for w in operands):
+                    return None
+                targets.extend(absolute({"cwd": str(cwd)}, w) for w in operands)
+            continue
+        if name == "git":
+            if (not rest or rest[0] not in {"status", "log", "diff", "show", "rev-parse",
+                                           "ls-files", "ls-tree", "check-ignore"}
+                    or any(w in {"--output", "--ext-diff", "--textconv"}
+                           or w.startswith("--output=") for w in rest)):
+                return None
+            continue
+        if name == "svod":
+            # Only bounded native record operations and read-only diagnostics.
+            if (not rest or rest[0] not in {"status", "next", "active", "validate", "doctor",
+                                           "ask", "answer", "approve", "allow"}
+                    or any(w in {"--root", "--write"} or w.startswith("--root=") for w in rest)):
+                return None
+            continue
+        if name not in READ_ONLY_COMMANDS - {"awk", "yq", "jq", "find", "export", "set",
+                                            "unset", "pushd", "popd", "sort", "uniq"}:
+            return None
+        if name == "printf" and rest and rest[0].startswith("-v"):
+            return None  # Bash printf -v mutates shell variables, including navigation state.
+        if name in {"cat", "ls", "grep", "rg", "head", "tail", "wc", "echo", "printf",
+                    "pwd", "true", "false", "sleep", "date", "stat"}:
+            if any(w in {"--pre", "--hostname", "--set"}
+                   or (name == "date" and w == "-s")
+                   or w.startswith(("--pre=", "--hostname=", "--set=")) for w in rest):
+                return None
+            continue
+        # Other programs need an audited effects model, not a read-only name assumption.
+        return None
+    return targets
 
 
 def bash_paths(event: Event, command: str) -> list[Path]:

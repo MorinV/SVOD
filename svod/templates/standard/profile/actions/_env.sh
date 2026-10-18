@@ -72,6 +72,17 @@ svod_cli() {
   if command -v svod >/dev/null 2>&1; then svod "$@"; else python3 -m svod.cli "$@"; fi
 }
 
+# Native trusted dispatch validates the exact configuration and approval, rebuilds
+# the environment and warns about the lack of isolation. No shell-wide exemption.
+if [ -n "$RECORD" ]; then
+  if svod_cli action-dispatch "$(basename "$0" .sh)" "$RECORD" ${OPTIONS}; then
+    exit 0
+  else
+    dispatch_code=$?
+    [ "$dispatch_code" = 3 ] || exit "$dispatch_code"
+  fi
+fi
+
 # abs <path>: the path itself when absolute, else relative to the store root.
 abs() {
   case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s\n' "$SVOD_ROOT/$1" ;; esac

@@ -363,6 +363,12 @@ class CommandGate(Gate):
                 return self.not_run(ctx)
             stale = entry is None or last[1] != entry.stem
             return self.shown(ctx, self.result(last[0], cached=True, stale=stale))
+        from .actions import trust_required, trust_snapshot_reason
+        pipeline = own_pipeline(ctx, self)
+        if pipeline is not None and trust_required(ctx, subject):
+            reason = trust_snapshot_reason(ctx, pipeline, subject)
+            if reason:
+                return self.unknown(reason)
         record, reason = run_command(argv, cwd, env,
                                      self.params.get(PARAM_TIMEOUT, DEFAULT_TIMEOUT_SEC))
         if record is None:
