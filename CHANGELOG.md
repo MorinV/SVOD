@@ -9,10 +9,6 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 ### Added
 
 - Exact-set contract approval packages: `svod approve <query> [<query> ...] --step approve --prepare` displays bound inputs and versions before a fresh human reply; the same selection without `--prepare` records every selected contract once with individual evidence. Package replacement, input drift, expiry and subsets refuse; caught filesystem failures use bounded rollback (not crash atomicity).
-
-### Fixed
-
-- Native prompt-to-approval identity matching accepts canonical keyless record paths, alongside tracker keys, and consumes only selected named identities. Existing unnamed single-record consent remains single-use; contract packages do not authorize results or external effects.
 - Path-scoped pre-tool writes: instance and uniquely selected record worktrees by
   default; explicit native fresh-human `svod allow <query> --for 30m --path <root>`
   grants (repeatable paths), bound to the record and expiry in protected local git
@@ -26,6 +22,9 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ### Fixed
 
+- Native prompt-to-approval identity matching accepts canonical keyless record paths, alongside tracker keys, and consumes only selected named identities. Existing unnamed single-record consent remains single-use; contract packages do not authorize results or external effects.
+- Darwin timeout cleanup reaps the owned child within a bounded grace before rechecking a zombie-only group's permission-denied existence probe. Only a subsequent ESRCH proves absence; real permission failures still propagate and live groups retain TERM/KILL cleanup.
+- Contract package previews bind configured trusted-action snapshots and record them with the individual approvals; trust drift invalidates the whole package. Knowledge publication and retrospective application remain available through bounded native command routes under the combined write guard.
 - Close value-only approval edits, executable-gate trust changes through diagnostics,
   trust-removal legacy fallback, shell `printf -v`/`CDPATH` navigation escapes, and
   unhashed non-shell action helpers. Trust snapshots now cover recursive regular
@@ -35,6 +34,8 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 - `svod knowledge supersede <old> --by <new>` preserves note bodies and retires replaced knowledge with cycle/path checks and an index refresh.
 - `svod knowledge publish <research>` requests an exact findings snapshot and requires the next fresh human go-ahead before provenance-tagged publication and research close; collisions are refused and matching publication retries are idempotent.
 - Opt-in `knowledge.on_edit` context uses only explicit instance-relative `knowledge.file_tags` glob-to-tag lists, bounded to current notes and never replacing a hook denial.
+### Changed
+
 ### Changed
 
 - Status JSON v1 omits empty optional values recursively, retaining false, zero and required discriminants. Consumers must tolerate absent optional fields, including empty collections in errors and `next_action`. Child details require `--children`; text output and correctness gates are unchanged.

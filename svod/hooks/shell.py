@@ -302,8 +302,12 @@ def write_targets(event: Event, command: str, depth: int = 0) -> list[Path] | No
             continue
         if name == "svod":
             # Only bounded native record operations and read-only diagnostics.
-            if (not rest or rest[0] not in {"status", "next", "active", "validate", "doctor",
-                                           "ask", "answer", "approve", "allow"}
+            native_write = (len(rest) >= 2 and (
+                rest[:2] in (["knowledge", "publish"], ["knowledge", "supersede"],
+                             ["retro", "apply"])))
+            if (not rest or (rest[0] not in {"status", "next", "active", "validate", "doctor",
+                                            "ask", "answer", "approve", "allow"}
+                             and not native_write)
                     or any(w in {"--root", "--write"} or w.startswith("--root=") for w in rest)):
                 return None
             continue

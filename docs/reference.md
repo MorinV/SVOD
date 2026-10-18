@@ -111,7 +111,11 @@ After a **new** human approval, run the same selection without `--prepare` (orde
 aliases do not matter). Bare approval binds only the package prepared before that event;
 named approval must include an identity of every selected record. The native prompt notice
 prints one complete apply command. The snapshot binds declarations, identities and exact raw
-input bytes as well as the normalized per-record approval digest. Replacement preparation,
+input bytes as well as the normalized per-record approval digest. With configured
+`profile_config.trusted_actions`, the preview additionally displays and binds the executable
+trust digest; applying records `trusted_actions` evidence alongside every contract approval.
+Changing trust configuration or action dependencies after preview invalidates the entire
+package, not just action execution. Replacement preparation,
 changed inputs or membership, missing prerequisites, expiry and already-consumed consent
 refuse the whole operation. A package mark cannot be used for a subset or a result stage.
 Other explicitly named identities remain separately usable; no unselected record, result

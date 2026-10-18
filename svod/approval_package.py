@@ -84,6 +84,9 @@ def selection(ctx: Context, pipelines: list[Pipeline], queries: list[str],
                                  for path in files],
                       "sha": digest(base, bind, ref.params.get("ignore"),
                                     ref.params.get("strip"))})
+        if ctx.config.profile_config.get("trusted_actions"):
+            from .actions import trust_digest
+            items[-1]["trusted_actions"] = trust_digest(ctx, pipeline)
     return sorted(items, key=lambda item: item["identity"])
 
 
@@ -100,6 +103,8 @@ def package_approve(ctx: Context, pipelines: list[Pipeline], queries: list[str],
         for item in items:
             out.append(f"{item['record']} --step {step} {item['params']['marker']}")
             out.extend(f"  {entry['path']} {entry['sha']}" for entry in item["inputs"])
+            if item.get("trusted_actions"):
+                out.append(f"  trusted_actions {item['trusted_actions']}")
         return Report(ok=True, out=out)
     except (OSError, ValueError) as exc:
         return Report(ok=False, refused=True,
@@ -156,6 +161,9 @@ def apply_package(ctx: Context, pipelines: list[Pipeline], queries: list[str],
         before = path.read_bytes() if path.exists() else None
         values = dict(zip(field_names(item["params"]["marker"]),
                           (date, who, item["sha"]), strict=True))
+        if item.get("trusted_actions"):
+            values.update(zip(field_names("trusted_actions"),
+                              (date, who, item["trusted_actions"]), strict=True))
         after = fields_text(before.decode("utf-8") if before is not None else "", values).encode()
         writes.append((path, before, after, item))
         out.append(ctx.locale.text(keys.APPROVE_DONE,
@@ -170,6 +178,8 @@ def apply_package(ctx: Context, pipelines: list[Pipeline], queries: list[str],
         for path, before, after, item in writes:
             attempted.append((path, before, after))
             write_fields(path, item["params"]["marker"], date, who, item["sha"])
+            if item.get("trusted_actions"):
+                write_fields(path, "trusted_actions", date, who, item["trusted_actions"])
             if path.read_bytes() != after:
                 raise OSError(f"approval write verification failed: {path}")
         try:

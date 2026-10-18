@@ -129,7 +129,9 @@ class OnEditTest(StoreTestCase):
         self.configure("  on_edit: true\n  file_tags: {'**': [db]}\n")
         (self.sb.store / "linked").symlink_to(self.sb.root)
         for path in (str(self.sb.root / "outside.py"), "linked/out.py"):
-            self.assertIsNone(self.hook(file_path=path, content="x"))
+            output = json.loads(self.hook(file_path=path, content="x"))["hookSpecificOutput"]
+            self.assertEqual("deny", output["permissionDecision"])
+            self.assertNotIn("additionalContext", output)
         result = json.loads(self.hook(file_path="work/tasks/test/questions.md", content="none"))
         self.assertEqual("deny", result["hookSpecificOutput"]["permissionDecision"])
         self.assertNotIn("additionalContext", result["hookSpecificOutput"])
