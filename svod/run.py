@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -30,6 +31,22 @@ def signal_group(process: subprocess.Popen, sig: int) -> bool:
         os.killpg(process.pid, sig)
     except ProcessLookupError:
         return False
+    except PermissionError:
+        # Darwin killpg(0) reports EPERM for a zombie-only group. Reap our
+        # owned leader if it exited between poll and the probe, then ask the
+        # kernel again. Never equate permission denial with group absence:
+        # only ESRCH on that second probe proves it has gone.
+        if sys.platform != "darwin" or sig != 0:
+            raise
+        try:
+            process.wait(timeout=STOP_GRACE_SEC)
+        except subprocess.TimeoutExpired as exc:
+            raise PermissionError(
+                "process group probe denied while owned child remains alive") from exc
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            return False
     return True
 
 

@@ -77,6 +77,78 @@ class RunArgvTest(unittest.TestCase):
         self.assertEqual(code, 0, text)
         self.assertTrue(marker.exists(), "descendant did not acknowledge the group stop")
 
+    @unittest.skipUnless(sys.platform == "darwin", "Darwin zombie-group semantics")
+    def test_zombie_leader_probe_is_rechecked_after_owned_child_reap(self):
+        """Darwin reports EPERM for a zombie-only group, not ESRCH until reaping."""
+        import signal
+        import time
+        child = subprocess.Popen(python("import time; time.sleep(30)"), start_new_session=True)
+        self.addCleanup(lambda: child.wait() if child.poll() is not None else
+                        (child.kill(), child.wait()))
+        os.killpg(child.pid, signal.SIGTERM)
+        deadline = time.monotonic() + 2
+        state = ""
+        while time.monotonic() < deadline:
+            state = subprocess.check_output(
+                ["ps", "-o", "stat=", "-p", str(child.pid)], text=True).strip()
+            if state.startswith("Z"):
+                break
+        self.assertTrue(state.startswith("Z"), state)
+        with self.assertRaises(PermissionError):
+            os.killpg(child.pid, 0)
+        # Hold the first poll at the real waitpid/exit race, without faking killpg.
+        poll = child.poll
+        with patch.object(child, "poll") as mocked:
+            # Later polls must retain the real implementation.
+            mocked.side_effect = lambda: None if mocked.call_count == 1 else poll()
+            native_signal = run.signal_group
+            with patch.object(run, "signal_group", wraps=native_signal) as signals:
+                # TERM already succeeded; replay its result so the regression reaches probe 0.
+                signals.side_effect = lambda proc, sig: (
+                    True if sig == signal.SIGTERM else native_signal(proc, sig))
+                run.stop_group(child)
+        self.assertEqual(child.returncode, -signal.SIGTERM)
+        with self.assertRaises(ProcessLookupError):
+            os.killpg(child.pid, 0)
+
+    def test_probe_permission_denial_is_not_treated_as_group_absence(self):
+        """A genuine probe denial stays an error, with owned child cleanup bounded."""
+        child = subprocess.Popen(python("import time; time.sleep(30)"), start_new_session=True)
+        self.addCleanup(lambda: child.wait() if child.poll() is not None else
+                        (child.kill(), child.wait()))
+        native = os.killpg
+
+        def denied_probe(pid, sig):
+            if sig == 0:
+                raise PermissionError("probe denied")
+            return native(pid, sig)
+
+        with patch.object(run.os, "killpg", side_effect=denied_probe), \
+                self.assertRaises(PermissionError):
+            run.stop_group(child)
+        self.assertIsNotNone(child.returncode)
+
+    def test_sigkill_stops_real_term_resistant_group_within_bound(self):
+        """A live owned group is not mistaken for the Darwin zombie-only case."""
+        import signal
+        import time
+        child = subprocess.Popen(python(
+            "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            "print('ready', flush=True); time.sleep(30)"),
+            start_new_session=True, stdout=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: child.wait() if child.poll() is not None else
+                        (child.kill(), child.wait()))
+        assert child.stdout is not None
+        self.addCleanup(child.stdout.close)
+        self.assertEqual(child.stdout.readline(), "ready\n")
+        started = time.monotonic()
+        with patch.object(run, "STOP_GRACE_SEC", .1):
+            run.stop_group(child)
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertEqual(child.returncode, -signal.SIGKILL)
+        with self.assertRaises(ProcessLookupError):
+            os.killpg(child.pid, 0)
+
     def test_permission_failure_still_reaps_the_child(self):
         """A group that cannot be signalled: the child is killed and reaped, the error raised."""
         child = subprocess.Popen(python(f"import time; time.sleep({HOLD_SECONDS})"),
