@@ -6,6 +6,30 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-19
+
+### Added
+
+- Reviewed local execution packages: validate, sequential run, saved compact status,
+  user-directed resume and bounded per-step readback. Execution reuses profile
+  actions and existing policy checks; private durable state and exact source logs
+  stay available locally. Trusted actions are not an OS sandbox.
+- Interrupted or uncertain post-spawn outcomes remain unknown and cannot be blindly
+  retried. Completed actions are not replayed by continuation.
+
+### Fixed
+
+- Runtime-only `.svod/package-runs` no longer triggers missing-MANIFEST validation.
+  Incomplete or modified engine copies still fail integrity checks.
+
+### Migration
+
+- Existing profiles are unchanged; packages require explicit reviewed local action
+  declarations. No revision-chain approval mechanism or card-name priority added.
+- Runtime archives are not an engine copy. Do not run install/update over runtime
+  state without separately preserving it: this release does not change directory
+  replacement behavior. Keep backups of local package state and logs.
+
 ## [0.7.0] - 2026-10-18
 
 ### Added
