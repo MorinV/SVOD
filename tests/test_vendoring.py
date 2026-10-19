@@ -477,19 +477,52 @@ class ManifestTest(SourceTestCase):
             ("changed", lambda d: append_line(d / cli_file), cli_file),
             ("added", lambda d: (d / extra).write_text("x", encoding=ENCODING), extra),
             ("removed", lambda d: (d / skill).unlink(), skill),
+            ("manifest only", lambda d: (shutil.rmtree(d / vendor.LIB_DIR),
+                                        shutil.rmtree(d / vendor.SKILLS_DIR),
+                                        (d / vendor.VERSION_FILE).unlink()), cli_file),
             ("no manifest", lambda d: (d / vendor.MANIFEST_FILE).unlink(), vendor.MANIFEST_FILE),
         )
         for name, spoil, named in cases:
             with self.subTest(case=name):
                 self.restore()
+                log = self.sb.write(".svod/package-runs/run-1/step.log", "retained\n")
                 spoil(vendor_dir(self.sb.store))
                 out = cli(self.sb, "validate")
+                self.assertEqual(log.read_text(encoding=ENCODING), "retained\n")
                 if named is None:
                     self.assertEqual(out.returncode, EXIT_OK, out.stderr)
                     continue
                 self.assertEqual(out.returncode, EXIT_FINDINGS)
                 self.assertIn(named, out.stderr)
                 self.assertIn(UPDATE_COMMAND, out.stderr)
+
+    def test_runtime_only_directory_validates(self):
+        """Package run logs do not imply an installed engine or require a MANIFEST."""
+        log = self.sb.write(".svod/package-runs/run-1/step.log", "retained runtime log\n")
+        before = log.read_bytes()
+        out = cli_process(self.sb, "validate")
+        self.assertEqual(out.returncode, EXIT_OK, out.stdout + out.stderr)
+        self.assertNotIn(vendor.MANIFEST_FILE, out.stderr)
+        self.assertEqual(log.read_bytes(), before)
+        self.assertFalse((vendor_dir(self.sb.store) / vendor.MANIFEST_FILE).exists())
+
+    def test_incomplete_copy_requires_manifest(self):
+        """Even partial installation indicators require integrity metadata beside runtime logs."""
+        for name in (*vendor.COVERED, vendor.VERSION_FILE):
+            with self.subTest(indicator=name):
+                directory = vendor_dir(self.sb.store)
+                shutil.rmtree(directory, ignore_errors=True)
+                log = self.sb.write(".svod/package-runs/run-1/step.log", "retained\n")
+                indicator = directory / name
+                if name in vendor.COVERED:
+                    indicator.mkdir()
+                else:
+                    indicator.write_text("version: incomplete\n", encoding=ENCODING)
+                out = cli_process(self.sb, "validate")
+                self.assertEqual(out.returncode, EXIT_FINDINGS, out.stdout + out.stderr)
+                self.assertIn(vendor.MANIFEST_FILE, out.stderr)
+                self.assertIn(UPDATE_COMMAND, out.stderr)
+                self.assertEqual(log.read_text(encoding=ENCODING), "retained\n")
 
     def test_no_copy_no_check(self):
         """A store without .svod has nothing to check."""

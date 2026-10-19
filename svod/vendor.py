@@ -159,6 +159,12 @@ def copy_errors(root):
     directory = vendor_dir(root)
     if not directory.is_dir():
         return []
+    # .svod also holds package-run state without an installed engine. Partial copies
+    # still need integrity checks, even when lib/svod or MANIFEST has been removed.
+    indicators = (*COVERED, VERSION_FILE, MANIFEST_FILE)
+    if not any((directory / name).exists() or (directory / name).is_symlink()
+               for name in indicators):
+        return []
     changed = changed_files(directory)
     if changed is None:
         return [NO_MANIFEST.format(manifest=MANIFEST_FILE)]
