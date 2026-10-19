@@ -106,6 +106,8 @@ def build_parser() -> StatusParser:
                      metavar="{" + ",".join(TEMPLATES) + "}",
                      help=f"packaged template, {DEFAULT_TEMPLATE} by default")
     add_setup_parser(commands)
+    from svod.packages import add_parser as add_package_parser
+    add_package_parser(commands)
     do = commands.add_parser(CMD_DO, help="run an action script of the profile for a subject")
     do.add_argument("name", nargs="?", metavar="action",
                     help="action name: <profile>/actions/<name>.sh")
@@ -407,8 +409,9 @@ def do_action(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace)
         return 3  # Only genuinely legacy records may continue the legacy script route.
     if requires_trust:
         from svod.actions import TRUST_WARNING, trusted_reason
+        packaged = getattr(args, "_package", None)
         if ((args.extra and args.command != "action-dispatch")
-                or args.force or args.timeout is not None):
+                or args.force or (args.timeout is not None and packaged is None)):
             print("Trusted dispatch accepts only the configured action and record.",
                   file=sys.stderr)
             return EXIT_USAGE
@@ -426,8 +429,19 @@ def do_action(ctx: Context, pipelines: list[Pipeline], args: argparse.Namespace)
             return EXIT_USAGE
     timeout = args.timeout or ACTION_TIMEOUT
     try:
-        run = run_action(ctx, args.name, pipeline, subject, args.extra, timeout=timeout)
+        packaged = getattr(args, "_package", None)
+        if packaged is not None:
+            from svod.packages import policy
+            ctx, pipeline, subject = policy(ctx.root, args.query, packaged)
+            run = run_action(ctx, args.name, pipeline, subject, args.extra, timeout=timeout,
+                             output=args._output, step_id=packaged["step_id"])
+            args._result = run
+        else:
+            run = run_action(ctx, args.name, pipeline, subject, args.extra, timeout=timeout)
     except OSError as exc:
+        from svod.actions import ActionLifecycleError
+        if isinstance(exc, ActionLifecycleError) and getattr(args, "_package", None) is not None:
+            raise  # Keep durable running intent; unknown effects must never become retry-safe.
         print(locale.text(keys.DO_FAILED, name=args.name, reason=f"{type(exc).__name__}: {exc}"),
               file=sys.stderr)
         return EXIT_USAGE
@@ -773,6 +787,9 @@ def run(args: argparse.Namespace) -> int:
             return emit_json_error("invalid_root", args.query)
         print(bootstrap_locale().text(keys.ERROR_NOT_ROOT), file=sys.stderr)
         return EXIT_USAGE
+    if args.command == "package":
+        from svod.packages import command as package_command
+        return package_command(root, args)
     if args.command == CMD_INIT:
         return init_local(root, args)
     if args.command == CMD_DOCTOR:

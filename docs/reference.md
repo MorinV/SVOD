@@ -1009,6 +1009,19 @@ gate:
 
 ## CLI
 
+The `package` command provides reviewed local execution and saved readback.
+`svod package validate <record> <package.json>` admits a predetermined reviewed local
+fixture package; `svod package run <record> <package.json> [--json]` executes it sequentially.
+`svod package status <record> <run-id> [--json]` reads saved state only.
+`svod package resume <record> <run-id> --decision <file> [--json]` requires an explicit
+USER run/revision-bound decision; it never retries unknown effects or completed mutations.
+`svod package read <record> <run-id> --step <id> [--offset N --limit N] [--json]` pages one
+step with a bounded page (default 4096, maximum 65536 Unicode codepoints); `--step` is required.
+There is no whole-package log API; `--full` is unsupported. Original raw logs remain human-accessible
+at `<store>/.svod/package-runs/<run-id>/<log-ref>` using the report's run ID and log refs.
+This is trusted reviewed-script admission, not an OS sandbox; no external action is admitted
+by default. See [local package declarations, crash semantics and retention](local-packages.md).
+
 `svod allow <query> --for 30m --path <root> [--path <root> ...]` grants explicitly
 named resolved write roots to one unambiguous existing open record. The `allow` command
 requires `--for 30m` and repeatable `--path` arguments. The first invocation prepares

@@ -18,7 +18,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any
 
 from . import evidence_log
 from .run import POSIX, stop_group
@@ -306,6 +306,10 @@ def action_env(ctx: Context, pipeline: Pipeline, subject: Subject,
     return env
 
 
+class ActionLifecycleError(OSError):
+    """The action started, but its lifecycle/cleanup could not be established."""
+
+
 @dataclass(frozen=True)
 class Run:
     """Exit code of one run of an action and whether the timeout stopped it."""
@@ -354,7 +358,8 @@ def step_ahead(ctx: Context, pipeline: Pipeline, subject: Subject, action: str) 
 
 
 def run_action(ctx: Context, action: str, pipeline: Pipeline, subject: Subject,
-               extra: Sequence[str] = (), timeout: float = ACTION_TIMEOUT) -> Run:
+               extra: Sequence[str] = (), timeout: float = ACTION_TIMEOUT, *,
+               output: IO[bytes] | None = None, step_id: str | None = None) -> Run:
     """Run the script of the action for the subject; return its exit code and timeout flag.
 
     The environment is action_env with SVOD_ACTION set to the action. The code is EXIT_TIMEOUT
@@ -373,21 +378,28 @@ def run_action(ctx: Context, action: str, pipeline: Pipeline, subject: Subject,
             env[env_name(ENV_CHECKS_PREFIX, name)] = command
     clock = time.monotonic()
     process = subprocess.Popen([*argv[:2], *extra] if argv else [SHELL, str(script), *extra],
-                               cwd=ctx.root, shell=False,
+                               cwd=ctx.root, shell=False, stdout=output,
+                               stderr=subprocess.STDOUT if output is not None else None,
                                env=env, start_new_session=os.name == POSIX)
 
     def journal(code: int | None) -> None:
         """Record the run in the evidence log of the subject."""
         evidence_log.record_action(ctx.root, pipeline.name, subject.id, action, code,
-                                   time.monotonic() - clock, action_step(pipeline, action))
+                                   time.monotonic() - clock,
+                                   step_id or action_step(pipeline, action))
     try:
-        run = Run(process.wait(timeout=timeout))
-    except subprocess.TimeoutExpired:
-        stop_group(process)
-        run = Run(EXIT_TIMEOUT, timed_out=True)
-    except BaseException:
-        stop_group(process)
-        journal(None)
-        raise
-    journal(run.code)
+        try:
+            run = Run(process.wait(timeout=timeout))
+            if output is not None:
+                stop_group(process)  # Captured source must be final before its durable hash.
+        except subprocess.TimeoutExpired:
+            stop_group(process)
+            run = Run(EXIT_TIMEOUT, timed_out=True)
+        except BaseException:
+            stop_group(process)
+            journal(None)
+            raise
+        journal(run.code)
+    except OSError as exc:
+        raise ActionLifecycleError(f"unknown effects after spawn: {exc}") from exc
     return run
