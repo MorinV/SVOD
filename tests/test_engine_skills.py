@@ -9,9 +9,10 @@ from svod.frontmatter import read_frontmatter
 
 SKILLS = REPO_DIR / "svod" / "skills"
 NAMES = ("svod-efficient-execution", "svod-pipeline")
+OPTIONAL_NAMES = ("svod-fret",)
 SKILL_FILE = "SKILL.md"
 PYPROJECT = REPO_DIR / "pyproject.toml"
-PACKAGE_DATA_RE = re.compile(r"^svod = \[(.*)\]$", re.MULTILINE)
+PACKAGE_DATA_RE = re.compile(r"\[tool.setuptools.package-data\]\s*svod = \[(.*)\]")
 SKILLS_PATTERN = '"skills/**/*"'
 LINK_RE = re.compile(r"\]\(([^)]+)\)")
 URL_PREFIX = "https://"
@@ -24,11 +25,10 @@ DOCUMENTS = ("README.md", "docs/reference.md", "integrations/common.sh")
 
 class EngineSkillsTest(unittest.TestCase):
     def test_skills_are_where_vendor_and_setup_take_them(self):
-        """svod/skills holds the two skills, each named as its directory; vendor and common.sh
-        take them from there."""
+        """Engine and opt-in skills match directory names; vendor/common.sh take them here."""
         found = sorted(p.parent.name for p in SKILLS.glob(f"*/{SKILL_FILE}"))
-        self.assertEqual(found, sorted(NAMES))
-        for name in NAMES:
+        self.assertEqual(found, sorted(NAMES + OPTIONAL_NAMES))
+        for name in NAMES + OPTIONAL_NAMES:
             with self.subTest(skill=name):
                 self.assertEqual(read_frontmatter(SKILLS / name / SKILL_FILE)["name"], name)
         self.assertEqual(REPO_DIR / vendor.SKILLS_SOURCE, SKILLS)
@@ -50,7 +50,7 @@ class EngineSkillsTest(unittest.TestCase):
 
     def test_no_retired_command_is_named(self):
         """The skills and the documents of the release name no part of the local workflow."""
-        paths = [SKILLS / name / SKILL_FILE for name in NAMES]
+        paths = [SKILLS / name / SKILL_FILE for name in NAMES + OPTIONAL_NAMES]
         paths += [REPO_DIR / name for name in DOCUMENTS]
         for path in paths:
             text = path.read_text(encoding=ENCODING)

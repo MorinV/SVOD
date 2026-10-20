@@ -94,6 +94,11 @@ svod active               # everything open, the summary an agent sees at sessio
 
 ## Connect an agent
 
+Optional requirements analysis: [svod-fret skill](svod/skills/svod-fret/SKILL.md)
+and [Docker launcher instructions](svod/skills/svod-fret/references/usage.md).
+Use only when explicitly selected for interacting temporal/stateful requirements;
+ordinary SVOD needs neither Docker nor FRET. The tool is experimental, not a gate.
+
 ```bash
 integrations/setup-claude.sh --project <store>  # hooks in <store>/.claude/settings.json, skills in <store>/.claude/skills
 integrations/setup-claude.sh [<store>]           # hooks in ~/.claude/settings.json, skills in ~/.claude/skills

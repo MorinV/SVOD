@@ -1,0 +1,33 @@
+{
+  "project": "Compatible",
+  "component": "controller",
+  "timeout": 60,
+  "assumptions": [
+    "Один tick — наблюдение контроллера; request — внешний Boolean input.",
+    "Это авторский тестовый пример, не полученный результат solver."
+  ],
+  "variables": [
+    {
+      "name": "request",
+      "role": "Input",
+      "type": "boolean"
+    },
+    {
+      "name": "active",
+      "role": "Output",
+      "type": "boolean"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "description": "Активность должна точно соответствовать запросу.",
+      "text": "controller shall always satisfy active = request"
+    },
+    {
+      "id": "R2",
+      "description": "Та же связь записана симметрично; контроль plumbing, не полноты.",
+      "text": "controller shall always satisfy request = active"
+    }
+  ]
+}
