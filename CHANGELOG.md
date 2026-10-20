@@ -6,11 +6,20 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-20
+
 ### Added
 
 - Optional `svod-fret` skill with an explicit Docker launcher for genuine FRET
   requirements analysis, readable reports and raw solver evidence. It is
   experimental, not a pipeline gate or a dependency of ordinary SVOD commands.
+
+### Migration
+
+- None. Existing profiles and ordinary SVOD commands are unchanged. The optional
+  FRET skill requires an explicit Docker build/run; it is not installed into an
+  agent profile automatically. Known sporadic solver crashes remain an experimental
+  limitation, not a promise of reliable CI-gate operation.
 
 ## [0.8.0] - 2026-10-19
 
