@@ -20,9 +20,13 @@ version = { attr = "svod.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["svod*"]
+exclude = ["svod.skills.svod-fret*"]
 
 [tool.setuptools.package-data]
 svod = ["locale/*.yaml", "skills/**/*", "templates/**/*", "templates/**/.gitignore"]
+
+[tool.setuptools.exclude-package-data]
+svod = ["skills/**/__pycache__/*", "skills/**/*.pyc"]
 
 [tool.ruff]
 line-length = 100

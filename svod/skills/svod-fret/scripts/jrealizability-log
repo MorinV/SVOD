@@ -1,0 +1,13 @@
+#!/bin/bash
+# Transparent logging only: run the unmodified upstream launcher.
+if [[ -z "${PROBE_SOLVER_LOG_DIR:-}" ]]; then exec /opt/jkind/jrealizability "$@"; fi
+mkdir -p "$PROBE_SOLVER_LOG_DIR"
+base=$(mktemp "$PROBE_SOLVER_LOG_DIR/invocation-XXXXXX")
+printf '%s\n' "$@" > "$base.args"
+/opt/jkind/jrealizability "$@" > >(tee "$base.stdout") 2> >(tee "$base.stderr" >&2)
+status=$?
+wait
+printf '%s\n' "$status" > "$base.exit-code"
+last="${@: -1}"
+if [[ -f "$last.json" ]]; then cp "$last.json" "$base.json"; fi
+exit "$status"

@@ -1,0 +1,55 @@
+{
+  "project": "PersistentWaiting",
+  "component": "executor",
+  "timeout": 60,
+  "assumptions": [
+    "Один tick — синхронная граница наблюдения/выбора, не секунда и не исполнение команды.",
+    "failure_event и user_continue — события текущего tick; входы произвольны, их происхождение не проверяется solver.",
+    "Одна непрерывная invocation без reset; run_action — разрешение/обязательство диспетчеризации, не доказательство исполнения кода.",
+    "Срез ранее уточнённых человеком SVOD-требований: новая ошибка имеет приоритет над одновременным продолжением."
+  ],
+  "variables": [
+    {
+      "name": "failure_event",
+      "role": "Input",
+      "type": "boolean"
+    },
+    {
+      "name": "user_continue",
+      "role": "Input",
+      "type": "boolean"
+    },
+    {
+      "name": "invocation_active",
+      "role": "Input",
+      "type": "boolean"
+    },
+    {
+      "name": "awaiting_user",
+      "role": "Output",
+      "type": "boolean"
+    },
+    {
+      "name": "run_action",
+      "role": "Output",
+      "type": "boolean"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "WAIT_STATE",
+      "description": "Ошибка включает ожидание; оно сохраняется после исчезновения события до продолжения человеком. Новая ошибка важнее одновременного продолжения.",
+      "text": "executor shall always satisfy awaiting_user <=> (failure_event | (!(at the previous occurrence of true, !awaiting_user) & !user_continue))"
+    },
+    {
+      "id": "DISPATCH_ACTION",
+      "description": "При активном вызове выполнять действие тогда и только тогда, когда ожидания нет.",
+      "text": "executor shall always satisfy run_action <=> (invocation_active & !awaiting_user)"
+    },
+    {
+      "id": "WAIT_NO_EXECUTION",
+      "description": "Пока ожидаем человека, исполнение запрещено.",
+      "text": "executor shall always satisfy awaiting_user => !run_action"
+    }
+  ]
+}

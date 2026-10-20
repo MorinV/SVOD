@@ -6,6 +6,12 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+### Added
+
+- Optional `svod-fret` skill with an explicit Docker launcher for genuine FRET
+  requirements analysis, readable reports and raw solver evidence. It is
+  experimental, not a pipeline gate or a dependency of ordinary SVOD commands.
+
 ## [0.8.0] - 2026-10-19
 
 ### Added
