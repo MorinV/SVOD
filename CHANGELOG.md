@@ -6,6 +6,32 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-21
+
+### Added
+
+- Versioned YAML project/feature plans, record outcomes and explicit criterion
+  verification history. Linked work states are read from existing cards rather
+  than manually copied into parent plans.
+- `svod plan validate`, fresh text/JSON project summaries, explicit criterion
+  confirmation and derived JSON Canvas export preserving retained node geometry.
+- Shipped `svod-planning-transition` agent instruction for source-grounded,
+  complete-scope backfill without inventing outcomes or replaying human consent.
+
+### Migration
+
+- Existing profiles and historical records are not automatically converted.
+  Update the engine first; follow the shipped transition skill to inventory and
+  backfill selected projects/features, including completed records.
+- New standard stores use `plan.yaml` rather than a manually maintained
+  `breakdown.md`; `outcome.yaml` and `acceptance.yaml` keep results separate from
+  approved definitions. Select profile/bind changes explicitly: old approvals do
+  not authorize newly bound bytes. Keep original materials as history.
+- A done task does not confirm a criterion. Missing outcomes remain unknown;
+  changed evidence/definitions or reopened support require review. HTTP evidence
+  is referenced, not fetched, and writes use optimistic concurrency rather than
+  transactional snapshots. FRET remains optional and experimental.
+
 ## [0.8.1] - 2026-10-20
 
 ### Added
