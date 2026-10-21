@@ -59,13 +59,16 @@ class RecordNewTest(unittest.TestCase):
         return self.sb.cli("record", "new", *args)
 
     def test_every_pipeline_gets_its_card(self):
-        """The template ships card.md alone; a new record stands at its first open step."""
+        """All shipped skeleton files are copied; a new record stays at its first open step."""
         for pipeline in PIPELINES:
             with self.subTest(pipeline=pipeline):
                 made = self.new(pipeline, "first", "--services", SERVICE)
                 self.assertEqual(made.returncode, EXIT_OK, made.stderr)
                 record = self.sb.store / ROOTS[pipeline] / "first"
-                self.assertEqual([p.name for p in record.iterdir()], ["card.md"])
+                skeleton = self.sb.store / "profile/records" / pipeline
+                self.assertEqual(sorted(p.name for p in record.iterdir()),
+                                 sorted(p.name for p in skeleton.iterdir()))
+                self.assertTrue((record / "card.md").is_file())
                 step = json.loads(self.sb.cli("next", f"{ROOTS[pipeline]}/first", "--format",
                                               "json").stdout)["step"]
                 self.assertEqual(step, FIRST_STEPS.get(pipeline, "questions"))

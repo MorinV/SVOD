@@ -195,6 +195,23 @@ def build_parser() -> StatusParser:
     report.add_argument("query", nargs="?", help="tracker key or subject name, as for status")
     report.add_argument("--all", action="store_true", help="every pipeline and its records")
     report.add_argument("--format", choices=("text", "json"), default="text")
+    plan = commands.add_parser("plan", help="structured planning facts (no workflow gates)")
+    operations = plan.add_subparsers(dest="operation", required=True)
+    summary = operations.add_parser("summary", help="read current planning facts")
+    summary.add_argument("record", nargs="?")
+    summary.add_argument("--all", action="store_true")
+    summary.add_argument("--json", action="store_true")
+    validate_plan = operations.add_parser("validate", help="validate a plan and its references")
+    validate_plan.add_argument("record")
+    canvas_plan = operations.add_parser("canvas", help="export reserved plan.canvas")
+    canvas_plan.add_argument("record")
+    confirm_plan = operations.add_parser("confirm", help="record explicit criterion verification")
+    confirm_plan.add_argument("record")
+    confirm_plan.add_argument("--criterion", required=True)
+    confirm_plan.add_argument("--result", required=True, choices=("pass", "fail"))
+    confirm_plan.add_argument("--actual", required=True, help="observed verification result")
+    confirm_plan.add_argument("--evidence", required=True, action="append",
+                              help="existing store-relative file or HTTP(S) URL; repeatable")
     return parser
 
 
@@ -787,6 +804,9 @@ def run(args: argparse.Namespace) -> int:
             return emit_json_error("invalid_root", args.query)
         print(bootstrap_locale().text(keys.ERROR_NOT_ROOT), file=sys.stderr)
         return EXIT_USAGE
+    if args.command == "plan":
+        from svod.planning import command as planning_command
+        return planning_command(root, args)
     if args.command == "package":
         from svod.packages import command as package_command
         return package_command(root, args)

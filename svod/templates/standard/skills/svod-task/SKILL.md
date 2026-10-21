@@ -14,4 +14,4 @@ description: Use for a record in work/tasks/<name>/ (kind task or hotfix) when s
 7. checks: commit everything, run `bash profile/actions/checks.sh work/tasks/<name>`; on failure read `checks.log`, fix, commit, run again. Never write `checks.md` by hand.
 8. deliver: print the PR text with `bash profile/actions/pr.sh work/tasks/<name>`; ask the person before push or a PR; after "Approved" run `svod approve work/tasks/<name> --step deliver`.
 9. After the merge set `status: done` in `card.md`, then run `bash profile/actions/cleanup.sh work/tasks/<name>`.
-10. Report the result, the commits from `checks.md`, what stayed unchecked and what waits for the person.
+10. Write `outcome.yaml`: schema_version: 1, actual, evidence (files/URLs). Read `svod plan summary <owner>`; verify then `svod plan confirm <owner> --criterion <id> --result pass --actual '<result>' --evidence <file-or-URL>`. Done/partial contribution is not acceptance/consent; reopened work needs review.

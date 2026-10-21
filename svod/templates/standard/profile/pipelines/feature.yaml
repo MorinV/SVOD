@@ -30,7 +30,7 @@ steps:
     required: true
     text: feature.step.breakdown
     gates:
-      - { gate: artifact, params: { path: breakdown.md }, label: work.mark.breakdown }
+      - { gate: artifact, params: { path: plan.yaml }, label: work.mark.breakdown }
       - { gate: has_children, params: { pipelines: [task] }, label: work.mark.children }
   - id: approve
     title: work.title.approve
@@ -44,7 +44,7 @@ steps:
         params:
           marker: brief_approved
           file: approval.yaml
-          bind: [brief.md, questions.md, breakdown.md]
+          bind: [brief.md, questions.md, plan.yaml]
   - id: children
     title: work.title.children
     role: feature
@@ -72,6 +72,6 @@ steps:
         params:
           marker: result_approved
           file: approval.yaml
-          bind: [checks.md]
+          bind: [checks.md, outcome.yaml, acceptance.yaml]
 violations:
   integration.approve: feature.violation.integration_approve

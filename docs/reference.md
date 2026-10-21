@@ -1,5 +1,11 @@
 # Svod — format reference
 
+Structured planning: `svod plan validate <record>`, `svod plan summary <record>|--all
+[--json]`, `svod plan canvas <record>`, and `svod plan confirm <record> --criterion
+<id> --result pass|fail --actual '<observed result>' --evidence <file-or-URL>`.
+See [schemas, diagnostics, safe reading and profile boundaries](structured-planning.md).
+These commands do not compute workflow position or execute profile gates.
+
 ## Overview
 
 - A **pipeline** is a YAML declaration of an ordered process: entry conditions, steps, a done condition.
@@ -1008,6 +1014,12 @@ gate:
 **Providers of the profile.** A gate module may also declare `PROVIDERS = {name: cls}`: subject providers joining the core ones under the same rules (the key equals `cls.name`, a taken name is a load error). A provider subclasses `svod.providers.Provider`, is built as `cls(params, key_gate)` (`key_gate` is the pipeline's `KeyGate` instance or `None`; `keys_in(text)` uses it) and declares `name`, `PARAMS`, `REQUIRED`, `check()` like a gate. It implements `enumerate(ctx)` (every subject, for `active`) and any of `match_exact(query, ctx)`, `match_key(key, ctx)`, `match_substring(query, ctx)` (empty by default); `touched(ctx, paths)` and `evidence(ctx, subject)` have defaults by `subject.path` (see [Subject providers](#subject-providers)). `ctx.pipelines` lets it consult another pipeline, for example to skip keys that already have a change.
 
 ## CLI
+
+`plan` reads structured planning without executing workflow gates:
+`svod plan validate <record>`, `svod plan summary <record>|--all [--json]`,
+`svod plan canvas <record>`, and `svod plan confirm <record> --criterion <id>
+--result pass|fail --actual '<result>' --evidence <file-or-URL>` (repeat evidence).
+See [structured planning](structured-planning.md) for schemas and safety boundaries.
 
 The `package` command provides reviewed local execution and saved readback.
 `svod package validate <record> <package.json>` admits a predetermined reviewed local

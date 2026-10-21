@@ -56,7 +56,7 @@ steps:
     required: true
     text: project.step.breakdown
     gates:
-      - { gate: artifact, params: { path: breakdown.md }, label: work.mark.breakdown }
+      - { gate: artifact, params: { path: plan.yaml }, label: work.mark.breakdown }
       - { gate: has_children, params: { pipelines: [feature, task] }, label: work.mark.children }
   - id: children
     title: work.title.children
@@ -76,6 +76,6 @@ steps:
         params:
           marker: result_approved
           file: approval.yaml
-          bind: [breakdown.md]
+          bind: [outcome.yaml, acceptance.yaml]
 violations:
   breakdown.approve: project.violation.breakdown_approve
