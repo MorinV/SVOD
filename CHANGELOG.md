@@ -6,6 +6,20 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-21
+
+### Fixed
+
+- Consistent fail-closed symlink-loop diagnostics on Python 3.10 and 3.13;
+  record discovery no longer silently omits looping card symlinks on Python 3.10.
+- CI declares the setuptools prerequisite used by the wheel distribution test.
+
+### Migration
+
+- Use 0.9.1 instead of 0.9.0, whose hosted Python 3.13 checks failed. No new
+  store-format changes beyond the explicit structured-planning transition in
+  0.9.0. Historical approvals and local profiles are not rewritten automatically.
+
 ## [0.9.0] - 2026-10-21
 
 ### Added
