@@ -1,0 +1,64 @@
+{
+  "root": "work/projects/demo",
+  "selected": [
+    "work/projects/demo",
+    "work/features/search",
+    "work/tasks/index",
+    "work/tasks/query",
+    "work/tasks/archive"
+  ],
+  "completed": [
+    "work/projects/demo",
+    "work/features/search",
+    "work/tasks/index",
+    "work/tasks/archive"
+  ],
+  "outside": [
+    "work/tasks/orphan"
+  ],
+  "converted": [
+    "work/projects/demo",
+    "work/features/search",
+    "work/tasks/index",
+    "work/tasks/query",
+    "work/tasks/archive"
+  ],
+  "remaining": [],
+  "criteria": [
+    [
+      "work/projects/demo",
+      "retained"
+    ],
+    [
+      "work/features/search",
+      "find-fields"
+    ],
+    [
+      "work/features/search",
+      "title"
+    ]
+  ],
+  "sources": {
+    "work/projects/demo/card.md": "---\nkind: project\nstatus: done\n---\n",
+    "work/features/search/card.md": "---\nkind: feature\nstatus: done\nparent: work/projects/demo\n---\n",
+    "work/tasks/index/card.md": "---\nkind: task\nstatus: done\nparent: work/features/search\n---\n",
+    "work/tasks/query/card.md": "---\nkind: task\nstatus: open\nparent: work/features/search\n---\n",
+    "work/tasks/archive/card.md": "---\nkind: task\nstatus: done\nparent: work/projects/demo\n---\n",
+    "work/tasks/orphan/card.md": "---\nkind: task\nstatus: done\n---\n",
+    "work/projects/demo/vision.md": "# Result\nSearchable catalog\n",
+    "work/projects/demo/breakdown.md": "# Scope\nsearch feature; archive task; unallocated documentation\n# Conflict\nOld canvas names orphan; this breakdown names work/tasks/missing. Neither is allocated.\n",
+    "work/projects/demo/legacy.canvas": "{\"nodes\":[{\"id\":\"orphan\",\"type\":\"file\",\"file\":\"work/tasks/orphan/card.md\",\"x\":0,\"y\":0,\"width\":300,\"height\":200}],\"edges\":[]}\n",
+    "work/features/search/brief.md": "# Acceptance\nFind both title and author\nTitle lookup passes on fixture catalog\n",
+    "work/features/search/questions.md": "# Questions\nNo unanswered definition questions\n",
+    "work/features/search/breakdown.md": "index and query support search\n",
+    "work/tasks/index/delivery.md": "# Result\nIndex supports title\n",
+    "checks/title.txt": "Synthetic historical fixture, 2026-09-01; title: fixture-hit; author: unknown\n",
+    "work/tasks/archive/contract.md": "# Acceptance\nOld entries retained\n"
+  },
+  "targets": {
+    "work/projects/demo/plan.yaml": "{\n  \"schema_version\": 1,\n  \"expected\": \"Searchable catalog\",\n  \"nodes\": [\n    {\n      \"id\": \"search\",\n      \"title\": \"Search\",\n      \"expected\": \"Find both title and author\",\n      \"record\": \"work/features/search\"\n    },\n    {\n      \"id\": \"archive\",\n      \"title\": \"Archive\",\n      \"expected\": \"Old entries retained\",\n      \"record\": \"work/tasks/archive\"\n    },\n    {\n      \"id\": \"documentation\",\n      \"title\": \"Documentation\",\n      \"expected\": \"Document catalog\",\n      \"state\": \"open\"\n    }\n  ],\n  \"criteria\": [\n    {\n      \"id\": \"retained\",\n      \"statement\": \"Old entries retained\",\n      \"verification\": \"Inspect the exact sourced behavior, not task status\",\n      \"works\": [\n        \"archive\"\n      ]\n    }\n  ]\n}\n",
+    "work/features/search/plan.yaml": "{\n  \"schema_version\": 1,\n  \"expected\": \"Find both title and author\",\n  \"nodes\": [\n    {\n      \"id\": \"index\",\n      \"title\": \"Index\",\n      \"expected\": \"Index supports title\",\n      \"record\": \"work/tasks/index\"\n    },\n    {\n      \"id\": \"query\",\n      \"title\": \"Query\",\n      \"expected\": \"Find both title and author\",\n      \"record\": \"work/tasks/query\"\n    }\n  ],\n  \"criteria\": [\n    {\n      \"id\": \"find-fields\",\n      \"statement\": \"Find both title and author\",\n      \"verification\": \"Inspect the exact sourced behavior, not task status\",\n      \"works\": [\n        \"index\",\n        \"query\"\n      ]\n    },\n    {\n      \"id\": \"title\",\n      \"statement\": \"Title lookup passes on fixture catalog\",\n      \"verification\": \"Inspect the exact sourced behavior, not task status\",\n      \"works\": [\n        \"index\"\n      ]\n    }\n  ]\n}\n",
+    "work/tasks/index/outcome.yaml": "{\n  \"schema_version\": 1,\n  \"actual\": \"Index supports title\",\n  \"evidence\": [\n    \"work/tasks/index/delivery.md\",\n    \"checks/title.txt\"\n  ]\n}\n",
+    "backfill-notes.md": "# Synthetic backfill provenance\nProject expected: work/projects/demo/vision.md#Result. Nodes: breakdown.md#Scope.\nFeature criteria: work/features/search/brief.md#Acceptance. Archive criterion: work/tasks/archive/contract.md#Acceptance.\nIndex outcome: work/tasks/index/delivery.md#Result (historical fixture, 2026-09-01). checks/title.txt proves title only, not author. Historical evidence retained, no historical confirmation imported: schema has no historical-kind field. All criteria initially unconfirmed.\nMissing outcomes: demo, search, query, archive.\nScope is parent closure of demo, including completed records. Orphan is outside selected scope, not silently converted. No selected exclusions. Unallocated documentation is not a new task.\nResolved fixture question (test-owner scope decision): canvas orphan vs breakdown missing are contradictory; retain both originals, do not allocate either. No relationship repair authorized. Reuse decision while sources unchanged.\nPrimary plan after separately selected profile delta: plan.yaml. Markdown/canvas originals retained as historical reference, not competing authorities.\n"
+  }
+}
