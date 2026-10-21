@@ -94,6 +94,19 @@ svod active               # everything open, the summary an agent sees at sessio
 
 ## Connect an agent
 
+For an existing store's structured-planning upgrade/backfill, read the shipped
+[`svod-planning-transition` instruction](svod/skills/svod-planning-transition/SKILL.md)
+and its [source-grounded worksheet](svod/skills/svod-planning-transition/references/backfill.md).
+In a bundled installation these are under `.svod/skills/svod-planning-transition/`;
+in a shared/source installation they are under the package's
+`svod/skills/svod-planning-transition/`. Store-local skills can mask engine skills
+in agent setup: read this explicit path rather than replacing local policy.
+Installation, profile transition and content backfill require separate permission.
+The instruction uses schema 1 and the implemented planning CLI; the shipped finite
+example is exercised through an isolated combined-engine installation, including
+confirmation, summaries and repeatable canvas export. Packaging or fixture success
+is not proof that any real store has completed historical backfill.
+
 Optional requirements analysis: [svod-fret skill](svod/skills/svod-fret/SKILL.md)
 and [Docker launcher instructions](svod/skills/svod-fret/references/usage.md).
 Use only when explicitly selected for interacting temporal/stateful requirements;
