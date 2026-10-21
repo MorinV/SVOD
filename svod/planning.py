@@ -31,7 +31,8 @@ class Collector:
         self.plans: dict[str, dict[str, Any]] = {}
         self.inputs: dict[str, bytes | None] = {}
         for kind in ("projects", "features", "tasks", "research"):
-            for card in sorted((root / "work" / kind).glob("*/card.md")):
+            # Wildcard the leaf: Python 3.10 literal glob leaves omit looping symlinks.
+            for card in sorted((root / "work" / kind).glob("*/card.m[d]")):
                 ref = card.parent.relative_to(root).as_posix()
                 try:
                     self.safe(ref + "/card.md")
@@ -55,7 +56,12 @@ class Collector:
                 or not path.parts):
             raise Invalid("unsafe_path", "Path must resolve inside the store without traversal")
         try:
-            resolved = (self.root / path).resolve()
+            try:
+                # Non-strict resolution suppresses symlink loops on Python 3.13+.
+                resolved = (self.root / path).resolve(strict=True)
+            except FileNotFoundError:
+                # Missing inputs/outputs are valid paths, but must stay confined.
+                resolved = (self.root / path).resolve()
         except (OSError, ValueError, RuntimeError) as exc:
             raise Invalid("unsafe_path", "Path cannot be safely resolved inside the store") from exc
         if not resolved.is_relative_to(self.root):
