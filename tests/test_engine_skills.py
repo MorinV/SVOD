@@ -8,7 +8,8 @@ from svod import vendor
 from svod.frontmatter import read_frontmatter
 
 SKILLS = REPO_DIR / "svod" / "skills"
-NAMES = ("svod-efficient-execution", "svod-pipeline", "svod-planning-transition")
+NAMES = ("svod-efficient-execution", "svod-pipeline", "svod-planning-transition",
+         "svod-task-layout-transition")
 OPTIONAL_NAMES = ("svod-fret",)
 SKILL_FILE = "SKILL.md"
 PYPROJECT = REPO_DIR / "pyproject.toml"

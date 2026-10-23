@@ -21,12 +21,12 @@ from svod.render import text_key
 from svod.scaffold import scaffold
 
 TEMPLATE = REPO_DIR / "svod" / "templates" / "standard"
-EXAMPLE = "work/tasks/example"
-HOTFIX = "work/tasks/hotfix-login"
-RESEARCH = "work/research/cache"
+EXAMPLE = "work/headless/tasks/example"
+HOTFIX = "work/hotfix/hotfix-login"
+RESEARCH = "work/headless/research/cache"
 SERVICE = "app"
-BRANCH = "task/example"
-WORKTREE = f"{SERVICE}-task-example"
+BRANCH = "task/work+headless+tasks+example"
+WORKTREE = f"{SERVICE}-task-work+headless+tasks+example"
 CHECK_FILE = "greeting.txt"
 SKILL_WORDS = 250
 AGENTS_WORDS = 150
@@ -37,23 +37,23 @@ LOCALES = ("en", "ru")
 PAST_SEC = 120
 
 FIRST_STEP = "name the services in card.md"
-APPROVE_STEP = "svod approve work/tasks/<name> --step approve"
+APPROVE_STEP = "svod approve <record> --step approve"
 FROZEN = "Do not touch the code"
-IMPLEMENT_STEP = "bash profile/actions/start-task.sh work/tasks/<name>"
-CHECKS_STEP = "bash profile/actions/checks.sh work/tasks/<name>"
+IMPLEMENT_STEP = "bash profile/actions/start-task.sh <record>"
+CHECKS_STEP = "bash profile/actions/checks.sh <record>"
 CLOSE_STEP = "after the merge set status: done in card.md"
 DONE_TEXT = "done: status is done in card.md"
 CAUSE_STEP = "a hotfix names its cause in card.md"
-KNOWLEDGE_STEP = "run svod knowledge publish <research>"
+KNOWLEDGE_STEP = "run svod knowledge publish <record>"
 ARCHIVED = "status: archived"
 OPEN = "status: open"
 ACTIVE_ITEM = f"  - {EXAMPLE} - name the services"
 ACTIVE_HEADING = "Tasks:"
 NO_SERVICES = "no services declared"
 GATE_CHECKS = f"profile_config:\n  checks:\n    {SERVICE}: [test, -f, {CHECK_FILE}]\n"
-GREET = "work/tasks/greet"
-SLUG = "work+tasks+example"
-FROZEN_TREE = f"{SERVICE}-task-example"
+GREET = "work/headless/tasks/greet"
+SLUG = "work+headless+tasks+example"
+FROZEN_TREE = f"{SERVICE}-task-work+headless+tasks+example"
 OLD_TREE = f"{SERVICE}-EXAMPLE-1_example"
 QUESTIONS_KEY = "work.step.questions"
 ASK_STEP = 'svod ask <record> "<question>"'
@@ -229,8 +229,8 @@ class StandardTemplateTest(unittest.TestCase):
             sb = StandardStore(temp)
             sb.edit(f"{EXAMPLE}/card.md", "services: []", f"services: [{SERVICE}]")
             outer = sb.base / "outer"
-            stale = {"SVOD_ACTION": "checks", "SVOD_ID": "work/tasks/outer",
-                     "SVOD_SUBJECT_PATH": str(outer / "work/tasks/outer"),
+            stale = {"SVOD_ACTION": "checks", "SVOD_ID": "work/headless/tasks/outer",
+                     "SVOD_SUBJECT_PATH": str(outer / "work/headless/tasks/outer"),
                      "SVOD_SERVICES": "ghost", "SVOD_PIPELINE": "feature",
                      "SVOD_SERVICE_APP": str(outer / "nowhere"), "SVOD_FM_STATUS": "done"}
             started = sb.action("start-task.sh", EXAMPLE, SVOD_ROOT=str(outer), **stale)
@@ -296,7 +296,7 @@ class StandardTemplateTest(unittest.TestCase):
                 sb.write(f"{RESEARCH}/{name}", "# x\n")
             self.assertIn(KNOWLEDGE_STEP, sb.cli("status", RESEARCH).stdout)
             sb.edit(f"{RESEARCH}/card.md", "outcome:", "knowledge: knowledge/cache.md\noutcome:")
-            self.assertIn("for outcome knowledge use svod knowledge publish <research>",
+            self.assertIn("for outcome knowledge use svod knowledge publish <record>",
                           sb.cli("status", RESEARCH).stdout)
 
     def test_questions_step_by_reason(self):
@@ -379,7 +379,7 @@ class StandardFreezeTest(unittest.TestCase):
         for key in (EXAMPLE, SLUG, "EXAMPLE-1", "example-1"):
             with self.subTest(key=key):
                 self.assertEqual(gate.worktrees(ctx, {key}), expected)
-        self.assertEqual(gate.worktrees(ctx, {"work/tasks/other"}), ([], []))
+        self.assertEqual(gate.worktrees(ctx, {"work/headless/tasks/other"}), ([], []))
         self.sb.write("work.yaml", "[broken\n", base=self.sb.store / EXAMPLE)
         pairs, errors = gate.worktrees(ctx, {EXAMPLE})
         self.assertEqual((pairs, len(errors)), ([], 1))

@@ -1,15 +1,15 @@
 ---
 name: svod-research
-description: Use for a record in work/research/<name>/ when svod status names a research step - question, findings, outcome - or when a question needs an investigation before any code.
+description: Investigate questions without changing service code.
 ---
 
 # Running a research
 
-1. Run `svod status work/research/<name>` and do only its next step.
-2. question: write `card.md` (frontmatter `type: card`, `parent`, `tags`) and `question.md`: the question, why it matters, which answer would change the plan.
-3. findings: write `findings.md`: sources, experiments, the answer. Give every claim its source or command; mark guesses as guesses. Change no service code.
-4. outcome: set `outcome` in `card.md`:
-   - `hotfix` or `feature`: make `work/tasks/<name>/` with `kind: hotfix` or `work/features/<name>/`, then set `leads_to: work/<kind>/<name>`;
-   - `knowledge`: run `svod knowledge publish work/research/<name>` to show the exact findings snapshot and request publication/close. After the person's next reply is a configured go-ahead, repeat the command. Changed findings need a new request and reply. The command creates the provenance-tagged note, updates the index, then sets `knowledge` and `status: done`; never set these manually as a substitute for consent.
-5. For other outcomes, show `findings.md` and the outcome to the person; set `status: done` in `card.md` when they agree. Status reads and ordinary hooks never publish or close research.
-6. Report the answer in two sentences, its sources and what stays unknown.
+1. Run `svod status <record>`; do only its next step. Use canonical paths: `<owner>/research/R` under project/feature (including project features), otherwise `work/headless/research/R`. Create with `svod record new research <name> --parent <owner>`; omit --parent for headless.
+2. question: fill card.md (type: card, parent, tags), question.md: question, why it matters, which answer changes the plan. Parent is the containing project/feature, not research provenance.
+3. findings: findings.md has sources, experiments, answer. Source every claim; label guesses. Change no service code.
+4. outcome in card.md:
+   - `task` or `research`: `svod record new <pipeline> <name> --parent <owner>` creates the successor under its project/feature; omit --parent for headless. Set `leads_to: <successor-record>` to its canonical path. Research is task's peer, not a container: provenance never makes it the successor's parent. A feature is not a research outcome.
+   - `knowledge`: `svod knowledge publish <record>` shows the findings snapshot and requests publication/close. After the person's next configured go-ahead, repeat. Changed findings require a new request/reply. The command creates the provenance-tagged note, updates the index, sets knowledge and status: done; never set these manually instead of consent.
+5. For task/research outcomes show findings and successor; set status: done only after human agreement. Status reads/hooks never publish or close research.
+6. Report answer, sources and unknowns.

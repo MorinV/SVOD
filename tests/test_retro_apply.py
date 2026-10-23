@@ -348,7 +348,7 @@ RULES = {"target": Target}
         link = self.sb.store / "profile/pipelines/escape.yaml"
         link.symlink_to(outside)
         for target in ("../outside.yaml", str(outside), "profile/pipelines/escape.yaml",
-                       "work/tasks/alpha/card.md", "profile/../profile/pipelines/task.yaml"):
+                       f"{fixtures.WORK_A}/card.md", "profile/../profile/pipelines/task.yaml"):
             with self.subTest(target=target):
                 before = snapshot(self.sb.store)
                 proposal = rules.Proposal("instant_steps", "card", {}, "optional",

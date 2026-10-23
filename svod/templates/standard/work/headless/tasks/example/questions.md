@@ -2,7 +2,7 @@
 
 <!--
 Everything the agent does not know and must not invent, one `## Q:` per question. Ask the person
-in the chat, wait, then record each answer with svod answer work/tasks/<name> --q <n> <text>.
+in the chat, wait, then record each answer with svod answer <record> --q <n> <text>.
 A record with nothing to ask holds the single line: none
 -->
 

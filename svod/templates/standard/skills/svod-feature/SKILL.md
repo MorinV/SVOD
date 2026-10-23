@@ -1,16 +1,16 @@
 ---
 name: svod-feature
-description: Use for a record in work/features/<name>/ when svod status names a feature step - brief, breakdown, approve, children, integration, deliver.
+description: Run standalone or project-owned feature steps.
 ---
 
 # Running a feature
 
-1. Run `svod status work/features/<name>` and do only its next step.
-2. brief: write `card.md` (frontmatter `type: card`, `services`, `parent`, `tags`) and `brief.md`: problem, users, scope in and out, acceptance.
+1. Run `svod status <record>`; do only its next step. Feature paths: `work/projects/P/features/F` (parent: work/projects/P) or `work/features/F` (empty parent). Create with `svod record new feature <name> --parent <project>`; omit --parent for standalone.
+2. brief: fill card.md (type: card, services, parent, tags) and brief.md: problem, users, scope, acceptance.
 3. questions: follow `skills/svod-questions/SKILL.md`.
-4. breakdown: fill scaffolded `plan.yaml` (schema_version: 1, expected, nodes, criteria). Nodes have stable id/title/expected, optional record/parent/dependencies; criteria have id/statement/verification/works, optional owner+criterion dependencies. Make tasks with `parent: work/features/<name>` and link records. Linked state/actual come only from records. Run `svod plan validate <record>`; breakdown.md is history/derived only.
-5. approve: show `brief.md`, `questions.md` and `plan.yaml`; after the person writes "Approved", run `svod approve work/features/<name> --step approve`. Never write `approval.yaml`. Changed binds require fresh consent; acceptance/outcome/canvas are not plan definitions.
-6. children: take each task to done with `skills/svod-task/SKILL.md`; check them with `svod status work/tasks/<task>`.
-7. integration: after the tasks are merged, run `bash profile/actions/checks.sh work/features/<name>` on the service checkouts; on failure read `checks.log` and open a hotfix task.
-8. deliver: write `outcome.yaml` with schema_version: 1, actual and evidence list. Read `svod plan summary <record>`. Explicitly verify criteria via `svod plan confirm <record> --criterion <id> --result pass --actual '<observed result>' --evidence <file-or-URL>`; this is not human consent. Done tasks do not auto-accept criteria. Show primary outcome/acceptance/checks; after "Approved" run `svod approve work/features/<name> --step deliver`.
-9. Set `status: done` in `card.md` of the feature and report what changed and what stayed unchecked.
+4. breakdown: fill plan.yaml: schema_version: 1, expected, nodes, criteria. Nodes: stable id/title/expected, optional record/parent/dependencies; criteria: id/statement/verification/works, optional owner+criterion dependencies. Children: `<record>/tasks/T` or `<record>/research/R`, parent: <record>, including project features. Link canonical paths; state/actual come from records. Research outcomes: knowledge/task/research, not feature. `svod plan validate <record>`; breakdown.md is historical/derived.
+5. approve: show brief.md, questions.md, plan.yaml; after fresh "Approved": `svod approve <record> --step approve`. Never edit approval.yaml; changed binds need fresh consent. Outcome/acceptance/canvas are not definitions.
+6. children: use their named skills; `svod status <child-record>`.
+7. integration: after merge, `bash profile/actions/checks.sh <record>`; inspect checks.log on failure.
+8. deliver: write outcome.yaml (schema_version: 1, actual, evidence). Read `svod plan summary <record>`; explicitly verify then `svod plan confirm <record> --criterion <id> --result pass --actual '<result>' --evidence <file-or-URL>`. Done never auto-accepts criteria. Show outcome/acceptance/checks; after "Approved": `svod approve <record> --step deliver`.
+9. Set status: done; report changes and unchecked work.

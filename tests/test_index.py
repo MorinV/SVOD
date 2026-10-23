@@ -21,14 +21,14 @@ from svod.scaffold import scaffold
 
 LOCAL_CONFIG = ".svod-local.yaml"
 FEATURE = "work/features/shop"
-TASK = "work/tasks/login"
-HOTFIX = "work/tasks/crash"
-DONE = "work/tasks/old"
-LOOP_A = "work/tasks/loop-a"
-LOOP_B = "work/tasks/loop-b"
-SELF = "work/tasks/self"
-BARE = "work/research/bare"
-EXAMPLE = "work/tasks/example"
+TASK = f"{FEATURE}/tasks/login"
+HOTFIX = "work/hotfix/crash"
+DONE = "work/headless/tasks/old"
+LOOP_A = "work/headless/tasks/loop-a"
+LOOP_B = "work/headless/tasks/loop-b"
+SELF = "work/headless/tasks/self"
+BARE = "work/headless/research/bare"
+EXAMPLE = "work/headless/tasks/example"
 HEAVY = ("svod.position", "svod.gates", "svod.git", "svod.command_cache")
 BUDGET_SEC = 0.5
 RECORDS = 50
@@ -221,7 +221,8 @@ class BudgetTest(IndexTestCase):
         for i in range(RECORDS // 2):
             feature = f"work/features/feature-{i:02d}"
             self.sb.record(feature, f"Feature {i}", kind="feature")
-            self.sb.record(f"work/tasks/task-{i:02d}", f"Task {i}", kind="task", parent=feature)
+            self.sb.record(f"{feature}/tasks/task-{i:02d}", f"Task {i}", kind="task",
+                           parent=feature)
         self.sb.agent_context(f"    index_lines: {RECORDS}\n")
         started = time.perf_counter()
         text = self.sb.session_start()

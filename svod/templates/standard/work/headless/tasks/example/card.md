@@ -11,12 +11,13 @@ status: archived
 # EXAMPLE-1: replace with a one-line task title
 
 <!--
-Example task card. Copy work/tasks/example/ to work/tasks/<name>/ for a real task, or let
-bash profile/actions/start-task.sh work/tasks/<name> write a bare card. Frontmatter:
+Example task card. Copy work/headless/tasks/example/ to <record>/ for a real task, or let
+bash profile/actions/start-task.sh <record> write a bare card. Frontmatter:
   kind      task, or hotfix (no contract, no approval; needs cause:)
   key       tracker key or empty; branches are <key>_<name>
   services  services of svod.yaml this task touches, for example [app]; svod status stops here while it is []
-  parent    work/features/<name> or work/projects/<name> this task belongs to, or empty
+  parent    canonical containing project/feature, including work/projects/P/features/F, or empty
+            task: <owner>/tasks/T or work/headless/tasks/T; hotfix: work/hotfix/H
   cause     hotfix only: the incident or record that made it necessary
   tags      free labels
   status    open until merged, then done; archived keeps a record out of svod active.

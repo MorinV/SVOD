@@ -39,7 +39,9 @@ def substring_pairs(ctx, pipelines, query):
 
 def changed_in(ctx, pipeline, subject, paths):
     """Whether a checkout changed a path grounding the subject."""
-    return any(covers(rel, paths) for rel in pipeline.subject.impl.evidence(ctx, subject))
+    provider = pipeline.subject.impl
+    return any(covers(rel, [path]) and provider.owns_path(ctx, subject, path)
+               for rel in provider.evidence(ctx, subject) for path in paths)
 
 
 def across(ctx, pipelines, query, phase, scopes):

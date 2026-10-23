@@ -69,10 +69,14 @@ class Provider(Configurable):
         """Every subject of this kind, for the active summary."""
         raise NotImplementedError
 
+    def owns_path(self, ctx, subject, path):
+        """Whether a changed relative path belongs to this subject."""
+        return any(covers(rel, [path]) for rel in self.evidence(ctx, subject))
+
     def touched(self, ctx, paths):
-        """Subjects with a file among paths, given relative to the store root in POSIX form."""
+        """Subjects owning a file among the relative changed paths."""
         return [s for s in self.enumerate(ctx)
-                if s.path is not None and covers(relative(ctx, s.path), paths)]
+                if any(self.owns_path(ctx, s, path) for path in paths)]
 
     def evidence(self, ctx, subject):
         """Paths relative to the root that ground the subject: its own path when it has one."""

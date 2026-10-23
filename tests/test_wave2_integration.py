@@ -10,12 +10,15 @@ from support import run_cli
 from svod.approval import read_fields
 
 
+RESEARCH = "work/headless/research/joint"
+
+
 class PackageTrustIntegrationTest(unittest.TestCase):
     def setUp(self):
         temp = TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.sb = fixtures.StandardStore(temp.name)
-        self.records = ["work/tasks/alpha", "work/tasks/bravo"]
+        self.records = ["work/headless/tasks/alpha", "work/headless/tasks/bravo"]
         for record in self.records:
             shutil.copytree(self.sb.store / fixtures.EXAMPLE, self.sb.store / record)
             self.sb.edit(f"{record}/card.md", fixtures.ARCHIVED, fixtures.OPEN)
@@ -50,13 +53,13 @@ class PackageTrustIntegrationTest(unittest.TestCase):
         return json.loads(result.stdout)["hookSpecificOutput"] if result.stdout.strip() else {}
 
     def test_native_knowledge_and_retro_routes_are_usable_without_blanket_exemption(self):
-        for command in ("svod knowledge publish work/research/cache",
+        for command in ("svod knowledge publish work/headless/research/cache",
                         "svod knowledge supersede knowledge/old.md --by knowledge/new.md",
-                        "svod retro apply work/tasks/alpha"):
+                        f"svod retro apply {self.records[0]}"):
             output = self.hook("Bash", {"command": command})
             self.assertNotEqual(output.get("permissionDecision"), "deny", output)
-        for command in ("svod knowledge publish work/research/cache ; python3 bad.py",
-                        "svod knowledge publish work/research/cache --root /outside"):
+        for command in ("svod knowledge publish work/headless/research/cache ; python3 bad.py",
+                        "svod knowledge publish work/headless/research/cache --root /outside"):
             self.assertEqual(self.hook("Bash", {"command": command})["permissionDecision"],
                              "deny")
 
@@ -108,17 +111,17 @@ class PackageTrustIntegrationTest(unittest.TestCase):
 
     def test_package_consent_does_not_authorize_external_grants_or_research_close(self):
         record = self.records[0]
-        self.sb.write("work/research/joint/card.md", "---\ntype: card\noutcome: knowledge\n"
+        self.sb.write(f"{RESEARCH}/card.md", "---\ntype: card\nkind: research\noutcome: knowledge\n"
                       "status: open\ntags: [db]\n---\n# Joint\n")
-        self.sb.write("work/research/joint/findings.md", "# Findings\nExact result.\n")
+        self.sb.write(f"{RESEARCH}/findings.md", "# Findings\nExact result.\n")
         args = ("allow", record, "--for", "30m", "--path", str(self.sb.base / "external"))
         self.assertNotEqual(self.sb.cli(*args).returncode, 0)
-        self.assertNotEqual(self.sb.cli("knowledge", "publish", "work/research/joint").returncode,
+        self.assertNotEqual(self.sb.cli("knowledge", "publish", RESEARCH).returncode,
                             0)
         self.approve_package()
         # An approval-form reply is not the configured human go-ahead for these routes.
         self.assertNotEqual(self.sb.cli(*args).returncode, 0)
-        self.assertNotEqual(self.sb.cli("knowledge", "publish", "work/research/joint").returncode,
+        self.assertNotEqual(self.sb.cli("knowledge", "publish", RESEARCH).returncode,
                             0)
         self.assertFalse((self.sb.store / "knowledge/joint.md").exists())
         denied = self.hook("Write", {"file_path": str(self.sb.base / "external/x"),
@@ -135,18 +138,18 @@ class PackageTrustIntegrationTest(unittest.TestCase):
             "permissionDecision"], "deny")
         self.assertFalse((self.sb.store / "knowledge/joint.md").exists())
         self.prompt("Do not publish yet.")
-        self.sb.cli("knowledge", "publish", "work/research/joint")
+        self.sb.cli("knowledge", "publish", RESEARCH)
         self.prompt("go ahead")
         self.prompt("Do not publish.")
-        self.assertNotEqual(self.sb.cli("knowledge", "publish", "work/research/joint").returncode,
+        self.assertNotEqual(self.sb.cli("knowledge", "publish", RESEARCH).returncode,
                             0)
         self.assertFalse((self.sb.store / "knowledge/joint.md").exists())
-        self.sb.cli("knowledge", "publish", "work/research/joint")
+        self.sb.cli("knowledge", "publish", RESEARCH)
         self.prompt("go ahead")
-        published = self.sb.cli("knowledge", "publish", "work/research/joint")
+        published = self.sb.cli("knowledge", "publish", RESEARCH)
         self.assertEqual(published.returncode, 0, published.stderr)
         self.assertIn("published_by: tester", (self.sb.store / "knowledge/joint.md").read_text())
-        self.assertIn("status: done", (self.sb.store / "work/research/joint/card.md").read_text())
+        self.assertIn("status: done", (self.sb.store / f"{RESEARCH}/card.md").read_text())
 
     def test_old_standard_profile_merges_without_install_or_lost_customization(self):
         from svod import profile_merge

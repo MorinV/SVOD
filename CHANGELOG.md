@@ -6,6 +6,46 @@ Each release has a **Migration** subsection: what changes in a store on the way 
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-23
+
+### Added
+
+- Nested standard work layout: projects contain features, tasks and research;
+  features contain tasks and research. Standalone work lives under
+  `work/headless/{tasks,research}` and hotfixes under `work/hotfix`.
+- Parent-aware record creation, unambiguous full-path worktree identities and
+  nested structured planning, including standalone feature summaries.
+- Shipped `svod-task-layout-transition` instruction for complete existing-store
+  migration, including completed and untracked records, with collision checks
+  and preservation of historical approvals and evidence.
+
+### Fixed
+
+- Nested record scope and changed-path ownership no longer select ancestor
+  project/feature records; canonical Unicode path equivalents remain supported.
+- Missing hotfix actions create the requested hotfix, not an unrelated task.
+- Record creation uses no-follow directory descriptors and exclusive writes to
+  prevent ancestor-substitution and link-based write redirection.
+
+### Migration
+
+- This minor release changes the standard store layout. Updating the engine does
+  not move records automatically. Follow the shipped transition instruction,
+  rehearse a full mapping on an isolated copy, then explicitly update the local
+  profile and all selected records, including done/archived/untracked material.
+- Preserve historical approval/evidence bytes and existing `work.yaml`, worktree
+  directories and branches. Update live references; changed bound inputs require
+  fresh approval, never rewritten hashes or replayed consent. Custom literal-root
+  profiles retain their existing placement behavior.
+- Research is a peer of task, with knowledge, task or research as its outcome;
+  provenance does not make research a container. Review legacy feature/hotfix
+  research outcomes explicitly during transition.
+- Safe record creation requires directory-fd and no-follow APIs (verified on
+  macOS; Linux is covered by CI). Unsupported platforms fail closed rather than
+  using an insecure pathname fallback. Creation is not a transactional operation.
+- FRET remains optional and experimental; this release does not change its known
+  solver reliability limitations.
+
 ## [0.9.1] - 2026-10-21
 
 ### Fixed

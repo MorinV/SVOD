@@ -1,7 +1,7 @@
 # Working with Svod
 
-1. Run `svod active` for open work; run `svod status work/<kind>/<name>` and do only its next step.
-2. Kinds: `work/projects`, `work/features`, `work/tasks` (also `kind: hotfix`), `work/research`. The frontmatter of `card.md` names `kind`, `services`, `parent`.
+1. Run `svod active` for open work; run `svod status <record>` with its canonical path and do only its next step.
+2. Projects contain `features/`, `tasks/` and `research/`; features contain `tasks/` and `research/`. Standalone features live in `work/features`, standalone tasks/research in `work/headless/{tasks,research}`, hotfixes in `work/hotfix`. The frontmatter of `card.md` names `kind`, `services`, `parent`.
 3. Use the skill `svod status` names: `skills/svod-task`, `svod-feature`, `svod-project`, `svod-research`, `svod-questions`.
 4. Never guess: add unknowns with `svod ask <record> "<question>"`, ask in the chat, wait for the answer.
 5. After the person writes "Approved" (or "Одобряю"), run `svod approve <record> --step <id>`. Never edit `approval.yaml`.

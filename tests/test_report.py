@@ -5,7 +5,7 @@ import unittest
 from tempfile import TemporaryDirectory
 
 from support import EXIT_OK, EXIT_USAGE, core_text
-from test_retro import START, TASK, WORK_A, WORK_B, RetroStore
+from test_retro import START, TASK, WORK_A, WORK_B, WORK_C, RetroStore
 
 from svod import evidence_log as ev
 from svod import report
@@ -148,7 +148,7 @@ class ReportCommandTest(unittest.TestCase):
 
     def test_a_record_without_evidence(self):
         """An existing record with an empty log says so."""
-        out = self.run_report("work/tasks/charlie")
+        out = self.run_report(WORK_C)
         self.assertIn(core_text("report.no_evidence"), out)
 
     def test_json_holds_the_same_data(self):

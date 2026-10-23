@@ -12,7 +12,10 @@ whose directory holds any file is refused: nothing is overwritten. An empty dire
 from __future__ import annotations
 
 import json
+import os
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -134,6 +137,33 @@ def occupied(path: Path) -> bool:
     return path.exists() and (not path.is_dir() or any(path.iterdir()))
 
 
+@contextmanager
+def record_directory(root: Path | int, relative: Path) -> Iterator[int]:
+    """Walk from the trusted store root with no-follow opens and bounded fd use.
+
+    A rename after an open cannot redirect the descriptor to a symlink's target.
+    No pathname write or insecure fallback is used on unsupported platforms.
+    """
+    if (not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY")
+            or os.open not in os.supports_dir_fd or os.mkdir not in os.supports_dir_fd
+            or os.listdir not in os.supports_fd):
+        raise ValueError("Safe record creation requires no-follow directory descriptors")
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("Record target must stay inside the store")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    descriptor = os.dup(root) if isinstance(root, int) else os.open(root, flags)
+    try:
+        for part in relative.parts:
+            with suppress(FileExistsError):
+                os.mkdir(part, dir_fd=descriptor)
+            child = os.open(part, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
 def new_record(ctx: Context, pipelines: list[Pipeline], record: NewRecord) -> Report:
     """Create the record from the skeletons of its pipeline; refuse an existing one.
 
@@ -148,23 +178,53 @@ def new_record(ctx: Context, pipelines: list[Pipeline], record: NewRecord) -> Re
             names=PIPELINES_SEPARATOR.join(p.name for p in pipelines))])
     if bad_name(record.name):
         return Report(False, err=[locale.text(keys.RECORD_BAD_NAME, name=record.name)])
+    target_method = getattr(pipeline.subject.impl, "creation_target", None)
+    try:
+        target = target_method(ctx, record) if target_method else None
+    except ValueError as exc:
+        return Report(False, err=[str(exc)])
     root = subject_root(pipeline)
-    if root is None:
-        return Report(False, err=[locale.text(keys.RECORD_NO_ROOT, name=pipeline.name)])
+    if target is None:
+        if root is None or any(c in root for c in "*?["):
+            return Report(False, err=[locale.text(keys.RECORD_NO_ROOT, name=pipeline.name)])
+        target = ctx.root / root / record.name
+    try:
+        relative_target = target.relative_to(ctx.root)
+        current = ctx.root
+        for part in relative_target.parts:
+            if part in {".", ".."}:
+                raise ValueError("Record target must stay inside the store")
+            current = current / part
+            if current.is_symlink():
+                raise ValueError(f"Record target contains a symlink: {current}")
+        if not target.resolve().is_relative_to(ctx.root.resolve()):
+            raise ValueError("Record target must stay inside the store")
+    except ValueError as exc:
+        return Report(False, err=[str(exc)])
     source = skeleton_dir(ctx, pipeline)
     files = skeleton_files(source)
     if not files:
         return Report(False, err=[locale.text(keys.RECORD_NO_SKELETON, name=pipeline.name,
                                               dir=relative_or_absolute(ctx.root, source))])
-    target = ctx.root / root / record.name
     shown = relative_or_absolute(ctx.root, target)
     if occupied(target):
         return Report(False, err=[locale.text(keys.RECORD_EXISTS, path=shown)], refused=True)
     values = values_of(record, ctx.today.isoformat())
-    for rel in files:
-        path = target / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        text = (source / rel).read_text(encoding=ENCODING)
-        path.write_text(fill(text, values), encoding=ENCODING)
+    try:
+        with record_directory(ctx.root, relative_target) as destination:
+            if os.listdir(destination):
+                return Report(False, err=[locale.text(keys.RECORD_EXISTS, path=shown)],
+                              refused=True)
+            for rel in files:
+                text = fill((source / rel).read_text(encoding=ENCODING), values)
+                with record_directory(destination, rel.parent) as parent:
+                    descriptor = os.open(
+                        rel.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                        0o666, dir_fd=parent,
+                    )
+                    with os.fdopen(descriptor, "w", encoding=ENCODING) as stream:
+                        stream.write(text)
+    except (OSError, ValueError) as exc:
+        return Report(False, err=[f"Cannot safely create record {shown}: {exc}"])
     return Report(True, out=[locale.text(keys.RECORD_CREATED, path=shown,
                                          files=FILES_SEPARATOR.join(p.as_posix() for p in files))])

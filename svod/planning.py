@@ -19,6 +19,16 @@ def digest(value: Any) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def record_kind(ref: str, card: dict[str, Any]) -> str | None:
+    """Declared kind wins; retain inference only for the original flat record slots."""
+    legacy = {"projects": "project", "features": "feature", "tasks": "task",
+              "research": "research"}
+    parts = Path(ref).parts
+    fallback = legacy.get(parts[1]) if len(parts) == 3 and parts[0] == "work" else None
+    kind = card.get("kind", fallback)
+    return kind if isinstance(kind, str) else None
+
+
 class Collector:
     """One request's primary facts and reference indexes, without executing policy."""
 
@@ -30,19 +40,38 @@ class Collector:
         self.children: dict[str, list[str]] = {}
         self.plans: dict[str, dict[str, Any]] = {}
         self.inputs: dict[str, bytes | None] = {}
-        for kind in ("projects", "features", "tasks", "research"):
+        self.kinds: dict[str, str | None] = {}
+        parents: dict[str, str] = {}
+        # Inventory only record slots, never arbitrary archived/experimental card files.
+        # Keep legacy flat roots without loading executable profile policy.
+        roots = ["projects", "features", "tasks", "research", "hotfix",
+                 "projects/*/features", "projects/*/tasks", "projects/*/research",
+                 "projects/*/features/*/tasks", "projects/*/features/*/research",
+                 "features/*/tasks", "features/*/research", "headless/tasks",
+                 "headless/research"]
+        for slot in roots:
             # Wildcard the leaf: Python 3.10 literal glob leaves omit looping symlinks.
-            for card in sorted((root / "work" / kind).glob("*/card.m[d]")):
-                ref = card.parent.relative_to(root).as_posix()
+            for card in sorted((self.root / "work").glob(slot + "/*/card.m[d]")):
+                ref = card.parent.relative_to(self.root).as_posix()
                 try:
                     self.safe(ref + "/card.md")
                     self.track(ref + "/card.md")
                     data = read_frontmatter(card) or {}
+                    self.kinds[ref] = record_kind(ref, data)
                     parent = data.get("parent")
                     if isinstance(parent, str) and parent:
-                        self.children.setdefault(parent, []).append(ref)
+                        parents[ref] = parent
                 except Invalid as exc:
                     self.diagnostic(exc.code, ref, str(exc))
+        for ref, parent in parents.items():
+            # Research chains preserve provenance, not a nested planning container.
+            seen = {ref}
+            while parent not in seen and self.kinds.get(parent) == "research":
+                seen.add(parent)
+                if parent not in parents:
+                    break
+                parent = parents[parent]
+            self.children.setdefault(parent, []).append(ref)
 
     def diagnostic(self, code: str, path: str, message: str,
                    severity: str = "error") -> None:
@@ -126,10 +155,11 @@ class Collector:
             card = read_frontmatter(path)
             if not card:
                 raise Invalid("missing_record", "Missing or invalid card.md")
-            fact.update(state=card.get("status", "unknown"), parent=card.get("parent"))
+            fact.update(state=card.get("status", "unknown"), parent=card.get("parent"),
+                        kind=record_kind(ref, card))
             outcome = self.safe(ref + "/outcome.yaml")
             self.track(ref + "/outcome.yaml")
-            if ref.startswith("work/research/"):
+            if fact.get("kind") == "research":
                 return fact
             if not outcome.exists():
                 self.diagnostic("missing_outcome", ref + "/outcome.yaml",
@@ -173,9 +203,17 @@ class Collector:
                 child = self.fact(target)
                 item.update(state=child["state"], actual=child["actual"],
                             evidence=child["evidence"])
-                if child["parent"] != ref:
+                parent = child["parent"]
+                seen = {target}
+                while isinstance(parent, str) and parent != ref and parent not in seen:
+                    seen.add(parent)
+                    provenance = self.fact(parent)
+                    if provenance.get("kind") != "research":
+                        break
+                    parent = provenance["parent"]
+                if parent != ref:
                     self.diagnostic("parent_conflict", target, f"Expected parent {ref}")
-                if target.startswith(("work/projects/", "work/features/")):
+                if child.get("kind") in {"project", "feature"}:
                     self.visit(target)
             record["nodes"].append(item)
         self.cycles(graph, ref)
@@ -217,8 +255,7 @@ class Collector:
 
     def result(self, owner: str | None) -> dict[str, Any]:
         owners = [owner] if owner else sorted(
-            p.parent.relative_to(self.root).as_posix()
-            for p in (self.root / "work/projects").glob("*/card.md"))
+            ref for ref, kind in self.kinds.items() if kind in {"project", "feature"})
         for ref in owners:
             self.visit(ref)
         graph = {}
