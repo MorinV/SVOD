@@ -593,12 +593,12 @@ active: { children: [task] }
 ```text
 Your work without progress:
   - work/projects/shop (no key) - write the vision
-    - work/features/login (no key) - finish the tasks
-      - work/tasks/token (no key) - check
-    - work/features/search (no key) - split into tasks
+    - work/projects/shop/features/login (no key) - finish the tasks
+      - work/projects/shop/features/login/tasks/token (no key) - check
+    - work/projects/shop/features/search (no key) - split into tasks
 
 Your work without progress:
-  - work/tasks/loose (no key) - build
+  - work/headless/tasks/loose (no key) - build
 ```
 
 ## Bindings file
@@ -689,10 +689,10 @@ echo "started: $note"
 
 ### The standard template's actions
 
-`profile/actions/` of `svod new --template standard` holds `start-task.sh`, `checks.sh`, `pr.sh` and `cleanup.sh`, each sourcing `_env.sh`; they run under `svod do` and by hand as `bash profile/actions/<name>.sh work/<kind>/<name> [options]` from the store root.
+`profile/actions/` of `svod new --template standard` holds `start-task.sh`, `checks.sh`, `pr.sh` and `cleanup.sh`, each sourcing `_env.sh`; they run under `svod do` and by hand as `bash profile/actions/<name>.sh <record> [options]` from the store root.
 
 - **The record.** The first argument not starting with `--` is the record, the others are options. Under `svod do` (no record argument) the `SVOD_` variables are used. A record argument naming another record than `SVOD_ID`, or a `SVOD_ROOT` other than the working directory, makes the inherited variables stale: `SVOD_ACTION`, `SVOD_ROOT`, `SVOD_ID`, `SVOD_KEY`, `SVOD_KIND`, `SVOD_PIPELINE`, `SVOD_SERVICES`, `SVOD_SUBJECT_PATH`, `SVOD_SERVICE_*` and `SVOD_FM_*` are dropped and found again from the argument, `card.md` and `svod.yaml`. So `checks.sh` running a test suite that runs these scripts on another store acts on the record it was given there, never on the outer one.
-- **Names.** The worktree of service `<service>` for the record `work/<kind>/<name>` of pipeline `<pipeline>` is `<directory holding the service checkout>/<service>-<pipeline>-<name>`, on the branch `<pipeline>/<name>`. The checkout is the absolute path of the service (`SVOD_SERVICE_<NAME>`, else `services.<name>` of `svod.yaml`, else `../<name>`), so a store inside its service gets the worktree next to the checkout. `<pipeline>` is `SVOD_PIPELINE`, else `<kind>` without its final `s`. `work.yaml` lists `<service>: <path relative to the store root>` (`app: ../app-task-login`) and can be committed.
+- **Identity.** `<record>` is the canonical nested path, not a fixed-depth work path. `work.yaml` lists `<service>: <path relative to the store root>` and is authoritative for existing checkouts. A layout move preserves its original bytes and existing branch/worktree names; do not infer ownership from leaf names. New checkouts use the selected implementation's path-qualified identity to avoid same-name collisions. Services resolve from `SVOD_SERVICE_<NAME>`, else `services.<name>` in svod.yaml, else `../<name>`; checkouts go next to the service, not inside an embedded store.
 - **`start-task.sh`.** Without `card.md` it runs `svod record new <pipeline> <name>` (the `svod` on `PATH`, else `python3 -m svod.cli`) with `--kind`, `--services` and `--key` from `SVOD_KIND`, `SVOD_SERVICES` and `SVOD_KEY`, then makes the worktrees; with `card.md` it only makes the missing worktrees, so it runs again safely. A record directory holding other files but no `card.md` is refused by `record new`: write the card by hand then.
 - **`checks.sh --check`.** Writes nothing: it runs the checks of every service again (in the worktree of `work.yaml`, else the checkout) with their output on stdout and exits 0 when all pass. A record naming no services exits 0 printing `no services declared ...`; a record without `checks.md` exits 1 without running anything (`not checked yet ...`), which keeps the gate cheap before the first real run. The task step `checks` and the feature step `integration` use it next to `checks.md`:
 
@@ -1094,10 +1094,12 @@ profile_config:
     app: [python3, -m, pytest, -q]
 ```
 
-From the instance root, `svod do start-task work/tasks/example` and
-`svod do checks work/tasks/example` dispatch the exact configured action for one
-existing open record. The exact configured `bash profile/actions/start-task.sh
-work/tasks/example` and `bash profile/actions/checks.sh work/tasks/example` forms
+From the instance root, `svod do start-task <record>` and
+`svod do checks <record>` dispatch the exact configured action for one
+existing open record. Use its canonical nested path, for example
+`work/projects/shop/features/login/tasks/form` or `work/headless/tasks/example`.
+The exact configured `bash profile/actions/start-task.sh <record>` and
+`bash profile/actions/checks.sh <record>` forms
 are also accepted. The standard script routes these through native
 `action-dispatch <action> <record>` (invoked as `svod action-dispatch`; internal helper;
 exit 3 permits legacy behavior only for a record without a prior trust snapshot and
@@ -1141,7 +1143,7 @@ if their internal filesystem or remote effects must be enforced against maliciou
 | `validate` | — | loads config, pipelines, gates, providers, locale, descriptions and bindings, and checks the [copy of the engine](#vendored-copy) against its `MANIFEST`; prints every error, first every file left with a [conflict marker](#profile-from-the-template) | 0 valid, 1 errors |
 | `status <query>` | `--format text\|json` | position of every subject the query resolves to; JSON v1 projects captured native outcomes without re-evaluating gates, with bounded allowlisted facts and advisory `next_action`; no free-form logs, approval identity or exception text | 0 found, 2 not found, ambiguous, or only such missing subjects |
 | `next <query>` | `--format text\|json` | the position `status` shows, one line per subject it resolves to: `<id>: <next step> (skill <name>)`, or `<id>: run svod do <action> <id> (skill <name>)` when the current step names an [action](#actions) (`next.line`, `next.line_skill`, `next.run`; `next.none` when status shows no next step); the text is the next-step text of `status` without its final period, the skill part is left out when none is assigned. `--format json` prints one object per subject with `id`, `step` (the current step, `null` when done or held by an entry before the steps), `text`, `skill`, `action` and `run` (the command, `null` without an action to run). Rendered from the very collection `status` renders (`svod.render.one_line`), never evaluated again | 0 found, 2 not found, ambiguous, or only such missing subjects |
-| `record new <pipeline> <name>` | `--services a,b`, `--parent <id>`, `--kind <kind>`, `--tags a,b`, `--key <key>` | creates the [record](#records) `<root>/<name>/` from the skeletons `<profile>/records/<pipeline>/`; prints `record.created` with the path and the files | 0 created, 1 the record exists, 2 unknown pipeline, a bad name, no record directory or no skeletons |
+| `record new <pipeline> <name>` | `--services a,b`, `--parent <id>`, `--kind <kind>`, `--tags a,b`, `--key <key>` | creates the [record](#records) at the provider-selected path from the skeletons `<profile>/records/<pipeline>/`; prints `record.created` with the path and the files | 0 created, 1 the record exists, 2 unknown pipeline, a bad name, no record directory or no skeletons |
 | `active` | `--all`, `--hook` | summary of open work, including subjects changed in other checkouts of the store repository; `--all` expands `theirs`; `--hook` prints SessionStart hook JSON (`hookSpecificOutput.additionalContext`, with the [update notice](#update-notice) first and `active.hook_tail` appended); prints nothing when there is neither | 0 |
 | `render <pipeline>` | `--write` | prints the documentation block, or writes it between the markers | 0, 1 no markers, 2 unknown pipeline |
 | `approve <query> [<query> ...]` | `--step <id>`, `--prepare`, `--confirm` | records a single approval or previews/applies an exact contract package using fresh post-preview consent; `--prepare` requires explicit `--step approve`; `--confirm` is single-record only; see [Approval by a person](#approval-by-a-person); nothing is committed | 0 recorded/prepared, 1 refused, 2 single-record not found or ambiguous |
@@ -1191,7 +1193,7 @@ warnings.
 
 ### Records
 
-`svod record new <pipeline> <name>` makes a new subject of a pipeline whose provider reads directories ([`container`](#container) and providers built on it, such as `work` of the standard template). The record is `<root>/<name>/`, `<root>` being the first of the provider's `roots`: the provider is the one place that says where the subjects of a pipeline live, so `svod.yaml` keeps no second mapping, and a pipeline whose provider names no `roots` has no records to make (`record.no_root`). `<name>` is one directory name: no `/`, `\`, spaces or leading dot (`record.bad_name`).
+`svod record new <pipeline> <name>` makes a new subject of a pipeline whose provider reads directories ([`container`](#container) and providers built on it, such as `work` of the standard template). Placement comes from the provider's creation target when supported; otherwise it uses the first literal provider root (`<root>/<name>/`). A wildcard root is not itself a creation destination. No second global root mapping is kept in svod.yaml. Providers with no usable creation target/root refuse creation (`record.no_root`). The standard profile places project features at `work/projects/P/features/F`; tasks/research under their project or feature at `tasks/T` or `research/R`; without an owner at `work/headless/tasks/T` or `work/headless/research/R`. Standalone features use `work/features/F`, hotfixes `work/hotfix/H`. `--parent` names a containing project/feature (including project-owned features), not research provenance. Research outcomes are knowledge/task/research; leads_to names a peer successor, never a contained child. `<name>` is one directory name: no `/`, `\`, spaces or leading dot (`record.bad_name`).
 
 Every file under `<profile>/records/<pipeline>/` is copied, with these placeholders replaced (any other brace is kept as written); a line holding one loses its trailing spaces, so an empty value leaves `key:`:
 
@@ -1205,7 +1207,7 @@ Every file under `<profile>/records/<pipeline>/` is copied, with these placehold
 | `{tags}` | `--tags` as a YAML flow list, `[]` without it |
 | `{date}` | today, ISO |
 
-A value YAML would read differently is written as a quoted string. A record whose directory holds anything is refused with `record.exists` (exit 1) and nothing is written; an empty directory is filled. No skeleton files: `record.no_skeleton`. Nothing is committed. The standard template ships only `card.md` in `profile/records/{task,feature,project,research}/` (`type: card`, `kind`, `key`, `services`, `parent`, `tags`, `status: open`, the research card also `outcome:`; the title and the empty sections the step skill fills); an instance adds files of its own there. No `questions.md` and no step artifact is made, since an artifact gate would count a skeleton as written: a new task naming its services stands at its questions step, which asks for `questions.md` (or `svod ask --none`), and its contract step then asks for `contract.md`; a new feature, project or research stands at its first step, which asks for `brief.md`, `vision.md` or `question.md`.
+A value YAML would read differently is written as a quoted string. A record whose directory holds anything is refused with `record.exists` (exit 1) and nothing is written; an empty directory is filled. No skeleton files: `record.no_skeleton`. Nothing is committed. The standard template ships `card.md` plus project/feature `plan.yaml` in `profile/records/{task,feature,project,research}/` (`type: card`, `kind`, `key`, `services`, `parent`, `tags`, `status: open`, the research card also `outcome:`; the title and the empty sections the step skill fills); an instance adds files of its own there. No `questions.md` and no step artifact is made, since an artifact gate would count a skeleton as written: a new task naming its services stands at its questions step, which asks for `questions.md` (or `svod ask --none`), and its contract step then asks for `contract.md`; a new feature, project or research stands at its first step, which asks for `brief.md`, `vision.md` or `question.md`.
 ### Setup
 
 `svod setup <directory>` does what five commands do, each step calling the function of its command:
@@ -1308,7 +1310,7 @@ What the team has learned lives in the store as notes, one markdown file per top
 |---|---|
 | `title` | name of the note; without it, the first heading, else the file name |
 | `tags` | list of tags (a comma separated string is read too); compared without letter case |
-| `source` | id of the work the note came from, for example `work/research/x`, or empty |
+| `source` | id of the work the note came from, for example `work/headless/research/x`, or empty |
 | `date` | ISO date of the note; the index and the hook lines put the newest first |
 | `status` | `current` (also when absent) or `superseded`; a superseded note stays in the index and is never given to the agent |
 

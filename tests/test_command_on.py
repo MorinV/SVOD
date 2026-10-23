@@ -324,7 +324,8 @@ class BudgetTest(unittest.TestCase):
         self.store = Path(scaffold(base / "store", "standard"))
         self.card(f"work/features/{FEATURE}", "feature", "open")
         for number in range(RECORDS):
-            self.card(f"work/tasks/t{number:02d}", "task", "done" if number % 2 else "open")
+            self.card(f"work/features/{FEATURE}/tasks/t{number:02d}", "task",
+                      "done" if number % 2 else "open")
         for args in (("init", "-q", "-b", "main"), ("add", "-A"), ("commit", "-qm", "init")):
             subprocess.run(["git", "-C", str(self.store), *args], env=self.env, check=True,
                            capture_output=True)
@@ -344,7 +345,7 @@ class BudgetTest(unittest.TestCase):
             out = run_cli(("status", FEATURE), self.store, self.env)
             elapsed = time.monotonic() - started
         self.assertEqual(out.returncode, 0, out.stderr)
-        self.assertEqual(out.stdout.count("work/tasks/t"), RECORDS)
+        self.assertEqual(out.stdout.count(f"work/features/{FEATURE}/tasks/t"), RECORDS)
         run.assert_not_called()
         self.assertFalse((self.store / ".git" / command_cache.CACHE_DIR).exists())
         self.assertLess(elapsed, BUDGET_SEC)

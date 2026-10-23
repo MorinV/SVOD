@@ -13,7 +13,7 @@ status: open
 <!--
 Made by svod record new on {date}. Frontmatter:
   services  services of svod.yaml the feature touches, for example [app]
-  parent    work/projects/<name> this feature belongs to, or empty
+  parent    work/projects/P for work/projects/P/features/F, or empty for work/features/F
   tags      free labels
   status    open until delivered, then done
 -->

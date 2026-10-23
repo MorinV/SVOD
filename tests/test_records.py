@@ -1,28 +1,40 @@
 """svod record new makes a record from the skeletons; svod next prints the position in one line."""
+
 import json
 import os
 import shutil
 import unittest
 from tempfile import TemporaryDirectory
 
-from support import (ENCODING, EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, PYTHONPATH_ENV, child_env,
-                     core_text)
+from support import (
+    ENCODING,
+    EXIT_FINDINGS,
+    EXIT_OK,
+    EXIT_USAGE,
+    PYTHONPATH_ENV,
+    child_env,
+    core_text,
+)
 from test_standard_template import SERVICE, StandardStore
 
 from svod import keys
 from svod.frontmatter import read_frontmatter
 from svod.records import fill, split_list, yaml_list, yaml_scalar
 
-TASK = "work/tasks/login"
-HOTFIX = "work/tasks/hot"
+TASK = "work/headless/tasks/login"
+HOTFIX = "work/hotfix/hot"
 FEATURE = "work/features/greet"
 PARENT = "work/features/greet"
 RECORDS = "profile/records"
 PIPELINES = ("task", "feature", "project", "research")
 FIRST_STEPS = {"feature": "brief", "project": "vision", "research": "question"}
 QUESTIONS_MISSING = "ask your questions with svod ask <record>"
-ROOTS = {"task": "work/tasks", "feature": "work/features", "project": "work/projects",
-         "research": "work/research"}
+ROOTS = {
+    "task": "work/headless/tasks",
+    "feature": "work/features",
+    "project": "work/projects",
+    "research": "work/headless/research",
+}
 NEXT_STEP_PREFIX = "Next step: "
 SKILL_PREFIX = "Step skill: "
 RUN_PREFIX = "Run: "
@@ -40,7 +52,7 @@ def status_lines(text):
     for line in (raw.strip() for raw in text.splitlines()):
         for prefix in found:
             if line.startswith(prefix):
-                found[prefix] = line[len(prefix):]
+                found[prefix] = line[len(prefix) :]
     step = found[NEXT_STEP_PREFIX]
     return (step[:-1] if step else None), found[SKILL_PREFIX], found[RUN_PREFIX]
 
@@ -66,15 +78,17 @@ class RecordNewTest(unittest.TestCase):
                 self.assertEqual(made.returncode, EXIT_OK, made.stderr)
                 record = self.sb.store / ROOTS[pipeline] / "first"
                 skeleton = self.sb.store / "profile/records" / pipeline
-                self.assertEqual(sorted(p.name for p in record.iterdir()),
-                                 sorted(p.name for p in skeleton.iterdir()))
+                self.assertEqual(
+                    sorted(p.name for p in record.iterdir()),
+                    sorted(p.name for p in skeleton.iterdir()),
+                )
                 self.assertTrue((record / "card.md").is_file())
-                step = json.loads(self.sb.cli("next", f"{ROOTS[pipeline]}/first", "--format",
-                                              "json").stdout)["step"]
+                step = json.loads(
+                    self.sb.cli("next", f"{ROOTS[pipeline]}/first", "--format", "json").stdout
+                )["step"]
                 self.assertEqual(step, FIRST_STEPS.get(pipeline, "questions"))
                 fm = read_frontmatter(record / "card.md")
-                self.assertEqual((fm["type"], fm["kind"], fm["status"]),
-                                 ("card", pipeline, "open"))
+                self.assertEqual((fm["type"], fm["kind"], fm["status"]), ("card", pipeline, "open"))
                 self.assertNotIn("{", (record / "card.md").read_text(encoding=ENCODING))
                 self.assertIn(f"{ROOTS[pipeline]}/first", made.stdout)
         validate = self.sb.cli("validate")
@@ -82,23 +96,39 @@ class RecordNewTest(unittest.TestCase):
 
     def test_options_land_in_the_frontmatter(self):
         """kind, parent, services, tags, key; the record validates and stays at its first step."""
-        made = self.new("task", "login", "--kind", "hotfix", "--parent", PARENT,
-                        "--services", "app, web", "--tags", "a,b", "--key", "PROJ-7")
+        self.assertEqual(self.new("feature", "greet").returncode, EXIT_OK)
+        made = self.new(
+            "task",
+            "login",
+            "--kind",
+            "hotfix",
+            "--parent",
+            PARENT,
+            "--services",
+            "app, web",
+            "--tags",
+            "a,b",
+            "--key",
+            "PROJ-7",
+        )
         self.assertEqual(made.returncode, EXIT_OK, made.stderr)
-        fm = frontmatter(self.sb, TASK)
-        self.assertEqual((fm["kind"], fm["parent"], fm["services"], fm["tags"], fm["key"]),
-                         ("hotfix", PARENT, ["app", "web"], ["a", "b"], "PROJ-7"))
+        fm = frontmatter(self.sb, "work/hotfix/login")
+        self.assertEqual(
+            (fm["kind"], fm["parent"], fm["services"], fm["tags"], fm["key"]),
+            ("hotfix", PARENT, ["app", "web"], ["a", "b"], "PROJ-7"),
+        )
         bare = self.new("task", "bare")
         self.assertEqual(bare.returncode, EXIT_OK, bare.stderr)
-        fm = frontmatter(self.sb, "work/tasks/bare")
-        self.assertEqual((fm["kind"], fm["parent"], fm["services"], fm["key"]),
-                         ("task", None, [], None))
-        card = (self.sb.store / "work/tasks/bare/card.md").read_text(encoding=ENCODING)
+        fm = frontmatter(self.sb, "work/headless/tasks/bare")
+        self.assertEqual(
+            (fm["kind"], fm["parent"], fm["services"], fm["key"]), ("task", None, [], None)
+        )
+        card = (self.sb.store / "work/headless/tasks/bare/card.md").read_text(encoding=ENCODING)
         self.assertIn("\nkey:\n", card)
         self.assertEqual(self.sb.cli("validate").returncode, EXIT_OK)
-        nxt = json.loads(self.sb.cli("next", "work/tasks/bare", "--format", "json").stdout)
+        nxt = json.loads(self.sb.cli("next", "work/headless/tasks/bare", "--format", "json").stdout)
         self.assertEqual(nxt["step"], "card")
-        status = self.sb.cli("status", "work/tasks/bare").stdout
+        status = self.sb.cli("status", "work/headless/tasks/bare").stdout
         self.assertIn("name the services in card.md", status)
         self.assertIn("- services named", status)
 
@@ -107,10 +137,9 @@ class RecordNewTest(unittest.TestCase):
         self.assertEqual(self.new("task", "login").returncode, EXIT_OK)
         card = self.sb.store / TASK / "card.md"
         card.write_text("mine\n", encoding=ENCODING)
-        again = self.new("task", "login", "--kind", "hotfix")
+        again = self.new("task", "login")
         self.assertEqual(again.returncode, EXIT_FINDINGS)
-        self.assertEqual(again.stderr.strip(),
-                         core_text(keys.RECORD_EXISTS, path=TASK))
+        self.assertEqual(again.stderr.strip(), core_text(keys.RECORD_EXISTS, path=TASK))
         self.assertEqual(card.read_text(encoding=ENCODING), "mine\n")
 
     def test_empty_directory_is_filled(self):
@@ -126,8 +155,9 @@ class RecordNewTest(unittest.TestCase):
         self.assertEqual(made.returncode, EXIT_OK, made.stderr)
         status = self.sb.cli("status", TASK).stdout
         self.assertIn(QUESTIONS_MISSING, status)
-        self.assertEqual(json.loads(self.sb.cli("next", TASK, "--format", "json").stdout)["step"],
-                         "questions")
+        self.assertEqual(
+            json.loads(self.sb.cli("next", TASK, "--format", "json").stdout)["step"], "questions"
+        )
         self.assertEqual(self.sb.cli("ask", TASK, "--none").returncode, EXIT_OK)
         nxt = json.loads(self.sb.cli("next", TASK, "--format", "json").stdout)
         self.assertEqual(nxt["step"], "contract")
@@ -138,8 +168,10 @@ class RecordNewTest(unittest.TestCase):
         self.sb.write(f"{RECORDS}/task/notes/plan.md", "# Plan of {name}\n")
         made = self.new("task", "login")
         self.assertEqual(made.returncode, EXIT_OK, made.stderr)
-        self.assertEqual((self.sb.store / TASK / "notes/plan.md").read_text(encoding=ENCODING),
-                         "# Plan of login\n")
+        self.assertEqual(
+            (self.sb.store / TASK / "notes/plan.md").read_text(encoding=ENCODING),
+            "# Plan of login\n",
+        )
         self.assertIn("notes/plan.md", made.stdout)
 
     def test_refusals(self):
@@ -156,12 +188,13 @@ class RecordNewTest(unittest.TestCase):
         missing = self.new("research", "cache")
         self.assertEqual(missing.returncode, EXIT_USAGE)
         self.assertIn(f"{RECORDS}/research", missing.stderr)
-        self.assertFalse((self.sb.store / "work/research/cache").exists())
+        self.assertFalse((self.sb.store / "work/headless/research/cache").exists())
 
     def test_fill_and_lists(self):
         """Placeholders are replaced, other braces kept; values quoted only when YAML needs it."""
-        self.assertEqual(fill("a: {key}\nb: {x}  \n# {name}\n", {"key": "", "name": "n"}),
-                         "a:\nb: {x}  \n# n\n")
+        self.assertEqual(
+            fill("a: {key}\nb: {x}  \n# {name}\n", {"key": "", "name": "n"}), "a:\nb: {x}  \n# n\n"
+        )
         self.assertEqual(split_list(" a, ,b ,"), ["a", "b"])
         self.assertEqual(yaml_list([]), "[]")
         self.assertEqual(yaml_list(["app", "my app"]), '[app, "my app"]')
@@ -173,14 +206,18 @@ class RecordNewTest(unittest.TestCase):
         """start-task.sh without card.md runs svod record new, then makes the worktree; twice."""
         engine = {PYTHONPATH_ENV: child_env()[PYTHONPATH_ENV]}
         for _ in range(2):
-            started = self.sb.action("start-task.sh", TASK, SVOD_SERVICES=SERVICE,
-                                     SVOD_KEY="PROJ-9", **engine)
+            started = self.sb.action(
+                "start-task.sh", TASK, SVOD_SERVICES=SERVICE, SVOD_KEY="PROJ-9", **engine
+            )
             self.assertEqual(started.returncode, EXIT_OK, started.stderr)
         fm = frontmatter(self.sb, TASK)
         self.assertEqual((fm["kind"], fm["services"], fm["key"]), ("task", [SERVICE], "PROJ-9"))
-        self.assertEqual([p.name for p in (self.sb.store / TASK).iterdir()
-                          if p.suffix == ".md"], ["card.md"])
-        self.assertTrue((self.sb.base / f"{SERVICE}-task-login" / ".git").exists())
+        self.assertEqual(
+            [p.name for p in (self.sb.store / TASK).iterdir() if p.suffix == ".md"], ["card.md"]
+        )
+        self.assertTrue(
+            (self.sb.base / f"{SERVICE}-task-work+headless+tasks+login" / ".git").exists()
+        )
 
 
 class NextTest(unittest.TestCase):
@@ -206,27 +243,34 @@ class NextTest(unittest.TestCase):
         self.assertEqual(skill, fields["skill"])
         self.assertEqual(len(line.stdout.splitlines()), 1)
         shown = core_text(keys.NEXT_RUN, command=run.split(": ", 1)[-1]) if run else text
-        self.assertEqual(line.stdout.strip(), core_text(
-            keys.NEXT_LINE_SKILL, id=record, text=shown, skill=fields["skill"]))
+        self.assertEqual(
+            line.stdout.strip(),
+            core_text(keys.NEXT_LINE_SKILL, id=record, text=shown, skill=fields["skill"]),
+        )
         return fields
 
     def test_next_step_text(self):
         """A task without services: the card step, its text and its skill."""
         self.assertEqual(self.sb.cli("record", "new", "task", "login").returncode, EXIT_OK)
         fields = self.assert_same(TASK)
-        self.assertEqual((fields["id"], fields["step"], fields["skill"], fields["action"],
-                          fields["run"]), (TASK, "card", "svod-task", None, None))
+        self.assertEqual(
+            (fields["id"], fields["step"], fields["skill"], fields["action"], fields["run"]),
+            (TASK, "card", "svod-task", None, None),
+        )
 
     def test_run_command_of_the_step_action(self):
         """A hotfix with a cause and no questions stands at implement: run svod do start-task."""
-        made = self.sb.cli("record", "new", "task", "hot", "--kind", "hotfix",
-                           "--services", SERVICE)
+        made = self.sb.cli(
+            "record", "new", "task", "hot", "--kind", "hotfix", "--services", SERVICE
+        )
         self.assertEqual(made.returncode, EXIT_OK, made.stderr)
         self.sb.edit(f"{HOTFIX}/card.md", "status: open", "cause: incident 42\nstatus: open")
         self.assertEqual(self.sb.cli("ask", HOTFIX, "--none").returncode, EXIT_OK)
         fields = self.assert_same(HOTFIX)
-        self.assertEqual((fields["step"], fields["action"], fields["run"]),
-                         ("implement", "start-task", f"svod do start-task {HOTFIX}"))
+        self.assertEqual(
+            (fields["step"], fields["action"], fields["run"]),
+            ("implement", "start-task", f"svod do start-task {HOTFIX}"),
+        )
         line = self.sb.cli("next", "hot").stdout.strip()
         self.assertEqual(line, f"{HOTFIX}: run svod do start-task {HOTFIX} (skill svod-task)")
 
@@ -246,10 +290,8 @@ class NextTest(unittest.TestCase):
         missing = self.sb.cli("next", "nothing-like-this")
         self.assertEqual(missing.returncode, EXIT_USAGE)
         self.assertEqual(missing.stdout, "")
-        self.assertIn(core_text(keys.STATUS_NOT_FOUND, query="nothing-like-this"),
-                      missing.stderr)
+        self.assertIn(core_text(keys.STATUS_NOT_FOUND, query="nothing-like-this"), missing.stderr)
 
 
 if __name__ == "__main__":
     unittest.main()
-

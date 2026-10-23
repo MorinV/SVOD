@@ -8,10 +8,9 @@
 # record variable, SVOD_SERVICE_<NAME> and SVOD_FM_<NAME> is dropped and found again from the
 # argument, card.md and svod.yaml.
 #
-# Names: the worktree of service <service> for record work/<kind>/<name> of pipeline <pipeline>
-# is <directory holding the service checkout>/<service>-<pipeline>-<name>, on branch
-# <pipeline>/<name>; work.yaml lists it relative to the store root. <pipeline> is SVOD_PIPELINE,
-# else <kind> without its final s (tasks -> task, features -> feature, research -> research).
+# New worktree names and branches use the full record identity: escape percent and plus,
+# then replace slash with plus. Existing paths in work.yaml remain authoritative. Pipeline
+# comes from native dispatch or card kind (hotfix is task), else the containing directory.
 set -euo pipefail
 
 RECORD=""
@@ -136,10 +135,23 @@ SVOD_SERVICES="${SVOD_SERVICES:-$(card_field services)}"
 SVOD_SERVICES="${SVOD_SERVICES//,/ }"
 SVOD_KEY="${SVOD_KEY:-$(card_field key)}"
 SVOD_KIND="${SVOD_KIND:-$(card_field kind)}"
+# A missing hotfix card has no frontmatter yet; retain the requested slot's kind.
+if [ -z "$SVOD_KIND" ] && [ ! -f "$CARD" ] && [ "$(dirname "$SVOD_ID")" = work/hotfix ]; then
+  SVOD_KIND=hotfix
+fi
 SLUG="$(basename "$SVOD_ID")"
 if [ -z "${SVOD_PIPELINE:-}" ]; then
-  SVOD_PIPELINE="$(basename "$(dirname "$SVOD_ID")")"
-  SVOD_PIPELINE="${SVOD_PIPELINE%s}"
+  case "$SVOD_KIND" in
+    task|hotfix) SVOD_PIPELINE=task ;;
+    feature|project|research) SVOD_PIPELINE="$SVOD_KIND" ;;
+    *)
+      SVOD_PIPELINE="$(basename "$(dirname "$SVOD_ID")")"
+      case "$SVOD_PIPELINE" in hotfix) SVOD_PIPELINE=task ;; *) SVOD_PIPELINE="${SVOD_PIPELINE%s}" ;; esac ;;
+  esac
 fi
-BRANCH="$SVOD_PIPELINE/$SLUG"
-export SVOD_ROOT SVOD_ID SVOD_SUBJECT_PATH SVOD_SERVICES SVOD_KEY SVOD_KIND SVOD_PIPELINE SLUG BRANCH
+# A reversible record identity, including literal '+' and '%' in names.
+WORK_SLUG="${SVOD_ID//%/%25}"
+WORK_SLUG="${WORK_SLUG//+/%2B}"
+WORK_SLUG="${WORK_SLUG//\//+}"
+BRANCH="$SVOD_PIPELINE/$WORK_SLUG"
+export SVOD_ROOT SVOD_ID SVOD_SUBJECT_PATH SVOD_SERVICES SVOD_KEY SVOD_KIND SVOD_PIPELINE SLUG WORK_SLUG BRANCH

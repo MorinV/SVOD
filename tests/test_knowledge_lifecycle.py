@@ -146,9 +146,9 @@ class PublishTest(StoreTestCase):
         self.sb.git(self.standard, "config", "user.name", "Researcher")
         self.sb.git(self.standard, "config", "user.email", "research@example.test")
         self.sb.write(".svod-local.yaml", "login: Researcher\n")
-        self.record = "work/research/cache"
+        self.record = "work/headless/research/cache"
         self.card = self.sb.write(f"{self.record}/card.md",
-                                 "---\ntype: card\noutcome: knowledge\ntags: [db]\n"
+                                 "---\ntype: card\nkind: research\noutcome: knowledge\ntags: [db]\n"
                                  "status: done\n---\n# Cache\n")
         self.findings = self.sb.write(f"{self.record}/findings.md", "# Findings\n\nExact answer.\n")
 

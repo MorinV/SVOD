@@ -70,6 +70,30 @@ svod update --from /mirror/svod --to v0.4.0
 
 The path is cloned too, so exactly the tag is taken, and it is recorded as the source: later `svod update` and the session start notice use it. Pass `--from` again to switch sources.
 
+## Nested work-layout transition
+
+The standard profile now places task/research under projects or features (including
+features inside projects), unowned work under `work/headless/{tasks,research}`,
+and hotfixes under `work/hotfix`. Research outcomes are knowledge, task or research;
+research provenance is not containment. Engine installation alone does **not** move
+existing records or grant permission to replace a customized profile.
+
+Follow the shipped [svod-task-layout-transition instruction](../svod/skills/svod-task-layout-transition/SKILL.md)
+and [mapping worksheet](../svod/skills/svod-task-layout-transition/references/mapping.md).
+They are in `.svod/skills/svod-task-layout-transition/` for bundled installs or
+`svod/skills/svod-task-layout-transition/` in the shared/source package. Store skills
+can mask engine skills during agent setup; read the explicit path rather than
+replacing local policy. Authorize engine/profile/content changes separately.
+
+Inventory all records, including done, archived and Git-untracked; preflight an
+explicit old/new mapping for collisions, then rehearse on an isolated complete copy.
+Update live card/link/plan references, not historical evidence wholesale. Preserve
+original historical artifacts and approval bytes; report changed-bound-input drift,
+never rewrite approval hashes or replay consent. Keep work.yaml and existing
+worktree/branch names unchanged. Verify counts, file bytes, references and native
+commands, repeat read-only reconciliation, then apply live only with authorization.
+No permanent legacy alias registry is introduced; retain finite transition evidence.
+
 ## Versions and migrations
 
 Version 0.3 adds a compact local profile, packaged templates (`svod new`) and local command helpers. Updating the engine does not install or overwrite a project's profile: opt into a new store or adapt selected declarations explicitly. Update the engine before using `when`, `purpose` or new CLI commands. Existing human decisions and logs remain history; no automatic consent or lifecycle import is performed. Stricter readiness/timestamp checks can require presenting inputs again and obtaining a fresh human answer.

@@ -4,7 +4,7 @@ import shutil
 from tempfile import TemporaryDirectory
 import unittest
 
-from test_standard_template import StandardStore
+from test_standard_template import EXAMPLE, StandardStore
 from svod.approval import read_mark
 
 
@@ -14,9 +14,9 @@ class BatchContractApprovalTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.sb = StandardStore(self.temp.name)
         self.assertEqual(self.sb.cli("init", "--login", "tester").returncode, 0)
-        self.records = [f"work/tasks/{name}" for name in ("alpha", "bravo", "charlie")]
+        self.records = [f"work/headless/tasks/{name}" for name in ("alpha", "bravo", "charlie")]
         for index, record in enumerate(self.records):
-            shutil.copytree(self.sb.store / "work/tasks/example", self.sb.store / record)
+            shutil.copytree(self.sb.store / EXAMPLE, self.sb.store / record)
             self.sb.edit(f"{record}/card.md", "status: archived", "status: open")
             self.sb.edit(f"{record}/card.md", "services: []", "services: [app]")
             self.sb.edit(f"{record}/card.md", "key: EXAMPLE-1",

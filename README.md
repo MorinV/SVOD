@@ -41,14 +41,14 @@ git clone <your repository> ~/Projects/app
 cd ~/Projects/svod && svod init --service app=../app && svod doctor
 ```
 
-The first task: start Claude Code in `~/Projects/svod` and ask for the task. The agent writes `work/tasks/<name>/card.md` after `work/tasks/example/`, the questions and the contract; you approve in the chat ("Approved <name>"); then the worktree of each service is made by
+The first task: start Claude Code in `~/Projects/svod` and ask for the task. Create it with `svod record new task <name> --services app` (headless), or add `--parent <project-or-feature>` for owned work. The agent fills card.md, questions and contract; you approve in the chat ("Approved <name>"); then the service worktrees are made by
 
 ```bash
-svod do start-task work/tasks/<name>      # a worktree per service, listed in work.yaml
-svod status work/tasks/<name>             # where the task stands and what is next
+svod do start-task <record>      # canonical path; worktrees listed in work.yaml
+svod status <record>             # where the task stands and what is next
 ```
 
-The store is a dispatcher: records live in `work/projects`, `work/features`, `work/tasks` (a hotfix is a task with `kind: hotfix`) and `work/research`; the code stays in the services. A task goes card → questions → contract → approval → worktrees → checks (`svod do checks`) → delivery → `status: done`; each step names its skill (`svod-task`, `svod-feature`, `svod-project`, `svod-research`, `svod-questions`). Details: the `README.md` of the new store and [docs/reference.md](docs/reference.md#setup).
+The store is a dispatcher: projects live at `work/projects/P`; features at `work/projects/P/features/F` or `work/features/F`; tasks/research beneath their project or feature in `tasks/T` and `research/R`. Unowned work lives at `work/headless/tasks/T` or `work/headless/research/R`; hotfixes at `work/hotfix/H` (`kind: hotfix`). `<record>` means the full canonical path; short names can collide. Research is a peer of task, never a container: outcome is knowledge, a new task or new research, not a feature; leads_to is provenance, not parent. The code stays in the services. A task goes card → questions → contract → approval → worktrees → checks (`svod do checks`) → delivery → `status: done`; each step names its skill (`svod-task`, `svod-feature`, `svod-project`, `svod-research`, `svod-questions`). Details: the `README.md` of the new store and [docs/reference.md](docs/reference.md#setup).
 
 **Svod develops itself with Svod.** The instance [MorinV/svod-rnd](https://github.com/MorinV/svod-rnd) is a standard-template store next to a clone of this repository: the work on the engine is recorded there as features, tasks and research, with their questions, contracts, approvals and evidence log. The layout and what the first runs found: [docs/dogfooding.md](docs/dogfooding.md).
 
@@ -91,6 +91,12 @@ git -C ../app worktree add -b PROJ-1_login ../app-PROJ-1_login
 svod status PROJ-1        # next: implement and commit with the key; then merge; then archive
 svod active               # everything open, the summary an agent sees at session start
 ```
+
+## Existing-store layout transition
+
+Read the shipped [`svod-task-layout-transition` guide](svod/skills/svod-task-layout-transition/SKILL.md) and [mapping worksheet](svod/skills/svod-task-layout-transition/references/mapping.md). Bundled stores carry these in `.svod/skills/svod-task-layout-transition/`; shared/source installs carry them in the package's `svod/skills/svod-task-layout-transition/`. Local skills can mask engine skills: read the explicit path without replacing local policy.
+
+Installation alone does not move records. A separately authorized move inventories all existing records (including done, archived and Git-untracked), preflights collisions with an explicit old → new mapping, and rehearses on an isolated full copy. Update live parent/link/plan references, preserve historical artifacts and approval bytes, report drift rather than forge hashes or consent, and leave existing work.yaml, worktree and branch names unchanged. Reconcile counts/bytes/references and native checks before and after the authorized live move; keep only finite transition evidence, not a permanent legacy registry. Distribution tests prove guide delivery, not completion of a live migration.
 
 ## Connect an agent
 

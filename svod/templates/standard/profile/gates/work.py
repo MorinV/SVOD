@@ -4,7 +4,7 @@ A record is work/<kind>/<name>/ with card.md (frontmatter type: card). Besides t
 attributes it carries the booleans pipelines name in `when`:
   hotfix        kind: hotfix (a task that skips the contract and its approval)
   planned       any other kind
-  to_work       research outcome hotfix or feature (leads_to names the record)
+  to_work       research outcome task, research or hotfix (leads_to names the record)
   to_knowledge  research outcome knowledge (knowledge names the document)
 Its keys are the `key` of card.md (a tracker key), when set.
 
@@ -21,10 +21,11 @@ work.yaml lists that directory. A directory with no "-<pipeline>-" names no reco
 frozen.
 """
 from pathlib import Path
+from unicodedata import normalize
 
 from svod.errors import LoadError
 from svod.gates import Gate, KeyGate, Result, Status
-from svod.providers.base import normalize_name
+from svod.providers.base import NORMAL_FORM, normalize_name
 from svod.providers.container import ContainerProvider
 from svod.subject import ATTR_FRONTMATTER
 from svod.yamlio import ENCODING, parse_yaml
@@ -33,7 +34,7 @@ FIELD_KIND = "kind"
 FIELD_KEY = "key"
 FIELD_OUTCOME = "outcome"
 KIND_HOTFIX = "hotfix"
-OUTCOMES_TO_WORK = frozenset({"hotfix", "feature"})
+OUTCOMES_TO_WORK = frozenset({"hotfix", "task", "research"})
 OUTCOME_KNOWLEDGE = "knowledge"
 WORK_FILE = "work.yaml"
 ID_SEPARATOR = "/"
@@ -56,12 +57,15 @@ def text(frontmatter, name):
 
 def id_slug(record_id):
     """The id-slug of a record id: work/tasks/login is work+tasks+login."""
-    return record_id.strip(ID_SEPARATOR).replace(ID_SEPARATOR, SLUG_SEPARATOR)
+    return record_id.strip(ID_SEPARATOR).replace("%", "%25").replace("+", "%2B").replace(
+        ID_SEPARATOR, SLUG_SEPARATOR)
 
 
 def slug_id(key):
     """The record id an id-slug names; an id stays as it is."""
-    return key.replace(SLUG_SEPARATOR, ID_SEPARATOR)
+    if ID_SEPARATOR in key:
+        return key
+    return key.replace(SLUG_SEPARATOR, ID_SEPARATOR).replace("%2B", "+").replace("%25", "%")
 
 
 def record_ids(text):
@@ -78,7 +82,9 @@ def record_ids(text):
             start = name.find(marker)
             while start > 0:
                 rest = name[start + len(marker):]
-                if rest and NAME_SEPARATOR * 2 not in rest:
+                if rest.startswith("work+"):
+                    found.append(slug_id(rest))
+                elif rest and NAME_SEPARATOR * 2 not in rest:
                     found.append(f"{root}{ID_SEPARATOR}{rest}")
                 start = name.find(marker, start + 1)
     return list(dict.fromkeys(found))
@@ -88,6 +94,84 @@ class WorkProvider(ContainerProvider):
     """The container provider plus the when-attributes and the tracker key of a work record."""
 
     name = "work"
+
+    def owns_path(self, ctx, subject, path):
+        """Owner documents exclude the live child containers, including moved children."""
+        if not super().owns_path(ctx, subject, path):
+            return False
+        # Match covers()' canonical equivalence without casefolding filesystem paths.
+        owner = normalize(NORMAL_FORM, subject.path.relative_to(ctx.root).as_posix())
+        relative = Path(normalize(NORMAL_FORM, str(path))).relative_to(owner)
+        frontmatter = subject.attrs.get(ATTR_FRONTMATTER) or {}
+        kind = text(frontmatter, FIELD_KIND)
+        children = {"tasks", "research", "features"} if kind == "project" else {"tasks", "research"}
+        return not (kind in {"project", "feature"} and relative.parts
+                    and relative.parts[0] in children)
+
+    def creation_target(self, ctx, record):
+        """Standard placement; research parent is provenance, never a container."""
+        from fnmatch import fnmatchcase
+
+        opted_in = any("*" in root or root.startswith("work/headless/")
+                       for root in self.params["roots"])
+        if not opted_in:
+            return super().creation_target(ctx, record)
+
+        def resolve_parent(ref):
+            matches = {s.id: (p, s) for p in ctx.pipelines.values()
+                       for s in p.subject.impl.match_exact(ref, ctx) if s.exists}
+            if len(matches) != 1:
+                raise ValueError(f"Parent must resolve to one record: {ref}")
+            return next(iter(matches.values()))
+
+        kind = record.kind or record.pipeline
+        if kind not in ({"task", "hotfix"} if record.pipeline == "task" else {record.pipeline}):
+            raise ValueError(f"Invalid kind {kind!r} for pipeline {record.pipeline!r}")
+        owner = None
+        if record.parent:
+            parent_pipeline, parent = resolve_parent(record.parent)
+            record.parent = parent.id
+            visited = set()
+            while parent_pipeline.name == "research" and record.pipeline in {"task", "research"}:
+                if parent.id in visited:
+                    raise ValueError(f"Research parent cycle: {parent.id}")
+                visited.add(parent.id)
+                # Prefer the physical owner; a research's logical parent is provenance.
+                owners = [(p, s) for p in ctx.pipelines.values() if p.name in {"project", "feature"}
+                          for s in p.subject.impl.enumerate(ctx)
+                          if s.exists and parent.path.is_relative_to(s.path)]
+                if owners:
+                    parent_pipeline, parent = max(owners, key=lambda pair: len(pair[1].path.parts))
+                    break
+                ref = text(parent.attrs.get(ATTR_FRONTMATTER) or {}, "parent")
+                if not ref:
+                    break
+                parent_pipeline, parent = resolve_parent(ref)
+            if parent_pipeline.name in {"project", "feature"}:
+                owner = parent
+            elif parent_pipeline.name != "research" or record.pipeline not in {"task", "research"}:
+                raise ValueError(f"Invalid parent for {record.pipeline}: {parent.id}")
+        if record.pipeline == "task" and kind == "hotfix":
+            root = "work/hotfix"
+        elif record.pipeline in {"task", "research"}:
+            container = "tasks" if record.pipeline == "task" else "research"
+            root = f"{owner.id}/{container}" if owner else f"work/headless/{container}"
+        elif record.pipeline == "feature":
+            if owner is not None and parent_pipeline.name != "project":
+                raise ValueError("A feature parent must be a project")
+            root = f"{owner.id}/features" if owner else "work/features"
+        else:
+            if owner is not None:
+                raise ValueError("A project cannot have a parent")
+            root = "work/projects"
+        # Compare segments: '*' must not accidentally accept additional hierarchy levels.
+        def accepts(pattern):
+            parts, actual = pattern.split("/"), root.split("/")
+            return len(parts) == len(actual) and all(
+                fnmatchcase(a, p) for a, p in zip(actual, parts, strict=True))
+        if not any(accepts(pattern) for pattern in self.params["roots"]):
+            raise ValueError(f"Creation target is outside provider roots: {root}")
+        return ctx.root / root / record.name
 
     def subject(self, ctx, path):
         """Container subject with hotfix, planned, to_work and to_knowledge attributes.
@@ -121,8 +205,10 @@ class WorkIdGate(KeyGate):
     def match(self, query):
         """The record id the query is, else the first one a directory name in it may mean."""
         wanted = query.strip().strip(ID_SEPARATOR)
-        if any(wanted.startswith(f"{root}{ID_SEPARATOR}") for root in ROOTS.values()):
+        if wanted.startswith("work/"):
             return wanted
+        if wanted.startswith("work+"):
+            return slug_id(wanted)
         found = record_ids(query)
         return found[0] if found else None
 

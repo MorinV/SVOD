@@ -143,9 +143,13 @@ canvas layout/safety, standard scaffolds/binds, evidence edits, nested reopening
 invalid-current-PASS prevention, and computed reverse supports. Existing skeleton
 tests were updated to compare all declared skeleton files, not assume card-only.
 
-Scope limitations: discovery intentionally uses the standard `work/projects`,
-`work/features`, `work/tasks`, `work/research` layout rather than loading executable
-custom providers. URL evidence is not fetched or authenticated. File-race checks
+Scope limitations: discovery uses the standard nested layout: projects and their
+features, tasks and research; standalone features and their tasks/research;
+`work/hotfix`; `work/headless/tasks` and `work/headless/research`. It does not load
+executable custom providers. Use canonical paths in plan nodes and criterion
+owners, including `work/projects/P/features/F/tasks/T`. Research provenance
+(`leads_to`) is not containment. Existing stores require the separately authorized
+`svod-task-layout-transition` procedure; engine installation is not a move. URL evidence is not fetched or authenticated. File-race checks
 are optimistic, not a transactional snapshot; new/deleted files outside observed
 inputs and noncooperating writers in the final replace interval are not a
 distributed concurrency guarantee. No live-store migration/install, commits,

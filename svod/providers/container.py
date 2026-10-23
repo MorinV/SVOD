@@ -13,10 +13,15 @@ KEY_INDEX = "key_index"
 
 def container_dirs(ctx, roots):
     """Container directories under the roots, in root order then by name."""
+    seen = set()
     for root in roots:
-        base = ctx.root / root
-        if base.is_dir():
-            yield from sorted(p for p in base.iterdir() if p.is_dir())
+        bases = sorted(ctx.root.glob(root)) if any(c in root for c in "*?[") else [ctx.root / root]
+        for base in bases:
+            if base.is_dir():
+                for path in sorted(p for p in base.iterdir() if p.is_dir()):
+                    if path not in seen:
+                        seen.add(path)
+                        yield path
 
 
 def key_index(ctx, roots, key_gate):
@@ -51,6 +56,13 @@ class ContainerProvider(Provider):
         if not isinstance(roots, list) or not roots or not all(isinstance(r, str) for r in roots):
             raise ParamError(f"{self.name}: {PARAM_ROOTS} must be a non-empty list of strings")
         self.require_type(PARAM_HEAD_TYPE, str, "a string")
+
+    def creation_target(self, ctx, record):
+        """Default placement under the first literal root; patterns are discovery only."""
+        root = self.params[PARAM_ROOTS][0]
+        if any(c in root for c in "*?["):
+            return None
+        return ctx.root / root.strip("/") / record.name
 
     def head(self, path):
         """Frontmatter of the top-level document of the head type, or an empty mapping."""

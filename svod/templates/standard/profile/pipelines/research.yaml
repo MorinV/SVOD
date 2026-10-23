@@ -1,7 +1,9 @@
 pipeline: research
 subject:
   provider: work
-  params: { roots: [work/research], head_type: card }
+  params:
+    roots: [work/headless/research, work/features/*/research, work/projects/*/research, work/projects/*/features/*/research]
+    head_type: card
 active:
   item: work.active.item
   headings:
@@ -33,6 +35,6 @@ steps:
     gates:
       - { gate: field, params: { name: outcome, present: true }, label: research.mark.outcome }
       - { gate: field, params: { name: leads_to, present: true }, when: to_work, label: research.mark.leads_to, text: research.step.leads_to }
-      - { gate: ref_exists, params: { field: leads_to, pipelines: [task, feature] }, when: to_work, label: research.mark.leads_to_exists, text: research.step.leads_to }
+      - { gate: ref_exists, params: { field: leads_to, pipelines: [task, research] }, when: to_work, label: research.mark.leads_to_exists, text: research.step.leads_to }
       # research.step.knowledge directs the explicit consent-bound publish/close command.
       - { gate: field, params: { name: knowledge, present: true }, when: to_knowledge, label: research.mark.knowledge, text: research.step.knowledge }

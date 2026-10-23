@@ -244,6 +244,17 @@ class Guard:
                 self.declared.append((pipeline, subject, roots))
                 if inside(subject.path.resolve(), cwd) or any(inside(p, cwd) for p in roots):
                     matches[(pipeline.name, subject.id)] = (subject, roots)
+        if matches:
+            # Physical nesting is ownership, not ambiguity: retain only deepest records.
+            # Shared declared service worktrees remain ambiguous and fail closed.
+            direct = {key: value for key, value in matches.items()
+                      if inside(value[0].path.resolve(), cwd)}
+            if direct:
+                depth = max(len(value[0].path.parts) for value in direct.values())
+                deepest = {key: value for key, value in direct.items()
+                           if len(value[0].path.parts) == depth}
+                matches = {key: value for key, value in matches.items()
+                           if key in deepest or any(inside(root, cwd) for root in value[1])}
         if len(matches) == 1:
             self.selected, self.write_roots = next(iter(matches.values()))
 
